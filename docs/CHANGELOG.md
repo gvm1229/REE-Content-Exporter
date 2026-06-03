@@ -170,3 +170,55 @@ The PNG files were structurally valid, but many PRAGMATA material textures were 
 
 - Package: `REE-Content-Exporter.PRAGMATA-poc-0.3.0.zip`
 - SHA256: `D70F9760765575CF5F2F889373F766CBD00D861315AD90FEB395AA9893A3F585`
+
+## 0.3.1 — GDeflate texture noise fix
+
+Completed: 2026-06-04 01:36:55 +09:00
+
+### What was attempted
+
+0.3.0 exported PNG files, but many were filled with random-looking RGB noise. The next investigation compared the exporter path with REE Content Editor's texture preview path.
+
+### Result
+
+The cause was found in the texture loading sequence. REE Content Editor's `TextureLoader` decompresses GDeflate-compressed TEX files before using them, while the exporter called `TexFile.SaveAsDDS()` immediately after `TexFile.Read()`.
+
+For PRAGMATA `.tex.251111100`, many material textures are GDeflate-compressed. Exporting them without decompression produced valid PNG files containing compressed payload noise.
+
+### Fix
+
+The exporter now mirrors REE Content Editor's texture loader behavior:
+
+- if `tex.MustBeCompressed && tex.IsCompressed`, call `tex.DecompressGDeflate(...)`;
+- use `GDeflateNet.GDeflate.Decompress(...)` for each mip;
+- preserve warnings if a mip cannot be decompressed;
+- apply the same step to streaming TEX files before DDS/PNG conversion.
+
+### What we learned
+
+- REE's texture parser alone is not enough for modern PRAGMATA textures; the loader's decompression step is part of the correct read path.
+- Texture export should follow the same sequence as REE Content Editor preview: read, decompress if required, then convert/export.
+
+### Improvements over 0.3.0
+
+- PNG textures changed from compressed noise to coherent UV textures.
+- The texture fix remained REE-native by using `GDeflateNet` and `TexFile.DecompressGDeflate(...)`.
+
+### Verification evidence
+
+Output folder: `C:/Users/hojin/Downloads/PRAG_PROJ/ree_exporter/texture_attempt1`
+
+- PNG count: 54
+- `ch0000_00_Hand_ALBD.png` changed from random RGB noise to coherent UV texture.
+- Contact sheet: `texture_attempt1/attempt1_albd_contact_sheet.png`
+- Neighbor correlation sanity check:
+  - `ch0000_00_Hand_ALBD.png`: before `0.2293`, after `0.9280`
+  - `ch0000_00_Head_ALBD.png`: before `0.2685`, after `0.8936`
+  - `ch0000_00_Fabric_4MNewTexture_ALBD.png`: before `0.2508`, after `0.8719`
+  - `ch0000_00_NRegArmor_4MNewTexture_ALBD.png`: before `0.2543`, after `0.8802`
+- `dotnet build -c Release` succeeded.
+
+### Package evidence
+
+- Package: `REE-Content-Exporter.PRAGMATA-poc-0.3.1.zip`
+- SHA256: `EAA8EA231CD519F73B0252B1EBC68624AAB678B30DF417D6E7E1B3CD8DD8A381`

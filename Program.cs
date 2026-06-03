@@ -240,6 +240,21 @@ static void ExportMaterialTextures(MaterialGroupWrapper materials, string meshPa
     Console.WriteLine($"Exported material texture manifest: {manifest}");
 }
 
+static void DecompressTextureIfNeeded(TexFile tex)
+{
+    if (!tex.MustBeCompressed || !tex.IsCompressed) return;
+
+    tex.DecompressGDeflate(static (level, compressedBytes, decompressedBytes) =>
+    {
+        if (!GDeflateNet.GDeflate.Decompress(compressedBytes, decompressedBytes))
+        {
+            Console.WriteLine($"WARNING: failed to GDeflate-decompress texture mip level {level}");
+            return level > 0;
+        }
+        return true;
+    });
+}
+
 static string TextureOutputName(MaterialGroupWrapper.MaterialLookupData mat, TexHeader tex, string textureFormat)
 {
     var name = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(tex.texPath).ToString());
