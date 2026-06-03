@@ -16,6 +16,25 @@ parent-folder/
   REE-Content-Exporter/
 ```
 
+## Repository file hierarchy
+
+Files included in Git:
+
+```text
+REE-Content-Exporter/
+  .gitignore
+  LICENSE
+  Program.cs
+  README.md
+  REE-Content-Exporter.csproj
+  docs/
+    CHANGELOG.md
+  patches/
+    ree-content-editor-commonmeshresource-material-textures.patch
+```
+
+Generated or local folders such as build output are intentionally not listed here.
+
 ## Dependencies
 
 - [REE-Content-Editor](https://github.com/kagenocookie/REE-Content-Editor)
