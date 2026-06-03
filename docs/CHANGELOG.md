@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 0.5.0 ? additional mesh export support
+
+Completed: 2026-06-04
+
+### What was attempted
+
+Some RE Engine characters are split across several mesh files. The exporter previously accepted only one `--mesh`, which was enough for `ch0000` but not for characters such as `ch0100` where specific mesh parts need to be selected manually.
+
+### Result
+
+The CLI now supports repeated `--additional-mesh <mesh.path>` arguments. The primary mesh and all additional meshes are exported through one REE Content Editor scene, sharing one exported armature and one animation set. Additional meshes use the same automatic streaming mesh lookup as the primary mesh and can contribute their own auto-detected sibling MDF material data.
+
+### Improvements over 0.4.1
+
+- Added repeated `--additional-mesh` CLI option.
+- Preserved manual control over exactly which mesh parts are included.
+- Added automatic streaming data lookup for each additional mesh.
+- Added automatic sibling MDF lookup and texture/material slot contribution for each additional mesh.
+- Kept output naming normalization: one `Armature` root and simplified mesh object names.
+
+### Verification evidence
+
+- `dotnet build -c Release` succeeded with 0 warnings and 0 errors.
+
 ## 0.4.1 ? combined multi-MOTLIST export default
 
 Completed: 2026-06-04

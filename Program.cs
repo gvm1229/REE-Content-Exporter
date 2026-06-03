@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -28,11 +28,12 @@ if (args.Length == 0 || HasFlag(args, "--help"))
 {
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     return;
 }
 
 var meshPath = GetArg(args, "--mesh") ?? throw new ArgumentException("Missing --mesh");
+var additionalMeshPaths = GetArgs(args, "--additional-mesh").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var streamingPath = GetArg(args, "--streaming");
 var mdfPath = GetArg(args, "--mdf");
 var motlistPaths = GetArgs(args, "--motlist").ToList();
@@ -57,41 +58,14 @@ var allowMissingStreaming = HasFlag(args, "--allow-missing-streaming");
 
 Console.WriteLine("REE Content Editor native export path");
 Console.WriteLine($"Mesh: {meshPath}");
+Console.WriteLine($"Additional meshes: {(additionalMeshPaths.Count == 0 ? "-" : string.Join("; ", additionalMeshPaths))}");
 Console.WriteLine($"Streaming: {streamingPath ?? "-"}");
 Console.WriteLine($"MDF: {mdfPath ?? "auto"}");
 Console.WriteLine($"Motlists: {(motlistPaths.Count == 0 ? "-" : string.Join("; ", motlistPaths))}");
 Console.WriteLine($"Mots: {(motPaths.Count == 0 ? "-" : string.Join("; ", motPaths))}");
 Console.WriteLine($"Output: {outputPath}");
 
-using var meshHandler = new FileHandler(meshPath);
-var mesh = new MeshFile(meshHandler);
-if (!mesh.Read()) throw new Exception("REE-Lib failed to read mesh");
-Console.WriteLine($"Loaded mesh version={mesh.Header.version} requiresStreaming={mesh.RequiresStreamingData} materials={mesh.MaterialNames.Count} bones={mesh.BoneData?.Bones.Count ?? 0} lods={mesh.MeshData?.LODs.Count ?? 0}");
-
-if (!string.IsNullOrWhiteSpace(streamingPath))
-{
-    using var streamingHandler = new FileHandler(streamingPath);
-    mesh.LoadStreamingData(streamingHandler);
-    Console.WriteLine("Loaded explicit streaming buffer");
-}
-else if (mesh.RequiresStreamingData)
-{
-    var candidate = FindStreamingCandidate(meshPath);
-    if (candidate != null)
-    {
-        using var streamingHandler = new FileHandler(candidate);
-        mesh.LoadStreamingData(streamingHandler);
-        Console.WriteLine($"Loaded auto streaming buffer: {candidate}");
-    }
-    else if (allowMissingStreaming)
-    {
-        Console.WriteLine("WARNING: mesh requires streaming data, but no candidate was found. Output may be invalid.");
-    }
-    else
-    {
-        throw new FileNotFoundException("Mesh requires streaming data, but no streaming buffer was found. Pass --streaming or extract the natives/STM/streaming sibling path.");
-    }
-}
+var mesh = LoadMesh(meshPath, streamingPath, allowMissingStreaming);
 
 var motions = new List<(string Source, MotFileBase Motion)>();
 if (includeAnimations)
@@ -138,8 +112,22 @@ var resource = new CommonMeshResource(name, null!)
     ExportRootNodeName = "Armature",
     ExportStripMeshNamePrefix = true,
 };
+var additionalResources = new List<CommonMeshResource>();
+foreach (var additionalMeshPath in additionalMeshPaths)
+{
+    var additionalName = PathUtils.GetFilenameWithoutExtensionOrVersion(additionalMeshPath).ToString();
+    additionalResources.Add(new CommonMeshResource(additionalName, null!)
+    {
+        NativeMesh = LoadMesh(additionalMeshPath, explicitStreamingPath: null, allowMissingStreaming),
+        GameVersion = GameName.pragmata,
+        ExportTextureFormat = textureFormat,
+        ExportRootNodeName = "Armature",
+        ExportStripMeshNamePrefix = true,
+    });
+}
 
 MaterialGroupWrapper? materialWrapper = null;
+var materialWrappers = new List<(MaterialGroupWrapper Materials, string MeshPath)>();
 if (includeTextures)
 {
     mdfPath ??= FindMdfCandidate(meshPath);
@@ -152,6 +140,7 @@ if (includeTextures)
             materialWrapper = new MaterialGroupWrapper(mdf);
             materialWrapper.UpdateMaterialLookups();
             resource.SetImportedMaterials(materialWrapper);
+            materialWrappers.Add((materialWrapper, meshPath));
             Console.WriteLine($"Loaded MDF materials={materialWrapper.Materials.Count}: {mdfPath}");
         }
         else
@@ -163,6 +152,28 @@ if (includeTextures)
     {
         Console.WriteLine("WARNING: no MDF found; material texture slots will not be linked.");
     }
+
+    foreach (var additionalMeshPath in additionalMeshPaths)
+    {
+        var additionalMdfPath = FindMdfCandidate(additionalMeshPath);
+        if (additionalMdfPath == null)
+        {
+            Console.WriteLine($"WARNING: no MDF found for additional mesh; material texture slots may be missing: {additionalMeshPath}");
+            continue;
+        }
+        using var additionalMdfHandler = new FileHandler(additionalMdfPath);
+        var additionalMdf = new MdfFile(additionalMdfHandler);
+        if (!additionalMdf.Read())
+        {
+            Console.WriteLine($"WARNING: failed to read additional mesh MDF: {additionalMdfPath}");
+            continue;
+        }
+        var additionalMaterialWrapper = new MaterialGroupWrapper(additionalMdf);
+        additionalMaterialWrapper.UpdateMaterialLookups();
+        resource.AddImportedMaterials(additionalMaterialWrapper);
+        materialWrappers.Add((additionalMaterialWrapper, additionalMeshPath));
+        Console.WriteLine($"Loaded additional mesh MDF materials={additionalMaterialWrapper.Materials.Count}: {additionalMdfPath}");
+    }
 }
 
 if (exportSeparateAnimationFiles)
@@ -172,7 +183,7 @@ if (exportSeparateAnimationFiles)
     var outDir = string.IsNullOrEmpty(ext) ? outputPath : (Path.GetDirectoryName(outputPath) ?? ".");
     var outExt = string.IsNullOrEmpty(ext) ? ".glb" : ext;
     Directory.CreateDirectory(outDir);
-    if (includeTextures && materialWrapper != null) ExportMaterialTextures(materialWrapper, meshPath, Path.Combine(outDir, "textures"), textureFormat);
+    if (includeTextures && materialWrappers.Count > 0) ExportMaterialTextures(materialWrappers, Path.Combine(outDir, "textures"), textureFormat);
     Console.WriteLine($"Batch exporting {motions.Count} motions to {outDir} (*{outExt})");
     var index = 0;
     var includeSourceInName = motlistPaths.Count + motPaths.Count > 1;
@@ -181,7 +192,7 @@ if (exportSeparateAnimationFiles)
         var safe = SanitizeFileName(string.IsNullOrWhiteSpace(motion.Name) ? $"motion_{index:0000}" : motion.Name);
         var sourcePrefix = includeSourceInName ? SanitizeFileName(source) + "_" : "";
         var target = Path.Combine(outDir, $"{index:0000}_{sourcePrefix}{safe}{outExt}");
-        ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrapper, meshPath, includeTextures: false);
+        ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrappers, includeTextures: false, additionalResources);
         Console.WriteLine($"[{index + 1}/{motions.Count}] {target}");
         index++;
     }
@@ -189,16 +200,24 @@ if (exportSeparateAnimationFiles)
 else
 {
     var singleOutputPath = ResolveSingleOutputPath(outputPath, name);
-    ExportOne(resource, singleOutputPath, includeLods, includeOcc, motions.Select(m => m.Motion), materialWrapper, meshPath, includeTextures);
+    ExportOne(resource, singleOutputPath, includeLods, includeOcc, motions.Select(m => m.Motion), materialWrappers, includeTextures, additionalResources);
 }
 
 Console.WriteLine("DONE");
 
-static void ExportOne(CommonMeshResource resource, string target, bool includeLods, bool includeOcc, IEnumerable<MotFileBase> motions, MaterialGroupWrapper? materials, string meshPath, bool includeTextures)
+static void ExportOne(
+    CommonMeshResource resource,
+    string target,
+    bool includeLods,
+    bool includeOcc,
+    IEnumerable<MotFileBase> motions,
+    IReadOnlyList<(MaterialGroupWrapper Materials, string MeshPath)> materialWrappers,
+    bool includeTextures,
+    IReadOnlyList<CommonMeshResource> additionalResources)
 {
     Directory.CreateDirectory(Path.GetDirectoryName(target) ?? ".");
-    if (includeTextures && materials != null) ExportMaterialTextures(materials, meshPath, Path.Combine(Path.GetDirectoryName(target) ?? ".", "textures"), resource.ExportTextureFormat);
-    resource.ExportToFile(target, includeLods, includeOcc, null, motions, null);
+    if (includeTextures && materialWrappers.Count > 0) ExportMaterialTextures(materialWrappers, Path.Combine(Path.GetDirectoryName(target) ?? ".", "textures"), resource.ExportTextureFormat);
+    resource.ExportToFile(target, includeLods, includeOcc, null, motions, additionalResources);
     NormalizeGlbNames(target);
     Console.WriteLine($"Exported {target} bytes={new FileInfo(target).Length}");
 }
@@ -298,70 +317,73 @@ static string StripMeshNamePrefix(string name)
     return markerIndex >= 0 ? name[(markerIndex + 1)..] : name;
 }
 
-static void ExportMaterialTextures(MaterialGroupWrapper materials, string meshPath, string outputDir, string textureFormat)
+static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials, string MeshPath)> materialGroups, string outputDir, string textureFormat)
 {
     Directory.CreateDirectory(outputDir);
     var exported = new Dictionary<string, object>();
-    foreach (var mat in materials.Materials)
+    foreach (var (materials, meshPath) in materialGroups)
     {
-        var matEntries = new List<object>();
-        foreach (var tex in mat.Textures)
+        foreach (var mat in materials.Materials)
         {
-            if (string.IsNullOrWhiteSpace(tex.texPath) || tex.texPath.Contains("/null", StringComparison.OrdinalIgnoreCase)) continue;
-            var source = ResolveLooseGameFile(meshPath, tex.texPath, "tex");
-            if (source == null) continue;
-            FileHandler? texHandler = null;
-            FileHandler? streamHandler = null;
-            try
+            var matEntries = new List<object>();
+            foreach (var tex in mat.Textures)
             {
-                texHandler = new FileHandler(source);
-                TexFile texFile = new TexFile(texHandler);
-                if (!texFile.Read()) continue;
-                DecompressTextureIfNeeded(texFile);
-                if (texFile.Header.flags.HasFlag(ReeLib.Tex.TexFlags.IsStreaming))
+                if (string.IsNullOrWhiteSpace(tex.texPath) || tex.texPath.Contains("/null", StringComparison.OrdinalIgnoreCase)) continue;
+                var source = ResolveLooseGameFile(meshPath, tex.texPath, "tex");
+                if (source == null) continue;
+                FileHandler? texHandler = null;
+                FileHandler? streamHandler = null;
+                try
                 {
-                    var streamCandidate = ResolveLooseGameFile(meshPath, PathUtils.GetStreamingPath(tex.texPath), "tex");
-                    if (streamCandidate != null)
+                    texHandler = new FileHandler(source);
+                    TexFile texFile = new TexFile(texHandler);
+                    if (!texFile.Read()) continue;
+                    DecompressTextureIfNeeded(texFile);
+                    if (texFile.Header.flags.HasFlag(ReeLib.Tex.TexFlags.IsStreaming))
                     {
-                        streamHandler = new FileHandler(streamCandidate);
-                        var streamTex = new TexFile(streamHandler);
-                        if (streamTex.Read())
+                        var streamCandidate = ResolveLooseGameFile(meshPath, PathUtils.GetStreamingPath(tex.texPath), "tex");
+                        if (streamCandidate != null)
                         {
-                            DecompressTextureIfNeeded(streamTex);
-                            texFile = streamTex;
+                            streamHandler = new FileHandler(streamCandidate);
+                            var streamTex = new TexFile(streamHandler);
+                            if (streamTex.Read())
+                            {
+                                DecompressTextureIfNeeded(streamTex);
+                                texFile = streamTex;
+                            }
                         }
                     }
-                }
-                var outName = TextureOutputName(mat, tex, textureFormat);
-                var outPath = Path.Combine(outputDir, outName);
-                if (textureFormat == "dds")
-                {
-                    texFile.SaveAsDDS(outPath);
-                }
-                else
-                {
-                    var tempDds = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(outName) + ".dds");
-                    texFile.SaveAsDDS(tempDds);
-                    ConvertDdsToPng(tempDds, outPath);
-                    try { File.Delete(tempDds); }
-                    catch (Exception cleanupError)
+                    var outName = TextureOutputName(mat, tex, textureFormat);
+                    var outPath = Path.Combine(outputDir, outName);
+                    if (textureFormat == "dds")
                     {
-                        Console.WriteLine($"WARNING: temporary DDS cleanup failed {tempDds}: {cleanupError.Message}");
+                        texFile.SaveAsDDS(outPath);
                     }
+                    else
+                    {
+                        var tempDds = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(outName) + ".dds");
+                        texFile.SaveAsDDS(tempDds);
+                        ConvertDdsToPng(tempDds, outPath);
+                        try { File.Delete(tempDds); }
+                        catch (Exception cleanupError)
+                        {
+                            Console.WriteLine($"WARNING: temporary DDS cleanup failed {tempDds}: {cleanupError.Message}");
+                        }
+                    }
+                    matEntries.Add(new { type = tex.texType, gamePath = tex.texPath, source, output = outPath });
                 }
-                matEntries.Add(new { type = tex.texType, gamePath = tex.texPath, source, output = outPath });
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"WARNING: texture export failed {tex.texPath}: {ex.Message}");
+                }
+                finally
+                {
+                    streamHandler?.Dispose();
+                    texHandler?.Dispose();
+                }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"WARNING: texture export failed {tex.texPath}: {ex.Message}");
-            }
-            finally
-            {
-                streamHandler?.Dispose();
-                texHandler?.Dispose();
-            }
+            exported[mat.Name] = matEntries;
         }
-        exported[mat.Name] = matEntries;
     }
     var manifest = Path.Combine(outputDir, "materials.textures.json");
     File.WriteAllText(manifest, JsonSerializer.Serialize(exported, new JsonSerializerOptions { WriteIndented = true }));
@@ -438,6 +460,41 @@ static string? ResolveTool(string exe)
         if (File.Exists(candidate)) return candidate;
     }
     return null;
+}
+
+static MeshFile LoadMesh(string meshPath, string? explicitStreamingPath, bool allowMissingStreaming)
+{
+    using var meshHandler = new FileHandler(meshPath);
+    var mesh = new MeshFile(meshHandler);
+    if (!mesh.Read()) throw new Exception($"REE-Lib failed to read mesh: {meshPath}");
+    Console.WriteLine($"Loaded mesh {meshPath} version={mesh.Header.version} requiresStreaming={mesh.RequiresStreamingData} materials={mesh.MaterialNames.Count} bones={mesh.BoneData?.Bones.Count ?? 0} lods={mesh.MeshData?.LODs.Count ?? 0}");
+
+    if (!string.IsNullOrWhiteSpace(explicitStreamingPath))
+    {
+        using var streamingHandler = new FileHandler(explicitStreamingPath);
+        mesh.LoadStreamingData(streamingHandler);
+        Console.WriteLine($"Loaded explicit streaming buffer: {explicitStreamingPath}");
+    }
+    else if (mesh.RequiresStreamingData)
+    {
+        var candidate = FindStreamingCandidate(meshPath);
+        if (candidate != null)
+        {
+            using var streamingHandler = new FileHandler(candidate);
+            mesh.LoadStreamingData(streamingHandler);
+            Console.WriteLine($"Loaded auto streaming buffer: {candidate}");
+        }
+        else if (allowMissingStreaming)
+        {
+            Console.WriteLine($"WARNING: mesh requires streaming data, but no candidate was found. Output may be invalid: {meshPath}");
+        }
+        else
+        {
+            throw new FileNotFoundException("Mesh requires streaming data, but no streaming buffer was found. Pass --streaming for the primary mesh or extract the natives/STM/streaming sibling path.", meshPath);
+        }
+    }
+
+    return mesh;
 }
 
 static string? FindStreamingCandidate(string meshPath)

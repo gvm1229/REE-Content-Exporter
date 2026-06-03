@@ -133,6 +133,19 @@ REE-Content-Exporter.exe `
   --output "<path-to-output>\ch0000_all_motlists_all_animations.glb"
 ```
 
+
+To export a character assembled from multiple mesh files into one outliner armature, pass one primary `--mesh` and repeat `--additional-mesh` for each extra part you want included. Additional meshes use automatic streaming-buffer lookup and automatic sibling MDF lookup:
+
+```powershell
+REE-Content-Exporter.exe `
+  --mesh "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\ch\ch01\ch0100\00\ch0100_00.mesh.251121828" `
+  --additional-mesh "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\ch\ch01\ch0100\10\ch0100_10.mesh.251121828" `
+  --additional-mesh "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\ch\ch01\ch0100\20\ch0100_20.mesh.251121828" `
+  --motlist-dir "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\animation\ch\ch01\ch0100\motlist" `
+  --texture-format png `
+  --output "<path-to-output>\ch0100_combined_all_animations.glb"
+```
+
 If `--output` has no `.glb` or `.fbx` extension, it is treated as a folder and the single combined export is written as `<mesh-name>_all_animations.glb` inside it.
 
 Use `--split-animations` to force one output file per animation. `--batch-motlist` remains as a compatibility alias for split export when only one MOT/MOTLIST source is supplied.
