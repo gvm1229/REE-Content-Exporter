@@ -222,3 +222,81 @@ Output folder: `C:/Users/hojin/Downloads/PRAG_PROJ/ree_exporter/texture_attempt1
 
 - Package: `REE-Content-Exporter.PRAGMATA-poc-0.3.1.zip`
 - SHA256: `EAA8EA231CD519F73B0252B1EBC68624AAB678B30DF417D6E7E1B3CD8DD8A381`
+
+## 0.3.2 — original RE mesh naming and animation verification
+
+Completed: 2026-06-04 02:03:06 +09:00
+
+### What was attempted
+
+After the texture fix, Blender import showed that exported armature and mesh object names were derived from the absolute filesystem path, for example starting with:
+
+```text
+D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\charact
+```
+
+That was not useful for DCC workflows. Object names should be derived from the original RE Engine mesh name.
+
+During the same check, an output folder without animation was identified. That folder was from a texture-only verification run that intentionally used `--no-animations`, not from the normal full-export path.
+
+### Result
+
+The exporter now uses the RE mesh filename stem for the `CommonMeshResource` name.
+
+### Fix
+
+Changed resource naming from:
+
+```csharp
+PathUtils.GetFilepathWithoutExtensionOrVersion(meshPath)
+```
+
+to:
+
+```csharp
+PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath)
+```
+
+For `ch0000_00_playergame.mesh.251121828`, Blender now imports:
+
+- armature: `ch0000_00_playergame`
+- mesh objects: `ch0000_00_playergame_Group_...`
+
+### What we learned
+
+- REE Content Editor's exporter uses the resource name as the scene/root naming seed.
+- The CLI should pass a game-asset name, not a host filesystem path.
+- Animation is preserved as long as `--motlist` or `--mot` is supplied and `--no-animations` is not used.
+
+### Improvements over 0.3.1
+
+- Clean Blender object names.
+- No absolute path fragments in imported object names.
+- Confirmed full export path still includes animation after the texture fix.
+
+### Verification evidence
+
+Output:
+
+```text
+C:/Users/hojin/Downloads/PRAG_PROJ/ree_exporter/name_anim_attempt1/ch0000_00_playergame_0320.glb
+```
+
+Blender 3.6 import:
+
+- objects: 56
+- mesh objects: 21
+- armatures: 1
+- armature name: `ch0000_00_playergame`
+- mesh sample: `ch0000_00_playergame_Group_0_sub0__ch0000_00_NThruster`
+- actions: 1
+- action name: `ch0000_General_0320_Walk_Loop_VerA_ch0000_00_playergame`
+- f-curves: 790
+- action range: `[0.0, 52.0]`
+- bad path-named objects: 0
+- PNG textures: 54
+
+### Package evidence
+
+- Package: `REE-Content-Exporter.PRAGMATA-poc-0.3.2.zip`
+- SHA256: `2A4AFE53AE6CB74E75E33B83B2C35D238FFCA18864540EDCA1A1CF28EED15AF5`

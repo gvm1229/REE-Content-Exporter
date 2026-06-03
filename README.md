@@ -33,3 +33,18 @@ Apply:
 ```powershell
 git -C ..\REE-Content-Editor apply ..\REE-Content-Exporter\patches\ree-content-editor-commonmeshresource-material-textures.patch
 ```
+
+## Usage
+
+Example PRAGMATA export with one selected walk-loop animation:
+
+```powershell
+REE-Content-Exporter.exe `
+  --mesh "D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\ch\ch00\ch0000\00\ch0000_00_playergame.mesh.251121828" `
+  --motlist "D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist\ch0000_general.motlist.1057" `
+  --animation-name 0320 `
+  --texture-format png `
+  --output "C:\Exports\ch0000_00_playergame_0320.glb"
+```
+
+Use `--batch-motlist` with a folder output to export selected MOTLIST entries as separate files.

@@ -102,7 +102,7 @@ if (includeAnimations)
     }
 }
 
-var name = PathUtils.GetFilepathWithoutExtensionOrVersion(meshPath).ToString();
+var name = PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString();
 var resource = new CommonMeshResource(name, null!)
 {
     NativeMesh = mesh,
@@ -381,4 +381,3 @@ static string SanitizeFileName(string name)
     foreach (var ch in Path.GetInvalidFileNameChars()) name = name.Replace(ch, '_');
     return string.IsNullOrWhiteSpace(name) ? "unnamed" : name;
 }
-
