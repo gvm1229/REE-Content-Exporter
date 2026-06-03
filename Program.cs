@@ -28,7 +28,7 @@ if (args.Length == 0 || HasFlag(args, "--help"))
 {
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations] [--skip-missing-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     return;
 }
 
@@ -52,6 +52,7 @@ var textureFormat = (GetArg(args, "--texture-format") ?? "png").ToLowerInvariant
 if (textureFormat is not ("png" or "dds")) throw new ArgumentException("--texture-format must be png or dds");
 var batchMotlist = HasFlag(args, "--batch-motlist");
 var splitAnimations = HasFlag(args, "--split-animations");
+var skipMissingAnimationBones = HasFlag(args, "--skip-missing-animation-bones");
 var includeLods = HasFlag(args, "--include-lods");
 var includeOcc = HasFlag(args, "--include-occlusion");
 var allowMissingStreaming = HasFlag(args, "--allow-missing-streaming");
@@ -111,6 +112,7 @@ var resource = new CommonMeshResource(name, null!)
     ExportTextureFormat = textureFormat,
     ExportRootNodeName = "Armature",
     ExportStripMeshNamePrefix = true,
+    ExportSkipMotionsWithMissingBones = skipMissingAnimationBones,
 };
 var additionalResources = new List<CommonMeshResource>();
 foreach (var additionalMeshPath in additionalMeshPaths)
@@ -219,7 +221,37 @@ static void ExportOne(
     if (includeTextures && materialWrappers.Count > 0) ExportMaterialTextures(materialWrappers, Path.Combine(Path.GetDirectoryName(target) ?? ".", "textures"), resource.ExportTextureFormat);
     resource.ExportToFile(target, includeLods, includeOcc, null, motions, additionalResources);
     NormalizeGlbNames(target);
+    if (resource.ExportSkipMotionsWithMissingBones)
+        WriteSkippedAnimationReport(target, resource.ExportSkippedAnimations);
     Console.WriteLine($"Exported {target} bytes={new FileInfo(target).Length}");
+}
+
+static void WriteSkippedAnimationReport(string target, IReadOnlyList<string> skippedAnimations)
+{
+    var reportPath = Path.Combine(
+        Path.GetDirectoryName(target) ?? ".",
+        Path.GetFileNameWithoutExtension(target) + ".skipped-animations.md");
+    using var writer = new StreamWriter(reportPath, append: false, Encoding.UTF8);
+    writer.WriteLine("# Skipped animations");
+    writer.WriteLine();
+    writer.WriteLine($"Output: `{target}`");
+    writer.WriteLine();
+    writer.WriteLine("Reason: `--skip-missing-animation-bones` was enabled, so animations that reference bones missing from the exported mesh skeleton were excluded instead of adding placeholder `hash...` bones.");
+    writer.WriteLine();
+    if (skippedAnimations.Count == 0)
+    {
+        writer.WriteLine("No animations were skipped.");
+    }
+    else
+    {
+        writer.WriteLine($"Skipped animation count: {skippedAnimations.Count}");
+        writer.WriteLine();
+        foreach (var skipped in skippedAnimations)
+        {
+            writer.WriteLine($"- {skipped}");
+        }
+    }
+    Console.WriteLine($"Wrote skipped animation report: {reportPath}");
 }
 
 static string ResolveSingleOutputPath(string outputPath, string meshName)

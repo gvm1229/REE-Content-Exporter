@@ -28,6 +28,7 @@ REE-Content-Exporter/
   README.md
   REE-Content-Exporter.csproj
   export_ch0000_all_motlists_glb.bat
+  export_ch0100_combined_glb.bat
   docs/
     CHANGELOG.md
   patches/
@@ -149,6 +150,24 @@ REE-Content-Exporter.exe `
 If `--output` has no `.glb` or `.fbx` extension, it is treated as a folder and the single combined export is written as `<mesh-name>_all_animations.glb` inside it.
 
 Use `--split-animations` to force one output file per animation. `--batch-motlist` remains as a compatibility alias for split export when only one MOT/MOTLIST source is supplied.
+
+
+Use `--skip-missing-animation-bones` to avoid creating placeholder `hash...` bones for animations that reference bones missing from the exported mesh skeleton. When this flag is active, skipped animations are documented in a sidecar Markdown report next to the output file:
+
+```powershell
+REE-Content-Exporter.exe `
+  --mesh "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\ch\ch00\ch0000\00\ch0000_00_playergame.mesh.251121828" `
+  --motlist-dir "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist" `
+  --skip-missing-animation-bones `
+  --texture-format png `
+  --output "<path-to-output>\ch0000_all_motlists_all_animations.glb"
+```
+
+For that example, the report path is:
+
+```text
+<path-to-output>\ch0000_all_motlists_all_animations.skipped-animations.md
+```
 
 Export naming is normalized for DCC import:
 

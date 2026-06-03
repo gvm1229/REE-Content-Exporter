@@ -1,4 +1,27 @@
-# CHANGELOG
+﻿# CHANGELOG
+
+## 0.5.1 - missing animation bone skip report
+
+Completed: 2026-06-04
+
+### What was attempted
+
+Full MOTLIST exports can include animations that reference helper, runtime, weapon, or interaction bones absent from the exported mesh skeleton. Previously, REE Content Editor's export path added placeholder `hash...` bones for those missing references.
+
+### Result
+
+The CLI now supports `--skip-missing-animation-bones`. When enabled, animations that reference bones missing from the exported mesh skeleton are excluded instead of creating placeholder bones. A sidecar Markdown report is generated next to the GLB/FBX output and lists every skipped animation plus the missing bone hashes that caused the skip.
+
+### Improvements over 0.5.0
+
+- Added `--skip-missing-animation-bones` CLI option.
+- Added pre-export missing-bone detection for MOT animations.
+- Added `<output-name>.skipped-animations.md` report generation.
+- Preserved default behavior for users who still want placeholder bones and maximum animation inclusion.
+
+### Verification evidence
+
+- `dotnet build -c Release` succeeded with 0 warnings and 0 errors.
 
 ## 0.5.0 ? additional mesh export support
 
@@ -381,4 +404,5 @@ Blender 3.6 import:
 
 - Package: `REE-Content-Exporter.PRAGMATA-poc-0.3.2.zip`
 - SHA256: `2A4AFE53AE6CB74E75E33B83B2C35D238FFCA18864540EDCA1A1CF28EED15AF5`
+
 
