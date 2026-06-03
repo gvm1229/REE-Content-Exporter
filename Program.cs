@@ -196,7 +196,7 @@ if (exportSeparateAnimationFiles)
         var safe = SanitizeFileName(string.IsNullOrWhiteSpace(motion.Name) ? $"motion_{index:0000}" : motion.Name);
         var sourcePrefix = includeSourceInName ? SanitizeFileName(source) + "_" : "";
         var targetBase = Path.Combine(outDir, $"{index:0000}_{sourcePrefix}{safe}{outExt}");
-        var target = ResolveExportJobOutputPath(targetBase, BuildSourceFiles(meshPath, additionalMeshPaths, [source], []), safe);
+        var target = ResolveExportJobOutputPath(targetBase, meshPath, BuildSourceFiles(meshPath, additionalMeshPaths, [source], []), safe);
         ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrappers, includeTextures, additionalResources);
         Console.WriteLine($"[{index + 1}/{motions.Count}] {target}");
         index++;
@@ -204,7 +204,7 @@ if (exportSeparateAnimationFiles)
 }
 else
 {
-    var singleOutputPath = ResolveSingleOutputPath(outputPath, name, BuildSourceFiles(meshPath, additionalMeshPaths, motlistPaths, motPaths), animationFilter);
+    var singleOutputPath = ResolveSingleOutputPath(outputPath, meshPath, name, BuildSourceFiles(meshPath, additionalMeshPaths, motlistPaths, motPaths), animationFilter);
     ExportOne(resource, singleOutputPath, includeLods, includeOcc, motions.Select(m => m.Motion), materialWrappers, includeTextures, additionalResources);
 }
 
@@ -287,20 +287,20 @@ static void WriteSkippedAnimationBoneChannelReport(string target, IReadOnlyList<
     Console.WriteLine($"Wrote skipped animation bone channel report: {reportPath}");
 }
 
-static string ResolveSingleOutputPath(string outputPath, string meshName, IReadOnlyList<string> sourceFiles, string? animationFilter)
+static string ResolveSingleOutputPath(string outputPath, string meshPath, string meshName, IReadOnlyList<string> sourceFiles, string? animationFilter)
 {
     if (!string.IsNullOrEmpty(Path.GetExtension(outputPath)))
-        return ResolveExportJobOutputPath(outputPath, sourceFiles, animationFilter);
+        return ResolveExportJobOutputPath(outputPath, meshPath, sourceFiles, animationFilter);
 
     Directory.CreateDirectory(outputPath);
-    return ResolveExportJobOutputPath(Path.Combine(outputPath, $"{SanitizeFileName(meshName)}_all_animations.glb"), sourceFiles, animationFilter);
+    return ResolveExportJobOutputPath(Path.Combine(outputPath, $"{SanitizeFileName(meshName)}_all_animations.glb"), meshPath, sourceFiles, animationFilter);
 }
 
-static string ResolveExportJobOutputPath(string outputFilePath, IReadOnlyList<string> sourceFiles, string? label)
+static string ResolveExportJobOutputPath(string outputFilePath, string meshPath, IReadOnlyList<string> sourceFiles, string? label)
 {
     var parentDir = Path.GetDirectoryName(outputFilePath) ?? ".";
     var outputFileName = Path.GetFileName(outputFilePath);
-    var jobDir = Path.Combine(parentDir, BuildExportJobFolderName(sourceFiles, label));
+    var jobDir = Path.Combine(parentDir, BuildExportJobFolderName(meshPath, sourceFiles, label));
     Directory.CreateDirectory(jobDir);
     return Path.Combine(jobDir, outputFileName);
 }
@@ -314,27 +314,13 @@ static IReadOnlyList<string> BuildSourceFiles(string meshPath, IReadOnlyList<str
     return files;
 }
 
-static string BuildExportJobFolderName(IReadOnlyList<string> sourceFiles, string? label)
+static string BuildExportJobFolderName(string meshPath, IReadOnlyList<string> sourceFiles, string? label)
 {
-    var parts = sourceFiles
-        .Where(path => !string.IsNullOrWhiteSpace(path))
-        .Select(SourceNamePart)
-        .Where(part => !string.IsNullOrWhiteSpace(part))
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToList();
-    if (!string.IsNullOrWhiteSpace(label)) parts.Add(SanitizeFileName(label));
-    if (parts.Count == 0) parts.Add("export");
-
-    var hash = ShortHash(string.Join("|", sourceFiles) + "|" + label);
-    var displayParts = parts.Take(5).ToList();
-    if (parts.Count > displayParts.Count)
-        displayParts.Add($"plus{parts.Count - displayParts.Count}");
-
-    var name = string.Join("__", displayParts);
-    const int maxBaseLength = 120;
-    if (name.Length > maxBaseLength)
-        name = name[..maxBaseLength].TrimEnd('_');
-    return $"{name}__{hash}";
+    var meshName = SourceNamePart(meshPath);
+    if (string.IsNullOrWhiteSpace(meshName)) meshName = "export";
+    var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+    var hash = ShortHash(string.Join("|", sourceFiles) + "|" + label + "|" + timestamp);
+    return $"{meshName}__{timestamp}__{hash}";
 }
 
 static string SourceNamePart(string source)
@@ -348,7 +334,7 @@ static string SourceNamePart(string source)
 static string ShortHash(string value)
 {
     var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-    return Convert.ToHexString(bytes, 0, 4).ToLowerInvariant();
+    return Convert.ToHexString(bytes, 0, 3).ToLowerInvariant();
 }
 
 static void NormalizeGlbNames(string target)
