@@ -88,6 +88,30 @@ Apply:
 git -C ..\REE-Content-Editor apply ..\REE-Content-Exporter\patches\ree-content-editor-commonmeshresource-material-textures.patch
 ```
 
+
+## Output layout
+
+Each export job writes into its own subfolder under the requested output location. The subfolder name is derived from the mesh and animation source filenames used for that export, with a short hash suffix to keep names unique and path-safe.
+
+For example, if `--output` is:
+
+```text
+C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter\ch0000_all_motlists_all_animations.glb
+```
+
+then the actual files are written under a job folder such as:
+
+```text
+C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter\ch0000_00_playergame__ch0000_damage__ch0000_damage_tree__ch0000_develop__ch0000_emp_backarm__plus25__<hash>\
+  ch0000_all_motlists_all_animations.glb
+  textures\
+    materials.textures.json
+    ...
+  ch0000_all_motlists_all_animations.skipped-animation-bones.md
+```
+
+This prevents GLB/FBX files, texture folders, and Markdown reports from overwriting one another when different export jobs share the same parent output folder.
+
 ## Usage
 
 Choose the output format with the extension in `--output`:

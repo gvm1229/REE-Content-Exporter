@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 0.5.3 - per-job output folders
+
+Completed: 2026-06-04
+
+### What was attempted
+
+Exporter products were written directly beside the requested GLB/FBX path: the model file, `textures/`, and any Markdown reports. Running multiple jobs in the same parent output folder could overwrite texture folders or reports from earlier jobs.
+
+### Result
+
+Every export job now writes into a dedicated subfolder. The folder name is derived from the mesh and animation source filenames used for that job, plus a short hash suffix for uniqueness and path safety. The requested GLB/FBX filename is preserved inside that job folder.
+
+### Improvements over 0.5.2
+
+- Added automatic per-job output folder creation.
+- Folder names are source-file based and hash-suffixed.
+- Texture folders and skipped-animation reports now stay isolated per export job.
+- Split-animation exports also create separate job folders per animation output.
+
+### Verification evidence
+
+- `dotnet build -c Release` succeeded with 0 warnings and 0 errors.
+- Smoke export wrote `smoke.glb` under `.omx/tmp-job-folder-smoke/ch0000_00_playergame__<hash>/`.
+
 ## 0.5.2 - no-placeholder animation bone mode
 
 Completed: 2026-06-04

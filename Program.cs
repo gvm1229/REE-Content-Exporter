@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -40,7 +41,7 @@ var motlistPaths = GetArgs(args, "--motlist").ToList();
 var motlistDir = GetArg(args, "--motlist-dir");
 if (!string.IsNullOrWhiteSpace(motlistDir))
 {
-    motlistPaths.AddRange(Directory.GetFiles(motlistDir, "*.motlist*", SearchOption.AllDirectories));
+    motlistPaths.AddRange(Directory.GetFiles(motlistDir, "*.motlist*", SearchOption.AllDirectories).OrderBy(path => path, StringComparer.OrdinalIgnoreCase));
 }
 motlistPaths = motlistPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var motPaths = GetArgs(args, "--mot").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -187,7 +188,6 @@ if (exportSeparateAnimationFiles)
     var outDir = string.IsNullOrEmpty(ext) ? outputPath : (Path.GetDirectoryName(outputPath) ?? ".");
     var outExt = string.IsNullOrEmpty(ext) ? ".glb" : ext;
     Directory.CreateDirectory(outDir);
-    if (includeTextures && materialWrappers.Count > 0) ExportMaterialTextures(materialWrappers, Path.Combine(outDir, "textures"), textureFormat);
     Console.WriteLine($"Batch exporting {motions.Count} motions to {outDir} (*{outExt})");
     var index = 0;
     var includeSourceInName = motlistPaths.Count + motPaths.Count > 1;
@@ -195,15 +195,16 @@ if (exportSeparateAnimationFiles)
     {
         var safe = SanitizeFileName(string.IsNullOrWhiteSpace(motion.Name) ? $"motion_{index:0000}" : motion.Name);
         var sourcePrefix = includeSourceInName ? SanitizeFileName(source) + "_" : "";
-        var target = Path.Combine(outDir, $"{index:0000}_{sourcePrefix}{safe}{outExt}");
-        ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrappers, includeTextures: false, additionalResources);
+        var targetBase = Path.Combine(outDir, $"{index:0000}_{sourcePrefix}{safe}{outExt}");
+        var target = ResolveExportJobOutputPath(targetBase, BuildSourceFiles(meshPath, additionalMeshPaths, [source], []), safe);
+        ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrappers, includeTextures, additionalResources);
         Console.WriteLine($"[{index + 1}/{motions.Count}] {target}");
         index++;
     }
 }
 else
 {
-    var singleOutputPath = ResolveSingleOutputPath(outputPath, name);
+    var singleOutputPath = ResolveSingleOutputPath(outputPath, name, BuildSourceFiles(meshPath, additionalMeshPaths, motlistPaths, motPaths), animationFilter);
     ExportOne(resource, singleOutputPath, includeLods, includeOcc, motions.Select(m => m.Motion), materialWrappers, includeTextures, additionalResources);
 }
 
@@ -286,12 +287,68 @@ static void WriteSkippedAnimationBoneChannelReport(string target, IReadOnlyList<
     Console.WriteLine($"Wrote skipped animation bone channel report: {reportPath}");
 }
 
-static string ResolveSingleOutputPath(string outputPath, string meshName)
+static string ResolveSingleOutputPath(string outputPath, string meshName, IReadOnlyList<string> sourceFiles, string? animationFilter)
 {
-    if (!string.IsNullOrEmpty(Path.GetExtension(outputPath))) return outputPath;
+    if (!string.IsNullOrEmpty(Path.GetExtension(outputPath)))
+        return ResolveExportJobOutputPath(outputPath, sourceFiles, animationFilter);
 
     Directory.CreateDirectory(outputPath);
-    return Path.Combine(outputPath, $"{SanitizeFileName(meshName)}_all_animations.glb");
+    return ResolveExportJobOutputPath(Path.Combine(outputPath, $"{SanitizeFileName(meshName)}_all_animations.glb"), sourceFiles, animationFilter);
+}
+
+static string ResolveExportJobOutputPath(string outputFilePath, IReadOnlyList<string> sourceFiles, string? label)
+{
+    var parentDir = Path.GetDirectoryName(outputFilePath) ?? ".";
+    var outputFileName = Path.GetFileName(outputFilePath);
+    var jobDir = Path.Combine(parentDir, BuildExportJobFolderName(sourceFiles, label));
+    Directory.CreateDirectory(jobDir);
+    return Path.Combine(jobDir, outputFileName);
+}
+
+static IReadOnlyList<string> BuildSourceFiles(string meshPath, IReadOnlyList<string> additionalMeshPaths, IReadOnlyList<string> motlistPathsOrNames, IReadOnlyList<string> motPaths)
+{
+    var files = new List<string> { meshPath };
+    files.AddRange(additionalMeshPaths);
+    files.AddRange(motlistPathsOrNames);
+    files.AddRange(motPaths);
+    return files;
+}
+
+static string BuildExportJobFolderName(IReadOnlyList<string> sourceFiles, string? label)
+{
+    var parts = sourceFiles
+        .Where(path => !string.IsNullOrWhiteSpace(path))
+        .Select(SourceNamePart)
+        .Where(part => !string.IsNullOrWhiteSpace(part))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    if (!string.IsNullOrWhiteSpace(label)) parts.Add(SanitizeFileName(label));
+    if (parts.Count == 0) parts.Add("export");
+
+    var hash = ShortHash(string.Join("|", sourceFiles) + "|" + label);
+    var displayParts = parts.Take(5).ToList();
+    if (parts.Count > displayParts.Count)
+        displayParts.Add($"plus{parts.Count - displayParts.Count}");
+
+    var name = string.Join("__", displayParts);
+    const int maxBaseLength = 120;
+    if (name.Length > maxBaseLength)
+        name = name[..maxBaseLength].TrimEnd('_');
+    return $"{name}__{hash}";
+}
+
+static string SourceNamePart(string source)
+{
+    if (source.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || !source.Contains(Path.DirectorySeparatorChar) && !source.Contains(Path.AltDirectorySeparatorChar))
+        return SanitizeFileName(source);
+
+    return SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(source).ToString());
+}
+
+static string ShortHash(string value)
+{
+    var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+    return Convert.ToHexString(bytes, 0, 4).ToLowerInvariant();
 }
 
 static void NormalizeGlbNames(string target)
