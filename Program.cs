@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using ContentEditor.App.FileLoaders;
 using ReeLib;
 using ReeLib.Common;
@@ -32,6 +33,8 @@ if (args.Length == 0 || HasFlag(args, "--help"))
     Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     return;
 }
+
+using var progress = new ProgressStatus();
 
 var meshPath = GetArg(args, "--mesh") ?? throw new ArgumentException("Missing --mesh");
 var additionalMeshPaths = GetArgs(args, "--additional-mesh").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -197,18 +200,18 @@ if (exportSeparateAnimationFiles)
         var sourcePrefix = includeSourceInName ? SanitizeFileName(source) + "_" : "";
         var targetBase = Path.Combine(outDir, $"{index:0000}_{sourcePrefix}{safe}{outExt}");
         var target = ResolveExportJobOutputPath(targetBase, meshPath, BuildSourceFiles(meshPath, additionalMeshPaths, [source], []), safe);
-        ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrappers, includeTextures, additionalResources);
-        Console.WriteLine($"[{index + 1}/{motions.Count}] {target}");
+        ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrappers, includeTextures, additionalResources, progress);
+        progress.WriteLine($"[{index + 1}/{motions.Count}] {target}");
         index++;
     }
 }
 else
 {
     var singleOutputPath = ResolveSingleOutputPath(outputPath, meshPath, name, BuildSourceFiles(meshPath, additionalMeshPaths, motlistPaths, motPaths), animationFilter);
-    ExportOne(resource, singleOutputPath, includeLods, includeOcc, motions.Select(m => m.Motion), materialWrappers, includeTextures, additionalResources);
+    ExportOne(resource, singleOutputPath, includeLods, includeOcc, motions.Select(m => m.Motion), materialWrappers, includeTextures, additionalResources, progress);
 }
 
-Console.WriteLine("DONE");
+progress.WriteLine("DONE");
 
 static void ExportOne(
     CommonMeshResource resource,
@@ -218,20 +221,36 @@ static void ExportOne(
     IEnumerable<MotFileBase> motions,
     IReadOnlyList<(MaterialGroupWrapper Materials, string MeshPath)> materialWrappers,
     bool includeTextures,
-    IReadOnlyList<CommonMeshResource> additionalResources)
+    IReadOnlyList<CommonMeshResource> additionalResources,
+    ProgressStatus progress)
 {
     Directory.CreateDirectory(Path.GetDirectoryName(target) ?? ".");
-    if (includeTextures && materialWrappers.Count > 0) ExportMaterialTextures(materialWrappers, Path.Combine(Path.GetDirectoryName(target) ?? ".", "textures"), resource.ExportTextureFormat);
-    resource.ExportToFile(target, includeLods, includeOcc, null, motions, additionalResources);
-    NormalizeGlbNames(target);
-    if (resource.ExportSkipMotionsWithMissingBones)
-        WriteSkippedAnimationReport(target, resource.ExportSkippedAnimations);
-    if (resource.ExportNoPlaceholderAnimationBones)
-        WriteSkippedAnimationBoneChannelReport(target, resource.ExportSkippedAnimationBoneChannels);
-    Console.WriteLine($"Exported {target} bytes={new FileInfo(target).Length}");
+    try
+    {
+        if (includeTextures && materialWrappers.Count > 0)
+            ExportMaterialTextures(materialWrappers, Path.Combine(Path.GetDirectoryName(target) ?? ".", "textures"), resource.ExportTextureFormat, progress);
+
+        resource.ExportAnimationProgress = (current, total, name) => progress.Update($"Exporting animation {current}/{total}: {name}");
+        resource.ExportProgress = progress.Update;
+        progress.Start("Preparing export");
+        resource.ExportToFile(target, includeLods, includeOcc, null, motions, additionalResources);
+        progress.Update("Finalizing output");
+        NormalizeGlbNames(target);
+        if (resource.ExportSkipMotionsWithMissingBones)
+            WriteSkippedAnimationReport(target, resource.ExportSkippedAnimations, progress);
+        if (resource.ExportNoPlaceholderAnimationBones)
+            WriteSkippedAnimationBoneChannelReport(target, resource.ExportSkippedAnimationBoneChannels, progress);
+    }
+    finally
+    {
+        resource.ExportAnimationProgress = null;
+        resource.ExportProgress = null;
+        progress.Stop();
+    }
+    progress.WriteLine($"Exported {target} bytes={new FileInfo(target).Length}");
 }
 
-static void WriteSkippedAnimationReport(string target, IReadOnlyList<string> skippedAnimations)
+static void WriteSkippedAnimationReport(string target, IReadOnlyList<string> skippedAnimations, ProgressStatus progress)
 {
     var reportPath = Path.Combine(
         Path.GetDirectoryName(target) ?? ".",
@@ -256,10 +275,10 @@ static void WriteSkippedAnimationReport(string target, IReadOnlyList<string> ski
             writer.WriteLine($"- {skipped}");
         }
     }
-    Console.WriteLine($"Wrote skipped animation report: {reportPath}");
+    progress.WriteLine($"Wrote skipped animation report: {reportPath}");
 }
 
-static void WriteSkippedAnimationBoneChannelReport(string target, IReadOnlyList<string> skippedBoneChannels)
+static void WriteSkippedAnimationBoneChannelReport(string target, IReadOnlyList<string> skippedBoneChannels, ProgressStatus progress)
 {
     var reportPath = Path.Combine(
         Path.GetDirectoryName(target) ?? ".",
@@ -284,7 +303,7 @@ static void WriteSkippedAnimationBoneChannelReport(string target, IReadOnlyList<
             writer.WriteLine($"- {skipped}");
         }
     }
-    Console.WriteLine($"Wrote skipped animation bone channel report: {reportPath}");
+    progress.WriteLine($"Wrote skipped animation bone channel report: {reportPath}");
 }
 
 static string ResolveSingleOutputPath(string outputPath, string meshPath, string meshName, IReadOnlyList<string> sourceFiles, string? animationFilter)
@@ -424,10 +443,13 @@ static string StripMeshNamePrefix(string name)
     return markerIndex >= 0 ? name[(markerIndex + 1)..] : name;
 }
 
-static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials, string MeshPath)> materialGroups, string outputDir, string textureFormat)
+static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials, string MeshPath)> materialGroups, string outputDir, string textureFormat, ProgressStatus progress)
 {
     Directory.CreateDirectory(outputDir);
     var exported = new Dictionary<string, object>();
+    var textureCount = materialGroups.Sum(group => group.Materials.Materials.Sum(mat => mat.Textures.Count(tex => !string.IsNullOrWhiteSpace(tex.texPath) && !tex.texPath.Contains("/null", StringComparison.OrdinalIgnoreCase))));
+    var textureIndex = 0;
+    progress.Start($"Exporting textures 0/{textureCount}");
     foreach (var (materials, meshPath) in materialGroups)
     {
         foreach (var mat in materials.Materials)
@@ -436,6 +458,8 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
             foreach (var tex in mat.Textures)
             {
                 if (string.IsNullOrWhiteSpace(tex.texPath) || tex.texPath.Contains("/null", StringComparison.OrdinalIgnoreCase)) continue;
+                textureIndex++;
+                progress.Update($"Exporting texture {textureIndex}/{textureCount}: {PathUtils.GetFilenameWithoutExtensionOrVersion(tex.texPath)}");
                 var source = ResolveLooseGameFile(meshPath, tex.texPath, "tex");
                 if (source == null) continue;
                 FileHandler? texHandler = null;
@@ -481,7 +505,7 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"WARNING: texture export failed {tex.texPath}: {ex.Message}");
+                    progress.WriteLine($"WARNING: texture export failed {tex.texPath}: {ex.Message}");
                 }
                 finally
                 {
@@ -494,7 +518,8 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
     }
     var manifest = Path.Combine(outputDir, "materials.textures.json");
     File.WriteAllText(manifest, JsonSerializer.Serialize(exported, new JsonSerializerOptions { WriteIndented = true }));
-    Console.WriteLine($"Exported material texture manifest: {manifest}");
+    progress.WriteLine($"Exported material texture manifest: {manifest}");
+    progress.Stop();
 }
 
 static void DecompressTextureIfNeeded(TexFile tex)
@@ -672,4 +697,112 @@ static string SanitizeFileName(string name)
 {
     foreach (var ch in Path.GetInvalidFileNameChars()) name = name.Replace(ch, '_');
     return string.IsNullOrWhiteSpace(name) ? "unnamed" : name;
+}
+
+sealed class ProgressStatus : IDisposable
+{
+    private readonly object sync = new();
+    private readonly bool enabled = !Console.IsOutputRedirected;
+    private readonly string[] frames = [".", "..", "..."];
+    private Timer? timer;
+    private string message = "";
+    private int frameIndex;
+    private int lastLength;
+    private bool active;
+
+    public void Start(string text)
+    {
+        if (!enabled)
+        {
+            Console.WriteLine(text);
+            return;
+        }
+
+        lock (sync)
+        {
+            message = text;
+            frameIndex = 0;
+            active = true;
+            timer ??= new Timer(_ => Tick(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(500));
+            DrawLocked();
+        }
+    }
+
+    public void Update(string text)
+    {
+        if (!enabled) return;
+
+        lock (sync)
+        {
+            message = text;
+            active = true;
+            DrawLocked();
+        }
+    }
+
+    public void Stop()
+    {
+        if (!enabled) return;
+
+        lock (sync)
+        {
+            active = false;
+            timer?.Dispose();
+            timer = null;
+            ClearLocked();
+        }
+    }
+
+    public void WriteLine(string text)
+    {
+        if (!enabled)
+        {
+            Console.WriteLine(text);
+            return;
+        }
+
+        lock (sync)
+        {
+            var redraw = active;
+            ClearLocked();
+            Console.WriteLine(text);
+            if (redraw) DrawLocked();
+        }
+    }
+
+    public void Dispose() => Stop();
+
+    private void Tick()
+    {
+        if (!enabled) return;
+
+        lock (sync)
+        {
+            if (!active) return;
+            frameIndex = (frameIndex + 1) % frames.Length;
+            DrawLocked();
+        }
+    }
+
+    private void DrawLocked()
+    {
+        if (!active) return;
+
+        var line = $"{message} {frames[frameIndex]}";
+        Console.Write('\r');
+        Console.Write(line);
+        if (lastLength > line.Length)
+            Console.Write(new string(' ', lastLength - line.Length));
+        lastLength = line.Length;
+    }
+
+    private void ClearLocked()
+    {
+        if (lastLength <= 0) return;
+
+        Console.Write('\r');
+        Console.Write(new string(' ', lastLength));
+        Console.Write('\r');
+        lastLength = 0;
+    }
 }
