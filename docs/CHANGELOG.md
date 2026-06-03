@@ -1,5 +1,38 @@
 ﻿# CHANGELOG
 
+## 0.4.0 — DCC naming cleanup and multi-MOTLIST batch export
+
+Completed: 2026-06-04
+
+### What was attempted
+
+This update addressed workflow polish found after the 0.3.2 exporter was usable in Blender:
+
+- exported armature/root naming needed to be stable instead of deriving from the RE mesh name;
+- exported mesh names needed to keep only the useful `Group_*_sub*__Material` portion;
+- batch export needed to handle whole MOTLIST files and multiple MOTLIST inputs, not only one filtered selection;
+- README usage needed to explain repository contents, batch behavior, and GLB/FBX selection.
+
+### Result
+
+The exporter now sets the exported root/armature name to `Armature`, strips the RE mesh basename from mesh object names, and post-processes GLB skin names to `Armature` so Blender imports use predictable armature naming.
+
+The CLI now accepts repeated `--motlist` and `--mot` options. It also supports `--motlist-dir <folder>` to recursively collect `*.motlist*` files. With `--batch-motlist`, omitting `--animation-name` exports every selected motion as a separate file.
+
+### Improvements over 0.3.2
+
+- Added stable exported armature/root name: `Armature`.
+- Added simplified mesh names such as `Group_0_sub0__ch0000_00_NThruster`.
+- Added repeated `--motlist` support.
+- Added repeated `--mot` support.
+- Added `--motlist-dir` recursive MOTLIST discovery.
+- Updated README with Git-tracked file hierarchy and format selection guidance.
+
+### Verification evidence
+
+- `dotnet build -c Release` succeeded with 0 warnings and 0 errors.
+- Published executable `--help` includes repeated MOTLIST/MOT and `--motlist-dir` usage.
+
 ## 0.1.0 — manual GLB proof of concept
 
 Completed: 2026-06-04 00:17:43 +09:00
@@ -300,3 +333,4 @@ Blender 3.6 import:
 
 - Package: `REE-Content-Exporter.PRAGMATA-poc-0.3.2.zip`
 - SHA256: `2A4AFE53AE6CB74E75E33B83B2C35D238FFCA18864540EDCA1A1CF28EED15AF5`
+

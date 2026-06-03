@@ -87,6 +87,11 @@ git -C ..\REE-Content-Editor apply ..\REE-Content-Exporter\patches\ree-content-e
 
 ## Usage
 
+Choose the output format with the extension in `--output`:
+
+- `.glb` exports GLB.
+- `.fbx` exports FBX.
+
 Example PRAGMATA export with one selected walk-loop animation from a RETool extract rooted at `<path-to-RETool-extract>\re_chunk_000`:
 
 ```powershell
@@ -98,6 +103,32 @@ REE-Content-Exporter.exe `
   --output "<path-to-output>\ch0000_00_playergame_0320.glb"
 ```
 
-Use `--batch-motlist` with a folder output to export selected MOTLIST entries as separate files.
+Use `--batch-motlist` with a folder output to export MOTLIST entries as separate files. Omit `--animation-name` to export the entire MOTLIST:
 
+```powershell
+REE-Content-Exporter.exe `
+  --mesh "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\ch\ch00\ch0000\00\ch0000_00_playergame.mesh.251121828" `
+  --motlist "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist\ch0000_general.motlist.1057" `
+  --batch-motlist `
+  --texture-format png `
+  --output "<path-to-output>\ch0000_general_exports"
+```
 
+Pass `--motlist` more than once to export selected animations from multiple MOTLIST files:
+
+```powershell
+REE-Content-Exporter.exe `
+  --mesh "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\ch\ch00\ch0000\00\ch0000_00_playergame.mesh.251121828" `
+  --motlist "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist\ch0000_general.motlist.1057" `
+  --motlist "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist\ch0000_combat.motlist.1057" `
+  --batch-motlist `
+  --output "<path-to-output>\multi_motlist_exports"
+```
+
+Use `--motlist-dir <folder>` to recursively collect `*.motlist*` files from a folder and export them with `--batch-motlist`.
+
+Export naming is normalized for DCC import:
+
+- armature object/root node: `Armature`
+- GLB skin/skeleton name: `Armature`
+- mesh names: `Group_<group>_sub<sub>__<material>`, without the RE mesh basename prefix

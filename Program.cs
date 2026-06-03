@@ -14,21 +14,35 @@ static string? GetArg(string[] args, string name)
             return args[i + 1];
     return null;
 }
+static IReadOnlyList<string> GetArgs(string[] args, string name)
+{
+    var values = new List<string>();
+    for (int i = 0; i < args.Length - 1; i++)
+        if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
+            values.Add(args[i + 1]);
+    return values;
+}
 static bool HasFlag(string[] args, string name) => args.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
 
 if (args.Length == 0 || HasFlag(args, "--help"))
 {
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path>|--mot <mot.path>] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     return;
 }
 
 var meshPath = GetArg(args, "--mesh") ?? throw new ArgumentException("Missing --mesh");
 var streamingPath = GetArg(args, "--streaming");
 var mdfPath = GetArg(args, "--mdf");
-var motlistPath = GetArg(args, "--motlist");
-var motPath = GetArg(args, "--mot");
+var motlistPaths = GetArgs(args, "--motlist").ToList();
+var motlistDir = GetArg(args, "--motlist-dir");
+if (!string.IsNullOrWhiteSpace(motlistDir))
+{
+    motlistPaths.AddRange(Directory.GetFiles(motlistDir, "*.motlist*", SearchOption.AllDirectories));
+}
+motlistPaths = motlistPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+var motPaths = GetArgs(args, "--mot").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var outputPath = GetArg(args, "--output") ?? throw new ArgumentException("Missing --output");
 var animationFilter = GetArg(args, "--animation-name");
 var includeAnimations = !HasFlag(args, "--no-animations");
@@ -44,8 +58,8 @@ Console.WriteLine("REE Content Editor native export path");
 Console.WriteLine($"Mesh: {meshPath}");
 Console.WriteLine($"Streaming: {streamingPath ?? "-"}");
 Console.WriteLine($"MDF: {mdfPath ?? "auto"}");
-Console.WriteLine($"Motlist: {motlistPath ?? "-"}");
-Console.WriteLine($"Mot: {motPath ?? "-"}");
+Console.WriteLine($"Motlists: {(motlistPaths.Count == 0 ? "-" : string.Join("; ", motlistPaths))}");
+Console.WriteLine($"Mots: {(motPaths.Count == 0 ? "-" : string.Join("; ", motPaths))}");
 Console.WriteLine($"Output: {outputPath}");
 
 using var meshHandler = new FileHandler(meshPath);
@@ -78,10 +92,10 @@ else if (mesh.RequiresStreamingData)
     }
 }
 
-var motions = new List<MotFileBase>();
+var motions = new List<(string Source, MotFileBase Motion)>();
 if (includeAnimations)
 {
-    if (!string.IsNullOrWhiteSpace(motlistPath))
+    foreach (var motlistPath in motlistPaths)
     {
         using var mlHandler = new FileHandler(motlistPath);
         var motlist = new MotlistFile(mlHandler);
@@ -89,17 +103,21 @@ if (includeAnimations)
         IEnumerable<MotFileBase> files = motlist.MotFiles;
         if (!string.IsNullOrWhiteSpace(animationFilter))
             files = files.Where(m => m.Name.Contains(animationFilter, StringComparison.OrdinalIgnoreCase));
-        motions.AddRange(files);
-        Console.WriteLine($"Loaded motlist {motlist.Name}: total={motlist.MotFiles.Count} selected={motions.Count}");
+        var selected = files.ToList();
+        var sourceName = string.IsNullOrWhiteSpace(motlist.Name)
+            ? PathUtils.GetFilenameWithoutExtensionOrVersion(motlistPath).ToString()
+            : motlist.Name;
+        motions.AddRange(selected.Select(m => (sourceName, m)));
+        Console.WriteLine($"Loaded motlist {motlist.Name}: total={motlist.MotFiles.Count} selected={selected.Count}");
     }
-    if (!string.IsNullOrWhiteSpace(motPath))
+    foreach (var motPath in motPaths)
     {
         using var motHandler = new FileHandler(motPath);
         var mot = new MotFile(motHandler);
         if (!mot.Read()) throw new Exception("REE-Lib failed to read mot");
         mot.ReadBones(null);
         if (string.IsNullOrWhiteSpace(animationFilter) || mot.Name.Contains(animationFilter, StringComparison.OrdinalIgnoreCase))
-            motions.Add(mot);
+            motions.Add((PathUtils.GetFilenameWithoutExtensionOrVersion(motPath).ToString(), mot));
         Console.WriteLine($"Loaded mot {mot.Name}");
     }
 }
@@ -150,10 +168,12 @@ if (batchMotlist)
     if (includeTextures && materialWrapper != null) ExportMaterialTextures(materialWrapper, meshPath, Path.Combine(outDir, "textures"), textureFormat);
     Console.WriteLine($"Batch exporting {motions.Count} motions to {outDir} (*{outExt})");
     var index = 0;
-    foreach (var motion in motions)
+    var includeSourceInName = motlistPaths.Count + motPaths.Count > 1;
+    foreach (var (source, motion) in motions)
     {
         var safe = SanitizeFileName(string.IsNullOrWhiteSpace(motion.Name) ? $"motion_{index:0000}" : motion.Name);
-        var target = Path.Combine(outDir, $"{index:0000}_{safe}{outExt}");
+        var sourcePrefix = includeSourceInName ? SanitizeFileName(source) + "_" : "";
+        var target = Path.Combine(outDir, $"{index:0000}_{sourcePrefix}{safe}{outExt}");
         ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrapper, meshPath, includeTextures: false);
         Console.WriteLine($"[{index + 1}/{motions.Count}] {target}");
         index++;
@@ -161,7 +181,7 @@ if (batchMotlist)
 }
 else
 {
-    ExportOne(resource, outputPath, includeLods, includeOcc, motions, materialWrapper, meshPath, includeTextures);
+    ExportOne(resource, outputPath, includeLods, includeOcc, motions.Select(m => m.Motion), materialWrapper, meshPath, includeTextures);
 }
 
 Console.WriteLine("DONE");
