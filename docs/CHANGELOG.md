@@ -95,3 +95,78 @@ natives/STM/streaming/character/ch/ch00/ch0000/00/ch0000_00_playergame.mesh.2511
 
 - Package: `REE-Content-Exporter.PRAGMATA-poc-0.2.0.zip`
 - SHA256: `6AC4FB976A633EF28A56C6206C942F9546ACC02B04137F68570FD550DF5992A7`
+
+## 0.3.0 — material, texture, FBX, and batch export
+
+Completed: 2026-06-04 01:21:43 +09:00
+
+### What was attempted
+
+After 0.2.0 proved that the CLI should use REE Content Editor's native export pipeline, 0.3.0 focused on closing the remaining practical exporter gaps:
+
+- MDF material discovery and loading.
+- Material texture slot injection into GLB/FBX output.
+- TEX to DDS/PNG texture export.
+- Direct FBX output.
+- Batch MOTLIST export.
+
+### Result
+
+The exporter became a usable PRAGMATA content pipeline rather than only a mesh/animation smoke test.
+
+New command-line options:
+
+- `--mdf`
+- `--batch-motlist`
+- `--no-textures`
+- `--texture-format png|dds`
+
+The exporter also auto-detects sibling MDF files such as:
+
+- `_mat.mdf2.*`
+- `_Mat.mdf2.*`
+- `.mdf2.*`
+- `_00.mdf2.*`
+
+### REE-Content-Editor hook
+
+0.3.0 introduced a small patch to `CommonMeshResource` in REE-Content-Editor:
+
+- `ExportTextureFormat`
+- `SetImportedMaterials(...)`
+- `ApplyMaterialTextureSlots(...)`
+
+This allows the CLI to load MDF material data and make GLB/FBX material slots point to exported texture files.
+
+### What we learned
+
+- MDF loading should use REE's `MdfFile` and `MaterialGroupWrapper`, not a separate Tyrant-style material parser.
+- Texture export should keep REE TEX parsing as the first step.
+- Batch MOTLIST export is feasible by reusing the same mesh resource and exporting one selected motion per output file.
+
+### Improvements over 0.2.0
+
+- Added material loading.
+- Added texture export manifest.
+- Added PNG/DDS output modes.
+- Added DirectXTex `texconv` PNG conversion after REE TEX-to-DDS output.
+- Added GLB/FBX material texture references.
+- Added selected batch MOTLIST export.
+
+### Verification evidence
+
+- `dotnet build -c Release` succeeded.
+- GLB + PNG export generated 54 PNG files.
+- GLB JSON contained 23 images, 23 textures, and 14 materials with no missing PNG URIs.
+- Blender imported the GLB with 56 objects, 21 meshes, 1 armature, 231 bones, 1 action, and 790 f-curves.
+- Blender imported the FBX with 56 objects, 21 meshes, 1 armature, 231 bones, 1 action, and 1090 f-curves.
+- Batch export with `--batch-motlist --animation-name 0320` produced `0000_ch0000_General_0320_Walk_Loop_VerA.glb`.
+
+### Known problem
+
+The PNG files were structurally valid, but many PRAGMATA material textures were still noise-filled because GDeflate-compressed TEX payloads were not decompressed before `SaveAsDDS()`.
+
+### Package evidence
+
+- Package: `REE-Content-Exporter.PRAGMATA-poc-0.3.0.zip`
+- SHA256: `D70F9760765575CF5F2F889373F766CBD00D861315AD90FEB395AA9893A3F585`

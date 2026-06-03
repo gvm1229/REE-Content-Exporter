@@ -1,0 +1,70 @@
+﻿diff --git a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
+index 4de3931..aec5249 100644
+--- a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
++++ b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
+@@ -1,4 +1,4 @@
+-using System.Diagnostics;
++﻿using System.Diagnostics;
+ using System.Runtime.CompilerServices;
+ using Assimp;
+ using ContentEditor.App.Graphics;
+@@ -18,6 +18,12 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+     public List<Graphics.Mesh>? OcclusionMeshes { get; set; }
+ 
+     public MaterialGroupWrapper? ImportedMaterials { get; private set; }
++    public string ExportTextureFormat { get; set; } = "dds";
++
++    public void SetImportedMaterials(MaterialGroupWrapper materials)
++    {
++        ImportedMaterials = materials;
++    }
+ 
+     public MeshImportWarnings importWarnings;
+ 
+@@ -192,9 +198,46 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+         //     System.Numerics.Matrix4x4.Invert(System.Numerics.Matrix4x4.Transpose(bone.OffsetMatrix), out var boneGlobal);
+         //     Logger.Info(bone.Name + " | Bone: " + boneGlobal.Translation + " | Node: " + System.Numerics.Matrix4x4.Transpose(node.Transform).Translation);
+         // }
++        ApplyMaterialTextureSlots(exportCtx.scene, filepath);
+         context.ExportFile(exportCtx.scene, filepath, exportFormat);
+     }
+ 
++    private void ApplyMaterialTextureSlots(Assimp.Scene scene, string filepath)
++    {
++        if (ImportedMaterials == null) return;
++
++        var exportDir = Path.GetDirectoryName(filepath) ?? ".";
++        foreach (var mat in scene.Materials) {
++            if (string.IsNullOrEmpty(mat.Name)) continue;
++            var source = ImportedMaterials.GetByName(mat.Name);
++            if (source == null) continue;
++
++            string? RelPath(string exportDir, string? gameTexPath, string suffix)
++            {
++                if (string.IsNullOrWhiteSpace(gameTexPath)) return null;
++                if (gameTexPath.Contains("/null", StringComparison.InvariantCultureIgnoreCase)
++                    || gameTexPath.Contains("\\null", StringComparison.InvariantCultureIgnoreCase)) return null;
++                var name = PathUtils.GetFilenameWithoutExtensionOrVersion(gameTexPath).ToString();
++                var ext = ExportTextureFormat.Equals("png", StringComparison.OrdinalIgnoreCase) ? ".png" : ".dds";
++                var target = Path.Combine(exportDir, "textures", name + suffix + ext);
++                return Path.GetRelativePath(exportDir, target).Replace('\\', '/');
++            }
++
++            var albedo = RelPath(exportDir, source.AlbedoTexture?.texPath, "");
++            if (albedo != null) {
++                mat.TextureDiffuse = new TextureSlot(albedo, TextureType.Diffuse, 0, TextureMapping.FromUV, 0, 1, TextureOperation.Multiply, TextureWrapMode.Wrap, TextureWrapMode.Wrap, 0);
++            }
++            var normal = RelPath(exportDir, source.NormalTexture?.texPath, "_normal");
++            if (normal != null) {
++                mat.TextureNormal = new TextureSlot(normal, TextureType.Normals, 0, TextureMapping.FromUV, 0, 1, TextureOperation.Multiply, TextureWrapMode.Wrap, TextureWrapMode.Wrap, 0);
++            }
++            var opacity = RelPath(exportDir, source.ATXXTexture?.texPath, "_alpha");
++            if (opacity != null) {
++                mat.TextureOpacity = new TextureSlot(opacity, TextureType.Opacity, 0, TextureMapping.FromUV, 0, 1, TextureOperation.Multiply, TextureWrapMode.Wrap, TextureWrapMode.Wrap, 0);
++            }
++        }
++    }
++
+     internal void PreloadMeshBuffers()
+     {
+         if (PreloadedMeshes != null || OcclusionMeshes != null) return;

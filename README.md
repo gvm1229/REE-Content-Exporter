@@ -23,3 +23,13 @@ REE-Content-Exporter follows the same MIT license as REE-Content-Editor. See `LI
 ## History
 
 Detailed development history is tracked in `docs/CHANGELOG.md`.
+
+## REE-Content-Editor patch
+
+Starting with 0.3.0, this exporter needs a small REE-Content-Editor-side hook so the CLI can inject loaded MDF material data and write material texture slots into the Assimp scene before export.
+
+Apply:
+
+```powershell
+git -C ..\REE-Content-Editor apply ..\REE-Content-Exporter\patches\ree-content-editor-commonmeshresource-material-textures.patch
+```
