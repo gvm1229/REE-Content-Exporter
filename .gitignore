@@ -1,0 +1,8 @@
+﻿bin/
+obj/
+.vs/
+*.user
+*.suo
+*.zip
+latest/
+exported_files/
