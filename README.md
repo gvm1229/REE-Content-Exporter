@@ -27,6 +27,7 @@ REE-Content-Exporter/
   Program.cs
   README.md
   REE-Content-Exporter.csproj
+  export_ch0000_all_motlists_glb.bat
   docs/
     CHANGELOG.md
   patches/
