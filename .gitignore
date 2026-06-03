@@ -6,3 +6,5 @@ obj/
 *.zip
 latest/
 exported_files/
+.omc/
+.omx/
