@@ -1,5 +1,5 @@
 ﻿diff --git a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
-index 4de3931..239fa2f 100644
+index 4de3931..e3d47e0 100644
 --- a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
 +++ b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
 @@ -1,4 +1,4 @@
@@ -8,7 +8,7 @@ index 4de3931..239fa2f 100644
  using System.Runtime.CompilerServices;
  using Assimp;
  using ContentEditor.App.Graphics;
-@@ -18,6 +18,27 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -18,6 +18,29 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
      public List<Graphics.Mesh>? OcclusionMeshes { get; set; }
  
      public MaterialGroupWrapper? ImportedMaterials { get; private set; }
@@ -17,7 +17,9 @@ index 4de3931..239fa2f 100644
 +    public string? ExportRootNodeName { get; set; }
 +    public bool ExportStripMeshNamePrefix { get; set; }
 +    public bool ExportSkipMotionsWithMissingBones { get; set; }
++    public bool ExportNoPlaceholderAnimationBones { get; set; }
 +    public List<string> ExportSkippedAnimations { get; } = new();
++    public List<string> ExportSkippedAnimationBoneChannels { get; } = new();
 +
 +    public void SetImportedMaterials(MaterialGroupWrapper materials)
 +    {
@@ -36,7 +38,7 @@ index 4de3931..239fa2f 100644
  
      public MeshImportWarnings importWarnings;
  
-@@ -102,8 +123,9 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -102,8 +125,9 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
              mdf.Materials.Add(matData);
          }
  
@@ -48,15 +50,16 @@ index 4de3931..239fa2f 100644
      }
  
      private string? LoadAssimpTexture(Assimp.Scene scene, TextureSlot texture)
-@@ -142,6 +164,7 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -142,6 +166,8 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
      )
      {
          using AssimpContext context = new AssimpContext();
 +        ExportSkippedAnimations.Clear();
++        ExportSkippedAnimationBoneChannels.Clear();
  
          var ext = PathUtils.GetExtensionWithoutPeriod(filepath);
          string exportFormat = context.GetFormatIDFromExtension(ext);
-@@ -151,9 +174,10 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -151,9 +177,10 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
              format = exportFormat,
              includeShapeKeys = exportFormat == "glb",
              includeOcclusion = includeOcc,
@@ -68,20 +71,22 @@ index 4de3931..239fa2f 100644
  
          PrepareSkeleton(exportCtx, NativeMesh);
          foreach (var add in additionalMeshes ?? []) {
-@@ -175,6 +199,12 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -175,7 +202,13 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
          if (mots != null) {
              foreach (var mot in mots) {
                  if (mot is MotFile mm) {
+-                    AddMotToScene(exportCtx.scene, mm, ext);
 +                    if (ExportSkipMotionsWithMissingBones && MotHasMissingBones(exportCtx.scene, mm, out var missingBoneHashes)) {
 +                        var skipped = $"{mm.Name} — missing bone hashes: {string.Join(", ", missingBoneHashes)}";
 +                        ExportSkippedAnimations.Add(skipped);
 +                        Logger.Warn($"Skipping animation {mm.Name} because it references bones that the exported mesh skeleton does not contain: {string.Join(", ", missingBoneHashes)}");
 +                        continue;
 +                    }
-                     AddMotToScene(exportCtx.scene, mm, ext);
++                    AddMotToScene(exportCtx.scene, mm, ext, ExportNoPlaceholderAnimationBones, ExportSkippedAnimationBoneChannels);
                  }
              }
-@@ -192,9 +222,46 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+         }
+@@ -192,9 +225,46 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
          //     System.Numerics.Matrix4x4.Invert(System.Numerics.Matrix4x4.Transpose(bone.OffsetMatrix), out var boneGlobal);
          //     Logger.Info(bone.Name + " | Bone: " + boneGlobal.Translation + " | Node: " + System.Numerics.Matrix4x4.Transpose(node.Transform).Translation);
          // }
@@ -129,7 +134,7 @@ index 4de3931..239fa2f 100644
      {
          if (PreloadedMeshes != null || OcclusionMeshes != null) return;
 diff --git a/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs b/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
-index d8fe794..3661979 100644
+index d8fe794..40911d1 100644
 --- a/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
 +++ b/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
 @@ -24,6 +24,7 @@ public partial class CommonMeshResource : IResourceFile
@@ -140,10 +145,11 @@ index d8fe794..3661979 100644
          public FbxSkelFile? skeleton;
          public string? rootBoneName;
          public Dictionary<string, (Node node, bool? deforming, Matrix4x4 inverseTransform)> bonesLookup = new();
-@@ -81,6 +82,34 @@ public partial class CommonMeshResource : IResourceFile
+@@ -81,7 +82,35 @@ public partial class CommonMeshResource : IResourceFile
          return nodeDict;
      }
  
+-    private static void AddMotToScene(Assimp.Scene scene, MotFile mot, string exportFormat)
 +    private static bool MotHasMissingBones(Assimp.Scene scene, MotFile mot, out List<uint> missingBoneHashes)
 +    {
 +        missingBoneHashes = [];
@@ -172,10 +178,25 @@ index d8fe794..3661979 100644
 +        return missingBoneHashes.Count > 0;
 +    }
 +
-     private static void AddMotToScene(Assimp.Scene scene, MotFile mot, string exportFormat)
++    private static void AddMotToScene(Assimp.Scene scene, MotFile mot, string exportFormat, bool skipMissingBoneChannels = false, List<string>? skippedMissingBoneChannels = null)
      {
          var isFbx = exportFormat == "fbx";
-@@ -298,25 +327,28 @@ public partial class CommonMeshResource : IResourceFile
+         var scale = GetExportScale(exportFormat);
+@@ -111,6 +140,13 @@ public partial class CommonMeshResource : IResourceFile
+                 ?? boneNode?.Name;
+ 
+             if (boneNode == null || channel.NodeName == null) {
++                if (skipMissingBoneChannels) {
++                    var message = $"{mot.Name} — skipped missing bone hash: {header.boneHash}";
++                    skippedMissingBoneChannels?.Add(message);
++                    Logger.Warn($"Animation {mot.Name} references missing bone {header.boneHash}; skipping that bone channel without creating a placeholder bone.");
++                    continue;
++                }
++
+                 // not a known bone for our mesh - add placeholder bone nodes and hope they fit
+                 boneNode ??= new Node(header.boneName ?? $"_hash{header.boneHash}");
+                 channel.NodeName = boneNode.Name;
+@@ -298,25 +334,28 @@ public partial class CommonMeshResource : IResourceFile
          if (file.MeshData != null) {
              for (int i = 0; i < file.MeshData.LODs.Count; i++) {
                  var lod = file.MeshData.LODs[i];

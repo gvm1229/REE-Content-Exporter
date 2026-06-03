@@ -25,8 +25,11 @@ if not exist "%EXPORTER%" (
   --additional-mesh "%MESH20%" ^
   --additional-mesh "%MESH40%" ^
   --motlist-dir "%MOTLIST_DIR%" ^
+  --no-placeholder-animation-bones ^
   --texture-format png ^
   --output "%OUTPUT%"
 
 endlocal
+
+
 

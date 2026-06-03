@@ -1,4 +1,29 @@
-﻿# CHANGELOG
+# CHANGELOG
+
+## 0.5.2 - no-placeholder animation bone mode
+
+Completed: 2026-06-04
+
+### What was attempted
+
+The strict `--skip-missing-animation-bones` behavior skipped entire animations even when only helper/runtime bone channels were missing. This skipped useful animations such as `ch0000_General_0320_Walk_Loop_VerA`, which had previously been verified as usable.
+
+### Result
+
+`--skip-missing-animation-bones` keeps its strict behavior: any animation that references a missing bone is excluded entirely. A new `--no-placeholder-animation-bones` flag keeps the animation, skips only the channels that target missing bones, and avoids creating placeholder `hash...` bones.
+
+When `--no-placeholder-animation-bones` is active, the exporter writes `<output-name>.skipped-animation-bones.md` next to the GLB/FBX file.
+
+### Improvements over 0.5.1
+
+- Added `--no-placeholder-animation-bones`.
+- Preserved current strict `--skip-missing-animation-bones` behavior.
+- Added per-channel missing-bone report generation.
+- Updated batch files to use `--no-placeholder-animation-bones` instead of strict animation skipping.
+
+### Verification evidence
+
+- `dotnet build -c Release` succeeded with 0 warnings and 0 errors.
 
 ## 0.5.1 - missing animation bone skip report
 
