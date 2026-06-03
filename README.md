@@ -19,10 +19,34 @@ parent-folder/
 ## Dependencies
 
 - [REE-Content-Editor](https://github.com/kagenocookie/REE-Content-Editor)
+  - Why: this exporter is a CLI wrapper around REE-Content-Editor's mesh export pipeline. It uses `ContentEditor.App` classes such as `CommonMeshResource` instead of reimplementing mesh/skeleton/animation export logic.
+  - How: clone it next to this repository, then apply this repository's patch before building:
+    ```powershell
+    git clone https://github.com/kagenocookie/REE-Content-Editor.git ..\REE-Content-Editor
+    git -C ..\REE-Content-Editor apply ..\REE-Content-Exporter\patches\ree-content-editor-commonmeshresource-material-textures.patch
+    ```
+
 - [RE-Engine-Lib](https://github.com/kagenocookie/REE-Content-Editor/tree/master/RE-Engine-Lib)
+  - Why: this is the file-format library used by REE-Content-Editor. The exporter relies on it for RE Engine mesh, material, texture, MOT, and MOTLIST parsing.
+  - How: it is included inside the REE-Content-Editor repository. No separate clone is required when using the expected sibling-folder layout.
+
 - [.NET SDK](https://dotnet.microsoft.com/download)
+  - Why: the exporter and REE-Content-Editor projects are C#/.NET projects and must be built with `dotnet`.
+  - How: install the SDK, then build from this repository with:
+    ```powershell
+    dotnet build -c Release
+    ```
+
 - [DirectXTex texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv)
+  - Why: REE-Content-Exporter first asks REE-Lib to convert RE Engine TEX data to DDS. When `--texture-format png` is used, `texconv` converts those DDS files to PNG.
+  - How: install `texconv.exe` and make it available on `PATH`, or install it through WinGet:
+    ```powershell
+    winget install --id Microsoft.DirectXTex.Texconv
+    ```
+
 - [RETool](https://www.patreon.com/posts/retool-modding-36746173)
+  - Why: the exporter expects loose RE Engine files on disk, such as `.mesh`, `.mdf2`, `.tex`, `.mot`, and `.motlist`. RETool is used first to extract those files from RE Engine PAK archives.
+  - How: extract the game PAKs with RETool, then pass paths under the extracted `re_chunk_000` folder to this exporter.
 
 ## License
 
@@ -56,4 +80,5 @@ REE-Content-Exporter.exe `
 ```
 
 Use `--batch-motlist` with a folder output to export selected MOTLIST entries as separate files.
+
 
