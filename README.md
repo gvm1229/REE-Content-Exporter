@@ -1,4 +1,4 @@
-﻿# REE-Content-Exporter
+# REE-Content-Exporter
 
 REE-Content-Exporter is a small command-line exporter built on top of the [REE-Content-Editor](https://github.com/kagenocookie/REE-Content-Editor) / [RE-Engine-Lib](https://github.com/kagenocookie/REE-Content-Editor/tree/master/RE-Engine-Lib) codebase.
 
@@ -103,29 +103,38 @@ REE-Content-Exporter.exe `
   --output "<path-to-output>\ch0000_00_playergame_0320.glb"
 ```
 
-Use `--batch-motlist` with a folder output to export MOTLIST entries as separate files. Omit `--animation-name` to export the entire MOTLIST:
+To export a whole MOTLIST into one GLB/FBX, omit `--animation-name` and use a file path for `--output`:
 
 ```powershell
 REE-Content-Exporter.exe `
   --mesh "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\ch\ch00\ch0000\00\ch0000_00_playergame.mesh.251121828" `
   --motlist "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist\ch0000_general.motlist.1057" `
-  --batch-motlist `
   --texture-format png `
-  --output "<path-to-output>\ch0000_general_exports"
+  --output "<path-to-output>\ch0000_general_all_animations.glb"
 ```
 
-Pass `--motlist` more than once to export selected animations from multiple MOTLIST files:
+Pass `--motlist` more than once, or use `--motlist-dir <folder>`, to export multiple MOTLIST files into one GLB/FBX containing all selected animations:
 
 ```powershell
 REE-Content-Exporter.exe `
   --mesh "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\ch\ch00\ch0000\00\ch0000_00_playergame.mesh.251121828" `
   --motlist "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist\ch0000_general.motlist.1057" `
   --motlist "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist\ch0000_combat.motlist.1057" `
-  --batch-motlist `
-  --output "<path-to-output>\multi_motlist_exports"
+  --texture-format png `
+  --output "<path-to-output>\ch0000_multi_motlist_all_animations.glb"
 ```
 
-Use `--motlist-dir <folder>` to recursively collect `*.motlist*` files from a folder and export them with `--batch-motlist`.
+```powershell
+REE-Content-Exporter.exe `
+  --mesh "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\ch\ch00\ch0000\00\ch0000_00_playergame.mesh.251121828" `
+  --motlist-dir "<path-to-RETool-extract>\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist" `
+  --texture-format png `
+  --output "<path-to-output>\ch0000_all_motlists_all_animations.glb"
+```
+
+If `--output` has no `.glb` or `.fbx` extension, it is treated as a folder and the single combined export is written as `<mesh-name>_all_animations.glb` inside it.
+
+Use `--split-animations` to force one output file per animation. `--batch-motlist` remains as a compatibility alias for split export when only one MOT/MOTLIST source is supplied.
 
 Export naming is normalized for DCC import:
 

@@ -1,4 +1,28 @@
-﻿# CHANGELOG
+# CHANGELOG
+
+## 0.4.1 ? combined multi-MOTLIST export default
+
+Completed: 2026-06-04
+
+### What was attempted
+
+The first multi-MOTLIST command example used `--batch-motlist`, which generated one GLB per animation. That was not suitable for Unreal Engine import because it produced too many separate files and unnecessary storage clutter.
+
+### Result
+
+Multiple MOT/MOTLIST sources now default to one combined export containing all selected animations. This applies to repeated `--motlist`, repeated `--mot`, and `--motlist-dir` usage. If a folder path is passed to `--output` for a combined export, the exporter writes `<mesh-name>_all_animations.glb` inside that folder.
+
+### Improvements over 0.4.0
+
+- Multiple animation sources now imply one combined GLB/FBX export by default.
+- Added explicit `--split-animations` for users who really want one file per animation.
+- Kept `--batch-motlist` as a compatibility alias for split export when only one animation source is supplied.
+- Updated README examples to avoid accidentally producing one file per animation for multi-MOTLIST exports.
+
+### Verification evidence
+
+- `dotnet build -c Release` succeeded with 0 warnings and 0 errors.
+- Published executable `--help` includes `--batch-motlist|--split-animations`.
 
 ## 0.4.0 — DCC naming cleanup and multi-MOTLIST batch export
 

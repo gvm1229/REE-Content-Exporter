@@ -28,7 +28,7 @@ if (args.Length == 0 || HasFlag(args, "--help"))
 {
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     return;
 }
 
@@ -50,6 +50,7 @@ var includeTextures = !HasFlag(args, "--no-textures");
 var textureFormat = (GetArg(args, "--texture-format") ?? "png").ToLowerInvariant();
 if (textureFormat is not ("png" or "dds")) throw new ArgumentException("--texture-format must be png or dds");
 var batchMotlist = HasFlag(args, "--batch-motlist");
+var splitAnimations = HasFlag(args, "--split-animations");
 var includeLods = HasFlag(args, "--include-lods");
 var includeOcc = HasFlag(args, "--include-occlusion");
 var allowMissingStreaming = HasFlag(args, "--allow-missing-streaming");
@@ -123,6 +124,12 @@ if (includeAnimations)
 }
 
 var name = PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString();
+var animationSourceCount = motlistPaths.Count + motPaths.Count;
+var exportSeparateAnimationFiles = splitAnimations || (batchMotlist && animationSourceCount <= 1);
+if (batchMotlist && animationSourceCount > 1 && !splitAnimations)
+{
+    Console.WriteLine("INFO: multiple MOT/MOTLIST sources detected; exporting all selected animations into one file. Use --split-animations to force one file per animation.");
+}
 var resource = new CommonMeshResource(name, null!)
 {
     NativeMesh = mesh,
@@ -158,7 +165,7 @@ if (includeTextures)
     }
 }
 
-if (batchMotlist)
+if (exportSeparateAnimationFiles)
 {
     if (motions.Count == 0) throw new ArgumentException("--batch-motlist requires --motlist with at least one selected motion");
     var ext = Path.GetExtension(outputPath);
@@ -181,7 +188,8 @@ if (batchMotlist)
 }
 else
 {
-    ExportOne(resource, outputPath, includeLods, includeOcc, motions.Select(m => m.Motion), materialWrapper, meshPath, includeTextures);
+    var singleOutputPath = ResolveSingleOutputPath(outputPath, name);
+    ExportOne(resource, singleOutputPath, includeLods, includeOcc, motions.Select(m => m.Motion), materialWrapper, meshPath, includeTextures);
 }
 
 Console.WriteLine("DONE");
@@ -193,6 +201,14 @@ static void ExportOne(CommonMeshResource resource, string target, bool includeLo
     resource.ExportToFile(target, includeLods, includeOcc, null, motions, null);
     NormalizeGlbNames(target);
     Console.WriteLine($"Exported {target} bytes={new FileInfo(target).Length}");
+}
+
+static string ResolveSingleOutputPath(string outputPath, string meshName)
+{
+    if (!string.IsNullOrEmpty(Path.GetExtension(outputPath))) return outputPath;
+
+    Directory.CreateDirectory(outputPath);
+    return Path.Combine(outputPath, $"{SanitizeFileName(meshName)}_all_animations.glb");
 }
 
 static void NormalizeGlbNames(string target)
