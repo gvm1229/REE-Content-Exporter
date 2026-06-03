@@ -1,5 +1,5 @@
 ﻿diff --git a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
-index 4de3931..aec5249 100644
+index 4de3931..eac03d4 100644
 --- a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
 +++ b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
 @@ -1,4 +1,4 @@
@@ -8,11 +8,13 @@ index 4de3931..aec5249 100644
  using System.Runtime.CompilerServices;
  using Assimp;
  using ContentEditor.App.Graphics;
-@@ -18,6 +18,12 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -18,6 +18,14 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
      public List<Graphics.Mesh>? OcclusionMeshes { get; set; }
  
      public MaterialGroupWrapper? ImportedMaterials { get; private set; }
 +    public string ExportTextureFormat { get; set; } = "dds";
++    public string? ExportRootNodeName { get; set; }
++    public bool ExportStripMeshNamePrefix { get; set; }
 +
 +    public void SetImportedMaterials(MaterialGroupWrapper materials)
 +    {
@@ -21,7 +23,19 @@ index 4de3931..aec5249 100644
  
      public MeshImportWarnings importWarnings;
  
-@@ -192,9 +198,46 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -151,9 +159,10 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+             format = exportFormat,
+             includeShapeKeys = exportFormat == "glb",
+             includeOcclusion = includeOcc,
++            stripRootNameFromMeshNames = ExportStripMeshNamePrefix,
+             skeleton = skeleton,
+         };
+-        exportCtx.scene.RootNode ??= new Node(Name);
++        exportCtx.scene.RootNode ??= new Node(ExportRootNodeName ?? Name);
+ 
+         PrepareSkeleton(exportCtx, NativeMesh);
+         foreach (var add in additionalMeshes ?? []) {
+@@ -192,9 +201,46 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
          //     System.Numerics.Matrix4x4.Invert(System.Numerics.Matrix4x4.Transpose(bone.OffsetMatrix), out var boneGlobal);
          //     Logger.Info(bone.Name + " | Bone: " + boneGlobal.Translation + " | Node: " + System.Numerics.Matrix4x4.Transpose(node.Transform).Translation);
          // }
@@ -68,3 +82,48 @@ index 4de3931..aec5249 100644
      internal void PreloadMeshBuffers()
      {
          if (PreloadedMeshes != null || OcclusionMeshes != null) return;
+diff --git a/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs b/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
+index d8fe794..6c1e694 100644
+--- a/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
++++ b/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
+@@ -24,6 +24,7 @@ public partial class CommonMeshResource : IResourceFile
+         public bool includeShadows;
+         public bool includeOcclusion;
+         public bool includeShapeKeys;
++        public bool stripRootNameFromMeshNames;
+         public FbxSkelFile? skeleton;
+         public string? rootBoneName;
+         public Dictionary<string, (Node node, bool? deforming, Matrix4x4 inverseTransform)> bonesLookup = new();
+@@ -298,25 +299,28 @@ public partial class CommonMeshResource : IResourceFile
+         if (file.MeshData != null) {
+             for (int i = 0; i < file.MeshData.LODs.Count; i++) {
+                 var lod = file.MeshData.LODs[i];
++                var meshNamePrefix = context.stripRootNameFromMeshNames ? "" : $"{rootName}_";
+                 if (i == 0) {
+-                    ExportLod(file, context, lod, context.includeAllLods ? $"{rootName}_lod0_" : $"{rootName}_", transform);
++                    ExportLod(file, context, lod, context.includeAllLods ? $"{meshNamePrefix}lod0_" : meshNamePrefix, transform);
+                     if (!context.includeAllLods) break;
+                 } else {
+-                    ExportLod(file, context, lod, $"{rootName}_lod{i}_", transform);
++                    ExportLod(file, context, lod, $"{meshNamePrefix}lod{i}_", transform);
+                 }
+             }
+         }
+         if (context.includeShadows && file.ShadowMesh != null) {
++            var meshNamePrefix = context.stripRootNameFromMeshNames ? "" : $"{rootName}_";
+             for (int i = 0; i < file.ShadowMesh.LODs.Count; i++) {
+                 var lod = file.ShadowMesh.LODs[i];
+-                ExportLod(file, context, lod, $"{rootName}_shadow_lod{i}_", transform);
++                ExportLod(file, context, lod, $"{meshNamePrefix}shadow_lod{i}_", transform);
+             }
+         }
+         if (context.includeOcclusion && file.OccluderMesh != null) {
+             if (context.scene.MaterialCount == 0) {
+                 context.scene.Materials.Add(new Material() { Name = "default" });
+             }
+-            ExportLod(file, context, file.OccluderMesh, $"occ_{rootName}_", transform);
++            var meshNamePrefix = context.stripRootNameFromMeshNames ? "occ_" : $"occ_{rootName}_";
++            ExportLod(file, context, file.OccluderMesh, meshNamePrefix, transform);
+         }
+ 
+         return context;

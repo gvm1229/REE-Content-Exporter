@@ -1,5 +1,7 @@
 ﻿using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ContentEditor.App.FileLoaders;
 using ReeLib;
 using ReeLib.Common;
@@ -108,6 +110,8 @@ var resource = new CommonMeshResource(name, null!)
     NativeMesh = mesh,
     GameVersion = GameName.pragmata,
     ExportTextureFormat = textureFormat,
+    ExportRootNodeName = "Armature",
+    ExportStripMeshNamePrefix = true,
 };
 
 MaterialGroupWrapper? materialWrapper = null;
@@ -167,7 +171,95 @@ static void ExportOne(CommonMeshResource resource, string target, bool includeLo
     Directory.CreateDirectory(Path.GetDirectoryName(target) ?? ".");
     if (includeTextures && materials != null) ExportMaterialTextures(materials, meshPath, Path.Combine(Path.GetDirectoryName(target) ?? ".", "textures"), resource.ExportTextureFormat);
     resource.ExportToFile(target, includeLods, includeOcc, null, motions, null);
+    NormalizeGlbNames(target);
     Console.WriteLine($"Exported {target} bytes={new FileInfo(target).Length}");
+}
+
+static void NormalizeGlbNames(string target)
+{
+    if (!Path.GetExtension(target).Equals(".glb", StringComparison.OrdinalIgnoreCase)) return;
+
+    var data = File.ReadAllBytes(target);
+    if (data.Length < 20 || Encoding.ASCII.GetString(data, 0, 4) != "glTF") return;
+
+    var version = BitConverter.ToUInt32(data, 4);
+    var chunks = new List<(string Type, byte[] Data)>();
+    var offset = 12;
+    while (offset + 8 <= data.Length)
+    {
+        var chunkLength = checked((int)BitConverter.ToUInt32(data, offset));
+        var chunkType = Encoding.ASCII.GetString(data, offset + 4, 4);
+        offset += 8;
+        if (offset + chunkLength > data.Length) return;
+        chunks.Add((chunkType, data[offset..(offset + chunkLength)]));
+        offset += chunkLength;
+    }
+
+    var jsonIndex = chunks.FindIndex(c => c.Type == "JSON");
+    if (jsonIndex == -1) return;
+
+    var jsonText = Encoding.UTF8.GetString(chunks[jsonIndex].Data).TrimEnd('\0', ' ', '\r', '\n', '\t');
+    var root = JsonNode.Parse(jsonText)?.AsObject();
+    if (root == null) return;
+
+    if (root["nodes"] is JsonArray nodes)
+    {
+        if (nodes.Count > 0 && nodes[0] is JsonObject rootNode)
+            rootNode["name"] = "Armature";
+
+        foreach (var node in nodes.OfType<JsonObject>())
+        {
+            if (node["name"]?.GetValue<string>() is { } nodeName && nodeName.Contains("_Group_", StringComparison.Ordinal))
+                node["name"] = StripMeshNamePrefix(nodeName);
+        }
+    }
+    if (root["meshes"] is JsonArray meshes)
+    {
+        foreach (var mesh in meshes.OfType<JsonObject>())
+        {
+            if (mesh["name"]?.GetValue<string>() is { } meshName)
+                mesh["name"] = StripMeshNamePrefix(meshName);
+        }
+    }
+    if (root["skins"] is JsonArray skins)
+    {
+        foreach (var skin in skins.OfType<JsonObject>())
+            skin["name"] = "Armature";
+    }
+
+    var newJson = Encoding.UTF8.GetBytes(root.ToJsonString(new JsonSerializerOptions { WriteIndented = false }));
+    chunks[jsonIndex] = ("JSON", PadChunk(newJson, 0x20));
+
+    var totalLength = 12 + chunks.Sum(c => 8 + c.Data.Length);
+    using var stream = new MemoryStream(totalLength);
+    using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+    writer.Write(Encoding.ASCII.GetBytes("glTF"));
+    writer.Write(version);
+    writer.Write(totalLength);
+    foreach (var (type, chunk) in chunks)
+    {
+        writer.Write(chunk.Length);
+        writer.Write(Encoding.ASCII.GetBytes(type));
+        writer.Write(chunk);
+    }
+    File.WriteAllBytes(target, stream.ToArray());
+}
+
+static byte[] PadChunk(byte[] data, byte padByte)
+{
+    var paddedLength = (data.Length + 3) & ~3;
+    if (paddedLength == data.Length) return data;
+    var output = new byte[paddedLength];
+    Array.Copy(data, output, data.Length);
+    Array.Fill(output, padByte, data.Length, paddedLength - data.Length);
+    return output;
+}
+
+static string StripMeshNamePrefix(string name)
+{
+    var marker = "_Group_";
+    var markerIndex = name.IndexOf(marker, StringComparison.Ordinal);
+    return markerIndex >= 0 ? name[(markerIndex + 1)..] : name;
 }
 
 static void ExportMaterialTextures(MaterialGroupWrapper materials, string meshPath, string outputDir, string textureFormat)
