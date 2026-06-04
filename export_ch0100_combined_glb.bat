@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-REM Verified ch0100 combined export.
+REM ch0100 split-by-motlist export.
 REM Includes mesh folders 00, 10, 20, and 40.
 REM Intentionally excludes folders 15 and 45.
 
@@ -11,7 +11,7 @@ set "MESH10=D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\ch\ch0
 set "MESH20=D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\ch\ch01\ch0100\20\ch0100_20.mesh.251121828"
 set "MESH40=D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\ch\ch01\ch0100\40\ch0100_40_neo.mesh.251121828"
 set "MOTLIST_DIR=D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\animation\ch\ch01\ch0100\motlist"
-set "OUTPUT=C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter\ch0100_combined_except_15_45_all_animations.glb"
+set "OUTPUT=C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter\ch0100_split_motlists_except_15_45.glb"
 
 if not exist "%EXPORTER%" (
   echo Missing exporter: "%EXPORTER%"
@@ -26,6 +26,7 @@ if not exist "%EXPORTER%" (
   --additional-mesh "%MESH20%" ^
   --additional-mesh "%MESH40%" ^
   --motlist-dir "%MOTLIST_DIR%" ^
+  --split-motlists ^
   --no-placeholder-animation-bones ^
   --texture-format png ^
   --output "%OUTPUT%"
