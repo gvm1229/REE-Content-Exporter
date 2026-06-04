@@ -1,5 +1,65 @@
 # CHANGELOG
 
+## 0.6.0 - split MOTLIST exports and batch hardening
+
+Completed: 2026-06-04
+
+### What was attempted
+
+Full-character combined exports can become too large for Assimp's GLB writer, especially for characters such as `ch0100` where multiple mesh parts and many MOTLIST files are involved. A single all-animation GLB was not reliable enough for practical use.
+
+The exporter also needed clearer progress during long writes, better diagnostics when Assimp failed to produce an output file, and safer batch files that keep the console open on errors.
+
+### Result
+
+Added `--split-motlists`. When used with `--motlist-dir`, every MOTLIST in the directory is exported as its own GLB/FBX, while all files are placed in one shared export job folder. This keeps each file smaller than a full all-MOTLIST export while avoiding per-animation clutter.
+
+The long-running final write status now includes file progress for multi-file modes. For example:
+
+```text
+Writing GLB2 file 3/14: ch0100_General
+```
+
+Assimp export failures are now checked directly. If `ExportFile(...)` returns failure or produces no output file, the exporter raises a clear error instead of crashing later while trying to normalize a missing GLB.
+
+The character batch files were refined so only one combined script remains per character:
+
+- `export_ch0000_all_motlists_glb.bat`
+- `export_ch0100_combined_glb.bat`
+
+Both scripts now use `--motlist-dir` and `--split-motlists`.
+
+### Improvements over 0.5.3
+
+- Added `--split-motlists`.
+- Added shared job-folder output for per-MOTLIST GLB/FBX exports.
+- Added file-count context to final `Writing GLB2 file` progress in multi-file exports.
+- Added direct Assimp output-file validation.
+- Added pause-on-error handling to batch files so CMD windows remain open after failures.
+- Removed redundant ch0000 single-MOTLIST batch file.
+- Avoided fragile batch caret line continuations after CMD could misread `--output` as a separate `utput` command and return exit code `9009` after a successful export.
+
+### Current batch behavior
+
+`export_ch0000_all_motlists_glb.bat` exports every MOTLIST under:
+
+```text
+D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist
+```
+
+`export_ch0100_combined_glb.bat` exports every MOTLIST under:
+
+```text
+D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\animation\ch\ch01\ch0100\motlist
+```
+
+and includes ch0100 mesh folders `00`, `10`, `20`, and `40`, while intentionally excluding `15` and `45`.
+
+### Verification evidence
+
+- `dotnet build -c Release -p:UseAppHost=false -o .omx\build-check` succeeded with 0 warnings and 0 errors.
+- A split-MOTLIST smoke test exported two ch0000 MOTLISTs into one shared job folder as two separate GLBs.
+
 ## 0.5.3 - per-job output folders
 
 Completed: 2026-06-04
@@ -10,12 +70,12 @@ Exporter products were written directly beside the requested GLB/FBX path: the m
 
 ### Result
 
-Every export job now writes into a dedicated subfolder. The folder name is derived from the mesh and animation source filenames used for that job, plus a short hash suffix for uniqueness and path safety. The requested GLB/FBX filename is preserved inside that job folder.
+Every export job now writes into a dedicated subfolder. The folder name uses the primary mesh name, the job timestamp, and a short hash suffix for uniqueness and path safety. The requested GLB/FBX filename is preserved inside that job folder.
 
 ### Improvements over 0.5.2
 
 - Added automatic per-job output folder creation.
-- Folder names are source-file based and hash-suffixed.
+- Folder names use `<mesh-name>__<yyyyMMdd_HHmmss>__<6-char-hash>`.
 - Texture folders and skipped-animation reports now stay isolated per export job.
 - Split-animation exports also create separate job folders per animation output.
 
