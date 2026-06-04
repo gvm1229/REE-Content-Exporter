@@ -206,7 +206,7 @@ if (splitMotlists)
         var group = motlistGroups[i];
         var safe = SanitizeFileName(string.IsNullOrWhiteSpace(group.SourceName) ? $"motlist_{i:0000}" : group.SourceName);
         var target = Path.Combine(jobDir, $"{i:0000}_{safe}_all_animations{outExt}");
-        ExportOne(resource, target, includeLods, includeOcc, group.Motions, materialWrappers, includeTextures && i == 0, additionalResources, progress);
+        ExportOne(resource, target, includeLods, includeOcc, group.Motions, materialWrappers, includeTextures && i == 0, additionalResources, progress, i + 1, motlistGroups.Count, safe);
         progress.WriteLine($"[{i + 1}/{motlistGroups.Count}] {target}");
     }
 }
@@ -226,7 +226,7 @@ else if (exportSeparateAnimationFiles)
         var sourcePrefix = includeSourceInName ? SanitizeFileName(source) + "_" : "";
         var targetBase = Path.Combine(outDir, $"{index:0000}_{sourcePrefix}{safe}{outExt}");
         var target = ResolveExportJobOutputPath(targetBase, meshPath, BuildSourceFiles(meshPath, additionalMeshPaths, [source], []), safe);
-        ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrappers, includeTextures, additionalResources, progress);
+        ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrappers, includeTextures, additionalResources, progress, index + 1, motions.Count, safe);
         progress.WriteLine($"[{index + 1}/{motions.Count}] {target}");
         index++;
     }
@@ -248,7 +248,10 @@ static void ExportOne(
     IReadOnlyList<(MaterialGroupWrapper Materials, string MeshPath)> materialWrappers,
     bool includeTextures,
     IReadOnlyList<CommonMeshResource> additionalResources,
-    ProgressStatus progress)
+    ProgressStatus progress,
+    int? exportIndex = null,
+    int? exportTotal = null,
+    string? exportLabel = null)
 {
     Directory.CreateDirectory(Path.GetDirectoryName(target) ?? ".");
     try
@@ -257,7 +260,7 @@ static void ExportOne(
             ExportMaterialTextures(materialWrappers, Path.Combine(Path.GetDirectoryName(target) ?? ".", "textures"), resource.ExportTextureFormat, progress);
 
         resource.ExportAnimationProgress = (current, total, name) => progress.Update($"Exporting animation {current}/{total}: {name}");
-        resource.ExportProgress = progress.Update;
+        resource.ExportProgress = message => progress.Update(FormatExportProgress(message, exportIndex, exportTotal, exportLabel));
         progress.Start("Preparing export");
         resource.ExportToFile(target, includeLods, includeOcc, null, motions, additionalResources);
         progress.Update("Finalizing output");
@@ -274,6 +277,16 @@ static void ExportOne(
         progress.Stop();
     }
     progress.WriteLine($"Exported {target} bytes={new FileInfo(target).Length}");
+}
+
+static string FormatExportProgress(string message, int? exportIndex, int? exportTotal, string? exportLabel)
+{
+    if (exportIndex == null || exportTotal == null) return message;
+
+    var formatted = $"{message} {exportIndex}/{exportTotal}";
+    if (!string.IsNullOrWhiteSpace(exportLabel))
+        formatted += $": {exportLabel}";
+    return formatted;
 }
 
 static void WriteSkippedAnimationReport(string target, IReadOnlyList<string> skippedAnimations, ProgressStatus progress)
