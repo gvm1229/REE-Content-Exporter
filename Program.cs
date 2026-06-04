@@ -30,7 +30,7 @@ if (args.Length == 0 || HasFlag(args, "--help"))
 {
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     return;
 }
 
@@ -56,6 +56,7 @@ var textureFormat = (GetArg(args, "--texture-format") ?? "png").ToLowerInvariant
 if (textureFormat is not ("png" or "dds")) throw new ArgumentException("--texture-format must be png or dds");
 var batchMotlist = HasFlag(args, "--batch-motlist");
 var splitAnimations = HasFlag(args, "--split-animations");
+var splitMotlists = HasFlag(args, "--split-motlists");
 var skipMissingAnimationBones = HasFlag(args, "--skip-missing-animation-bones");
 var noPlaceholderAnimationBones = HasFlag(args, "--no-placeholder-animation-bones");
 var includeLods = HasFlag(args, "--include-lods");
@@ -74,6 +75,7 @@ Console.WriteLine($"Output: {outputPath}");
 var mesh = LoadMesh(meshPath, streamingPath, allowMissingStreaming);
 
 var motions = new List<(string Source, MotFileBase Motion)>();
+var motlistGroups = new List<(string SourceName, string MotlistPath, List<MotFileBase> Motions)>();
 if (includeAnimations)
 {
     foreach (var motlistPath in motlistPaths)
@@ -88,6 +90,7 @@ if (includeAnimations)
         var sourceName = string.IsNullOrWhiteSpace(motlist.Name)
             ? PathUtils.GetFilenameWithoutExtensionOrVersion(motlistPath).ToString()
             : motlist.Name;
+        motlistGroups.Add((sourceName, motlistPath, selected));
         motions.AddRange(selected.Select(m => (sourceName, m)));
         Console.WriteLine($"Loaded motlist {motlist.Name}: total={motlist.MotFiles.Count} selected={selected.Count}");
     }
@@ -106,6 +109,10 @@ if (includeAnimations)
 var name = PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString();
 var animationSourceCount = motlistPaths.Count + motPaths.Count;
 var exportSeparateAnimationFiles = splitAnimations || (batchMotlist && animationSourceCount <= 1);
+if (splitMotlists && splitAnimations)
+{
+    throw new ArgumentException("--split-motlists and --split-animations cannot be used together.");
+}
 if (batchMotlist && animationSourceCount > 1 && !splitAnimations)
 {
     Console.WriteLine("INFO: multiple MOT/MOTLIST sources detected; exporting all selected animations into one file. Use --split-animations to force one file per animation.");
@@ -184,7 +191,26 @@ if (includeTextures)
     }
 }
 
-if (exportSeparateAnimationFiles)
+if (splitMotlists)
+{
+    if (motlistGroups.Count == 0) throw new ArgumentException("--split-motlists requires --motlist-dir or at least one --motlist.");
+    if (motPaths.Count > 0) throw new ArgumentException("--split-motlists only splits MOTLIST inputs; remove --mot or use --split-animations.");
+
+    var outExt = Path.GetExtension(outputPath);
+    if (string.IsNullOrEmpty(outExt)) outExt = ".glb";
+    var jobDir = ResolveSplitMotlistOutputDirectory(outputPath, meshPath, BuildSourceFiles(meshPath, additionalMeshPaths, motlistPaths, []), animationFilter);
+    progress.WriteLine($"Split-motlist exporting {motlistGroups.Count} motlists to {jobDir} (*{outExt})");
+
+    for (var i = 0; i < motlistGroups.Count; i++)
+    {
+        var group = motlistGroups[i];
+        var safe = SanitizeFileName(string.IsNullOrWhiteSpace(group.SourceName) ? $"motlist_{i:0000}" : group.SourceName);
+        var target = Path.Combine(jobDir, $"{i:0000}_{safe}_all_animations{outExt}");
+        ExportOne(resource, target, includeLods, includeOcc, group.Motions, materialWrappers, includeTextures && i == 0, additionalResources, progress);
+        progress.WriteLine($"[{i + 1}/{motlistGroups.Count}] {target}");
+    }
+}
+else if (exportSeparateAnimationFiles)
 {
     if (motions.Count == 0) throw new ArgumentException("--batch-motlist requires --motlist with at least one selected motion");
     var ext = Path.GetExtension(outputPath);
@@ -313,6 +339,18 @@ static string ResolveSingleOutputPath(string outputPath, string meshPath, string
 
     Directory.CreateDirectory(outputPath);
     return ResolveExportJobOutputPath(Path.Combine(outputPath, $"{SanitizeFileName(meshName)}_all_animations.glb"), meshPath, sourceFiles, animationFilter);
+}
+
+static string ResolveSplitMotlistOutputDirectory(string outputPath, string meshPath, IReadOnlyList<string> sourceFiles, string? animationFilter)
+{
+    var parentDir = string.IsNullOrEmpty(Path.GetExtension(outputPath))
+        ? outputPath
+        : (Path.GetDirectoryName(outputPath) ?? ".");
+    Directory.CreateDirectory(parentDir);
+
+    var jobDir = Path.Combine(parentDir, BuildExportJobFolderName(meshPath, sourceFiles, string.IsNullOrWhiteSpace(animationFilter) ? "split_motlists" : $"split_motlists_{animationFilter}"));
+    Directory.CreateDirectory(jobDir);
+    return jobDir;
 }
 
 static string ResolveExportJobOutputPath(string outputFilePath, string meshPath, IReadOnlyList<string> sourceFiles, string? label)
