@@ -9,7 +9,8 @@ set "OUTPUT=C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter\ch0000_general_all_a
 if not exist "%EXPORTER%" (
   echo Missing exporter: "%EXPORTER%"
   echo Build first with: dotnet build -c Release
-  exit /b 1
+  set "EXIT_CODE=1"
+  goto :error
 )
 
 "%EXPORTER%" ^
@@ -19,5 +20,16 @@ if not exist "%EXPORTER%" (
   --texture-format png ^
   --output "%OUTPUT%"
 
+set "EXIT_CODE=%ERRORLEVEL%"
+if not "%EXIT_CODE%"=="0" goto :error
+
 endlocal
+exit /b 0
+
+:error
+echo.
+echo Export failed with exit code %EXIT_CODE%.
+echo Press any key to close this window.
+pause >nul
+endlocal & exit /b %EXIT_CODE%
 
