@@ -20,16 +20,7 @@ if not exist "%EXPORTER%" (
   goto :error
 )
 
-"%EXPORTER%" ^
-  --mesh "%MESH00%" ^
-  --additional-mesh "%MESH10%" ^
-  --additional-mesh "%MESH20%" ^
-  --additional-mesh "%MESH40%" ^
-  --motlist-dir "%MOTLIST_DIR%" ^
-  --split-motlists ^
-  --no-placeholder-animation-bones ^
-  --texture-format png ^
-  --output "%OUTPUT%"
+"%EXPORTER%" --mesh "%MESH00%" --additional-mesh "%MESH10%" --additional-mesh "%MESH20%" --additional-mesh "%MESH40%" --motlist-dir "%MOTLIST_DIR%" --split-motlists --no-placeholder-animation-bones --texture-format png --output "%OUTPUT%"
 
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" goto :error
