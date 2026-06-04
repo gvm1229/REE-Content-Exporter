@@ -1,5 +1,5 @@
 ﻿diff --git a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
-index 4de3931..be0ea4e 100644
+index 4de3931..bc8d8eb 100644
 --- a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
 +++ b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
 @@ -1,4 +1,4 @@
@@ -95,15 +95,19 @@ index 4de3931..be0ea4e 100644
              }
          }
          void PrintTree(Node node, int depth)
-@@ -192,9 +228,47 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -192,7 +228,48 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
          //     System.Numerics.Matrix4x4.Invert(System.Numerics.Matrix4x4.Transpose(bone.OffsetMatrix), out var boneGlobal);
          //     Logger.Info(bone.Name + " | Bone: " + boneGlobal.Translation + " | Node: " + System.Numerics.Matrix4x4.Transpose(node.Transform).Translation);
          // }
+-        context.ExportFile(exportCtx.scene, filepath, exportFormat);
 +        ApplyMaterialTextureSlots(exportCtx.scene, filepath);
 +        ExportProgress?.Invoke($"Writing {exportFormat.ToUpperInvariant()} file");
-         context.ExportFile(exportCtx.scene, filepath, exportFormat);
-     }
- 
++        var exported = context.ExportFile(exportCtx.scene, filepath, exportFormat);
++        if (!exported || !File.Exists(filepath)) {
++            throw new IOException($"Assimp failed to export {exportFormat.ToUpperInvariant()} to {filepath}. The exporter returned {(exported ? "success" : "failure")} but no output file was produced.");
++        }
++    }
++
 +    private void ApplyMaterialTextureSlots(Assimp.Scene scene, string filepath)
 +    {
 +        if (ImportedMaterialGroups.Count == 0) return;
@@ -138,11 +142,9 @@ index 4de3931..be0ea4e 100644
 +                mat.TextureOpacity = new TextureSlot(opacity, TextureType.Opacity, 0, TextureMapping.FromUV, 0, 1, TextureOperation.Multiply, TextureWrapMode.Wrap, TextureWrapMode.Wrap, 0);
 +            }
 +        }
-+    }
-+
+     }
+ 
      internal void PreloadMeshBuffers()
-     {
-         if (PreloadedMeshes != null || OcclusionMeshes != null) return;
 diff --git a/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs b/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
 index d8fe794..40911d1 100644
 --- a/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
