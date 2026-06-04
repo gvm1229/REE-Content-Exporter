@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
+using ContentEditor;
 using ContentEditor.App.FileLoaders;
 using ReeLib;
 using ReeLib.Common;
@@ -24,13 +26,21 @@ static IReadOnlyList<string> GetArgs(string[] args, string name)
             values.Add(args[i + 1]);
     return values;
 }
+static float? GetFloatArg(string[] args, string name)
+{
+    var value = GetArg(args, name);
+    if (string.IsNullOrWhiteSpace(value)) return null;
+    if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+        throw new ArgumentException($"{name} must be a number");
+    return parsed;
+}
 static bool HasFlag(string[] args, string name) => args.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
 
 if (args.Length == 0 || HasFlag(args, "--help"))
 {
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     return;
 }
 
@@ -54,6 +64,9 @@ var includeAnimations = !HasFlag(args, "--no-animations");
 var includeTextures = !HasFlag(args, "--no-textures");
 var textureFormat = (GetArg(args, "--texture-format") ?? "png").ToLowerInvariant();
 if (textureFormat is not ("png" or "dds")) throw new ArgumentException("--texture-format must be png or dds");
+var fbxScale = GetFloatArg(args, "--fbx-scale") ?? 1f;
+if (fbxScale <= 0) throw new ArgumentException("--fbx-scale must be greater than 0");
+AppConfig.Settings.Import.ExportScale = fbxScale;
 var batchMotlist = HasFlag(args, "--batch-motlist");
 var splitAnimations = HasFlag(args, "--split-animations");
 var splitMotlists = HasFlag(args, "--split-motlists");
