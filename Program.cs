@@ -708,8 +708,21 @@ static string? FindStreamingCandidate(string meshPath)
         stmStreaming = Path.Combine(prefix, "streaming", suffix);
     }
 
+    string? reChunkStreaming = null;
+    var reChunkMarker = Path.DirectorySeparatorChar + "re_chunk_000" + Path.DirectorySeparatorChar;
+    var reChunkIdx = normalized.IndexOf(reChunkMarker, StringComparison.OrdinalIgnoreCase);
+    if (reChunkIdx >= 0)
+    {
+        var prefix = normalized[..(reChunkIdx + reChunkMarker.Length)];
+        var suffix = normalized[(reChunkIdx + reChunkMarker.Length)..];
+        if (!suffix.StartsWith("streaming" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            reChunkStreaming = Path.Combine(prefix, "streaming", suffix);
+        }
+    }
+
     var first = Path.Combine(dir, baseNoVersion + "streaming");
-    var candidates = new[] { stmStreaming, meshPath + ".streaming", meshPath + ".meshstreaming", first, first + ".meshstreaming", Path.ChangeExtension(meshPath, ".meshstreaming") };
+    var candidates = new[] { stmStreaming, reChunkStreaming, meshPath + ".streaming", meshPath + ".meshstreaming", first, first + ".meshstreaming", Path.ChangeExtension(meshPath, ".meshstreaming") };
     return candidates.Where(c => !string.IsNullOrWhiteSpace(c)).FirstOrDefault(File.Exists);
 }
 
@@ -730,11 +743,40 @@ static string? FindMdfCandidate(string meshPath)
 
 static string? ResolveLooseGameFile(string meshPath, string gamePath, string extension)
 {
-    var root = GetLooseRoot(meshPath);
-    if (root == null) return null;
     var rel = gamePath.Replace('/', Path.DirectorySeparatorChar).Replace("\\", Path.DirectorySeparatorChar.ToString()).TrimStart(Path.DirectorySeparatorChar);
+
+    var candidateRoots = GetLooseRoots(meshPath).ToList();
+    if (candidateRoots.Count == 0) return null;
+
+    var candidateRels = new List<string>();
+    AddUnique(candidateRels, rel);
     if (!rel.StartsWith("natives" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-        rel = Path.Combine("natives", "STM", rel);
+    {
+        AddUnique(candidateRels, Path.Combine("natives", "STM", rel));
+    }
+    else
+    {
+        var nativesStmPrefix = "natives" + Path.DirectorySeparatorChar + "STM" + Path.DirectorySeparatorChar;
+        if (rel.StartsWith(nativesStmPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            AddUnique(candidateRels, rel[nativesStmPrefix.Length..]);
+        }
+    }
+
+    foreach (var root in candidateRoots)
+    {
+        foreach (var candidateRel in candidateRels)
+        {
+            var found = ResolveLooseGameFileCandidate(root, candidateRel, extension);
+            if (found != null) return found;
+        }
+    }
+
+    return null;
+}
+
+static string? ResolveLooseGameFileCandidate(string root, string rel, string extension)
+{
     var noVersion = Path.Combine(root, rel);
     if (File.Exists(noVersion)) return noVersion;
     var dir = Path.GetDirectoryName(noVersion);
@@ -749,12 +791,28 @@ static string? ResolveLooseGameFile(string meshPath, string gamePath, string ext
     return null;
 }
 
-static string? GetLooseRoot(string path)
+static IEnumerable<string> GetLooseRoots(string path)
 {
     var normalized = path.Replace('/', Path.DirectorySeparatorChar).Replace("\\", Path.DirectorySeparatorChar.ToString());
+    var roots = new List<string>();
+
     var marker = Path.DirectorySeparatorChar + "natives" + Path.DirectorySeparatorChar;
     var idx = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-    return idx < 0 ? null : normalized[..idx];
+    if (idx >= 0) AddUnique(roots, normalized[..idx]);
+
+    var reChunkMarker = Path.DirectorySeparatorChar + "re_chunk_000" + Path.DirectorySeparatorChar;
+    var reChunkIdx = normalized.IndexOf(reChunkMarker, StringComparison.OrdinalIgnoreCase);
+    if (reChunkIdx >= 0) AddUnique(roots, normalized[..(reChunkIdx + reChunkMarker.Length)]);
+
+    return roots;
+}
+
+static void AddUnique(List<string> values, string value)
+{
+    if (!string.IsNullOrWhiteSpace(value) && !values.Contains(value, StringComparer.OrdinalIgnoreCase))
+    {
+        values.Add(value);
+    }
 }
 
 static string SanitizeFileName(string name)
