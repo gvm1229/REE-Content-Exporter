@@ -42,11 +42,11 @@ Generated or local folders such as build output are intentionally not listed her
 
 - [REE-Content-Editor](https://github.com/kagenocookie/REE-Content-Editor)
   - Why: this exporter is a CLI wrapper around REE-Content-Editor's mesh export pipeline. It uses `ContentEditor.App` classes such as `CommonMeshResource` instead of reimplementing mesh/skeleton/animation export logic.
-  - How: clone it next to this repository, then apply this repository's patch before building:
+  - How: prepare the pinned, patched sibling dependency with the setup script:
     ```powershell
-    git clone https://github.com/kagenocookie/REE-Content-Editor.git ..\REE-Content-Editor
-    git -C ..\REE-Content-Editor apply ..\REE-Content-Exporter\patches\ree-content-editor-commonmeshresource-material-textures.patch
+    .\scripts\setup-content-editor-dependency.ps1 -Force
     ```
+    See `docs/dependency_setup.md` for details. The patch is required; an unmodified upstream `REE-Content-Editor` checkout will not build this exporter.
 
 - [RE-Engine-Lib](https://github.com/kagenocookie/REE-Content-Editor/tree/master/RE-Engine-Lib)
   - Why: this is the file-format library used by REE-Content-Editor. The exporter relies on it for RE Engine mesh, material, texture, MOT, and MOTLIST parsing.

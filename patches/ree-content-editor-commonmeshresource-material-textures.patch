@@ -1,13 +1,7 @@
-﻿diff --git a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
-index 4de3931..bc8d8eb 100644
+diff --git a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
+index 4de3931..d48ad7b 100644
 --- a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
 +++ b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
-@@ -1,4 +1,4 @@
--using System.Diagnostics;
-+﻿using System.Diagnostics;
- using System.Runtime.CompilerServices;
- using Assimp;
- using ContentEditor.App.Graphics;
 @@ -18,6 +18,31 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
      public List<Graphics.Mesh>? OcclusionMeshes { get; set; }
  
