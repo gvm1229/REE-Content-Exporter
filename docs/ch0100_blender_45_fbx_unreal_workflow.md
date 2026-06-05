@@ -14,7 +14,7 @@ When the non-normalized exporter FBX is imported into Blender 4.5.9:
   - Z Rotation: `0°`
   - Uniform Scale: `0.010`
 
-Do not treat the `90°` X rotation or `0.010` scale as an error for this workflow. Leave them as Blender imported them unless you intentionally want to author a different transform.
+Do not treat the `90°` X rotation or `0.010` scale as an error at the Blender import stage. They are Blender's interpretation of the source FBX. For Unreal export, compensate through the FBX export settings below rather than by using Unreal's import-scale override.
 
 ## 1. Export the source FBX from REE-Content-Exporter
 
@@ -80,13 +80,15 @@ Recommended Blender 4.5.9 export options:
 
 ### Transform
 
-- **Scale**: `1.00`
+- **Scale**: `100.00`
 - **Apply Scalings**: `FBX All`
-- **Forward**: `-Z Forward`
-- **Up**: `Y Up`
+- **Forward**: `-Y Forward`
+- **Up**: `Z Up`
 - **Apply Unit**: On
 - **Use Space Transform**: On
 - **Apply Transform**: Off
+
+Important: do **not** use `-Z Forward / Y Up` for Unreal here. That writes a Maya-style/Y-up FBX and produced a character laid on its back in Unreal during testing. `-Y Forward / Z Up` keeps the exported FBX in Unreal's expected Z-up orientation.
 
 ### Geometry
 
@@ -104,11 +106,13 @@ Recommended Blender 4.5.9 export options:
 
 - **Bake Animation**: On
 - **Key All Bones**: On
-- **NLA Strips**: Off for this imported multi-action workflow
-- **All Actions**: On
+- **NLA Strips**: On, if each action has been pushed/stashed as its own NLA strip
+- **All Actions**: Off when using the NLA-strip workflow
 - **Force Start/End Keying**: On
 - **Sampling Rate / Step**: `1.0`
 - **Simplify**: `0.0`
+
+For a small manual test with only one active action, `All Actions` can work. For many actions, the safer workflow is to create one NLA strip per imported action, then export with `NLA Strips` enabled. This avoids relying on Blender's action-compatibility scan and produced explicit animation stacks in the generated test FBX.
 
 Then export the FBX.
 
@@ -146,20 +150,22 @@ The script should:
    - `secondary_bone_axis='X'`
    - `bake_anim=True`
    - `bake_anim_use_all_bones=True`
-   - `bake_anim_use_nla_strips=False`
-   - `bake_anim_use_all_actions=True`
+   - Create one NLA strip per imported action before export
+   - `bake_anim_use_nla_strips=True`
+   - `bake_anim_use_all_actions=False`
    - `bake_anim_simplify_factor=0.0`
-   - `axis_forward='-Z'`
-   - `axis_up='Y'`
+   - `axis_forward='-Y'`
+   - `axis_up='Z'`
+   - `global_scale=100.0`
    - `apply_scale_options='FBX_SCALE_ALL'`
    - `bake_space_transform=False`
 
 ## 6. Retry artifact from 2026-06-06
 
-A Blender 4.5.9 headless re-export was generated here:
+A Blender 4.5.9 headless re-export was generated here with the corrected Unreal settings:
 
 ```text
-C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter\ch0100_00__20260606_021807__c9b97b\ch0100_attack_all_animations_blender45_unreal_retry.fbx
+C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter\ch0100_00__20260606_021807__c9b97b\ch0100_attack_all_animations_blender45_unreal_zup_scale100_nla.fbx
 ```
 
 Verification from the generated FBX:
@@ -168,3 +174,20 @@ Verification from the generated FBX:
 - Animation stack count: `43`.
 - First stack: `ch0100_Attack_0100_Hacking_Start`.
 - Source import into Blender reported one armature, 46 meshes, and 43 actions.
+- Export axis: `-Y Forward / Z Up`.
+- Export scale: `100.0`.
+- Export animation mode: one NLA strip per imported action.
+
+Small single-animation test sample:
+
+```text
+C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter\ch0100_00__20260606_024544__7b83da\ch0100_attack_0110_hacking_loop_blender45_unreal_zup_scale100.fbx
+```
+
+Verification from the sample FBX:
+
+- FBX version: `7400`.
+- Animation stack count: `1`.
+- Stack: `ch0100_Attack_0110_Hacking_Loop`.
+- Export axis: `-Y Forward / Z Up`.
+- Export scale: `100.0`.
