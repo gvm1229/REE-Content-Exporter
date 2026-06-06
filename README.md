@@ -30,7 +30,7 @@ REE-Content-Exporter/
   export-scripts/
     export_ch0000_all_motlists_glb.bat
     export_ch0000_all_motlists_unreal_fbx.ps1
-    export_ch0100_combined_glb.bat
+    export_ch0100_all_motlists_glb.bat
     export_ch0100_all_motlists_unreal_fbx.ps1
   docs/
     CHANGELOG.md

@@ -25,7 +25,7 @@ Assimp export failures are now checked directly. If `ExportFile(...)` returns fa
 The character batch files were refined so only one combined script remains per character:
 
 - `export-scripts\export_ch0000_all_motlists_glb.bat`
-- `export-scripts\export_ch0100_combined_glb.bat`
+- `export-scripts\export_ch0100_all_motlists_glb.bat`
 
 Both scripts now use `--motlist-dir` and `--split-motlists`.
 
@@ -47,7 +47,7 @@ Both scripts now use `--motlist-dir` and `--split-motlists`.
 D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist
 ```
 
-`export-scripts\export_ch0100_combined_glb.bat` exports every MOTLIST under:
+`export-scripts\export_ch0100_all_motlists_glb.bat` exports every MOTLIST under:
 
 ```text
 D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\animation\ch\ch01\ch0100\motlist
@@ -513,5 +513,3 @@ Blender 3.6 import:
 
 - Package: `REE-Content-Exporter.PRAGMATA-poc-0.3.2.zip`
 - SHA256: `2A4AFE53AE6CB74E75E33B83B2C35D238FFCA18864540EDCA1A1CF28EED15AF5`
-
-
