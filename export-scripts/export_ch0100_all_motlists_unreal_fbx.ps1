@@ -1,7 +1,8 @@
 param(
     [string]$Root = "D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000",
     [string]$ExportRoot = "C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter",
-    [string]$Blender = "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
+    [string]$Blender = "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe",
+    [switch]$KeepSourceFbx
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,7 +21,10 @@ if ($BlenderVersionLine -notmatch 'Blender\s+4\.5\.9') {
     throw "Expected Blender 4.5.9 LTS, but found: $BlenderVersionLine"
 }
 
-$OutputRequest = Join-Path $ExportRoot "ch0100_all_motlists_unreal_textured_source.fbx"
+$SourceFileName = "ch0100_all_motlists_source.fbx"
+$FinalFbxFileName = "ch0100_all_motlists_unreal.fbx"
+$ReportFileName = "ch0100_all_motlists.skipped-animation-bones.md"
+$OutputRequest = Join-Path $ExportRoot $SourceFileName
 $Start = Get-Date
 
 & $Exporter `
@@ -36,7 +40,7 @@ $Start = Get-Date
   --output $OutputRequest
 if ($LASTEXITCODE -ne 0) { throw "Exporter failed with exit code $LASTEXITCODE" }
 
-$Source = Get-ChildItem $ExportRoot -Recurse -Filter "ch0100_all_motlists_unreal_textured_source.fbx" |
+$Source = Get-ChildItem $ExportRoot -Recurse -Filter $SourceFileName |
   Where-Object { $_.LastWriteTime -ge $Start.AddMinutes(-1) } |
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 1
@@ -48,7 +52,14 @@ if (!(Test-Path $TextureDir)) { throw "Texture folder missing after export: $Tex
 $TextureCount = (Get-ChildItem $TextureDir -File -ErrorAction Stop | Measure-Object).Count
 if ($TextureCount -le 0) { throw "Texture folder exists but is empty: $TextureDir" }
 
-$BlenderOut = Join-Path $OutDir "ch0100_all_motlists_blender45_unreal_maya_axis_cm_units_apply_rot_scale.fbx"
+$SourceBaseName = [System.IO.Path]::GetFileNameWithoutExtension($Source.Name)
+$SourceReport = Join-Path $OutDir "$SourceBaseName.skipped-animation-bones.md"
+$FinalReport = Join-Path $OutDir $ReportFileName
+if (Test-Path $SourceReport) {
+    Move-Item -LiteralPath $SourceReport -Destination $FinalReport -Force
+}
+
+$BlenderOut = Join-Path $OutDir $FinalFbxFileName
 $Py = Join-Path $env:TEMP "blender_ch0100_all_motlists_unreal_cm_units.py"
 @"
 import bpy
@@ -190,7 +201,13 @@ print(f'EXPORTED {out} size={out.stat().st_size if out.exists() else 0}')
 if ($LASTEXITCODE -ne 0) { throw "Blender re-export failed with exit code $LASTEXITCODE" }
 if (!(Test-Path $BlenderOut)) { throw "Missing Blender output: $BlenderOut" }
 
-Write-Host "SOURCE_FBX=$($Source.FullName)"
+if ($KeepSourceFbx) {
+    Write-Host "SOURCE_FBX=$($Source.FullName)"
+} else {
+    Remove-Item -LiteralPath $Source.FullName -Force
+    Write-Host "SOURCE_FBX_REMOVED=$($Source.FullName)"
+}
 Write-Host "BLENDER_FBX=$BlenderOut"
+if (Test-Path $FinalReport) { Write-Host "SKIPPED_BONE_REPORT=$FinalReport" }
 Write-Host "TEXTURE_DIR=$TextureDir"
 Write-Host "TEXTURE_COUNT=$TextureCount"

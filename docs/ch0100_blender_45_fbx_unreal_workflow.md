@@ -91,10 +91,11 @@ character\animation\ch\ch01\ch0100\motlist
 
 ch0100 script output:
 
-- Source FBX: `ch0100_all_motlists_unreal_textured_source.fbx`
-- Unreal-ready FBX: `ch0100_all_motlists_blender45_unreal_maya_axis_cm_units_apply_rot_scale.fbx`
+- Unreal-ready FBX: `ch0100_all_motlists_unreal.fbx`
 - Texture directory: `textures\`
-- Skipped bone channel report: `*.skipped-animation-bones.md`
+- Skipped bone channel report, if needed: `ch0100_all_motlists.skipped-animation-bones.md`
+
+The temporary source FBX is named `ch0100_all_motlists_source.fbx` while Blender is running. It is deleted after a successful Blender re-export to avoid leaving two similar FBX files in the output folder. Run the script with `-KeepSourceFbx` only when debugging the Blender round trip.
 
 ## REE-Content-Exporter stage
 
@@ -309,27 +310,23 @@ Success criteria:
 - Build: 0 warnings, 0 errors.
 - Exporter exit code: 0.
 - Blender exit code: 0.
-- Source FBX generated.
-- Blender Unreal-ready FBX generated.
+- Temporary source FBX generated, then removed unless `-KeepSourceFbx` was used.
+- Blender Unreal-ready FBX generated as `ch0100_all_motlists_unreal.fbx`.
 - `textures\` folder generated.
 - Texture file count greater than 0.
 - Animation stack count matches the test target:
   - all-MOTLIST script: all selected animations from the target character's MOTLIST folder.
 
-Previously re-verified 0110 sample output from 2026-06-06:
+Expected final output folder shape:
 
 ```text
-C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter\ch0100_00__20260606_181559__b75ac6\ch0100_attack_0110_hacking_loop_blender45_unreal_maya_axis_cm_units_apply_rot_scale.fbx
+<job-folder>\
+  ch0100_all_motlists_unreal.fbx
+  ch0100_all_motlists.skipped-animation-bones.md   # only if missing animation bone channels were skipped
+  textures\
+    materials.textures.json
+    ...
 ```
-
-That run confirmed:
-
-- Source FBX generation succeeded.
-- Blender re-export succeeded.
-- Texture folder generation succeeded.
-- Texture count: 59.
-- Animation action/stack: 1.
-- Blender export size: about 51.6 MB.
 
 ## All animation MOTLIST export
 
