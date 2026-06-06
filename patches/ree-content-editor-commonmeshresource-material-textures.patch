@@ -1,3 +1,24 @@
+﻿diff --git a/ContentEditor.App/Configuration/AppConfig.cs b/ContentEditor.App/Configuration/AppConfig.cs
+index ef4e503..5139b4c 100644
+--- a/ContentEditor.App/Configuration/AppConfig.cs
++++ b/ContentEditor.App/Configuration/AppConfig.cs
+@@ -127,7 +127,15 @@ public class AppConfig : Singleton<AppConfig>
+     private const string IniFilename = "ce_config.ini";
+     private const string JsonFilename = "ce_config.json";
+ 
+-    public static readonly string Version = FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).ProductVersion ?? "";
++    private static string GetVersion()
++    {
++        var assemblyPath = Assembly.GetExecutingAssembly().Location;
++        var versionSource = string.IsNullOrWhiteSpace(assemblyPath) ? Environment.ProcessPath : assemblyPath;
++        if (string.IsNullOrWhiteSpace(versionSource)) return "";
++        return FileVersionInfo.GetVersionInfo(versionSource).ProductVersion ?? "";
++    }
++
++    public static readonly string Version = GetVersion();
+     public static readonly string? RevisionHash = Version.Contains("-r") ? Version.Substring(Version.IndexOf("-r")+2) : null;
+ 
+     #if DEBUG
 diff --git a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
 index 4de3931..d48ad7b 100644
 --- a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
