@@ -48,10 +48,37 @@ $BlenderOut = Join-Path $OutDir "ch0000_all_motlists_blender45_unreal_maya_axis_
 $Py = Join-Path $env:TEMP "blender_ch0000_all_motlists_unreal_cm_units.py"
 @"
 import bpy
+import builtins
 from pathlib import Path
 src = Path(r'$($Source.FullName)')
 out = Path(r'$BlenderOut')
 
+def log_progress(message):
+    print(f'BLENDER_PROGRESS {message}', flush=True)
+
+def install_fbx_pose_progress(action_names):
+    real_print = builtins.print
+    state = {'pose_count': 0}
+    total = max(1, len(action_names))
+
+    def progress_print(*args, **kwargs):
+        # Blender 4.5.9's FBX exporter prints noisy tuples such as
+        # (bpy.data.armatures['Armature'], 'POSE') while baking animation
+        # stacks. Convert those into actionable indexed progress lines.
+        if len(args) == 1 and isinstance(args[0], tuple) and len(args[0]) >= 2 and args[0][1] == 'POSE':
+            state['pose_count'] += 1
+            index = state['pose_count']
+            if index <= len(action_names):
+                real_print(f'BLENDER_PROGRESS Exporting animation {index}/{total}: {action_names[index - 1]}', flush=True)
+            else:
+                real_print(f'BLENDER_PROGRESS Exporting additional FBX pose data after {total} animation stack(s): event {index}', flush=True)
+            return
+        real_print(*args, **kwargs)
+
+    builtins.print = progress_print
+    return real_print
+
+log_progress('1/6 clearing scene')
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete()
 for datablocks in (bpy.data.actions, bpy.data.armatures, bpy.data.meshes):
@@ -62,6 +89,7 @@ for datablocks in (bpy.data.actions, bpy.data.armatures, bpy.data.meshes):
 bpy.context.scene.unit_settings.system = 'METRIC'
 bpy.context.scene.unit_settings.scale_length = 0.01
 
+log_progress('2/6 importing source FBX')
 bpy.ops.import_scene.fbx(
     filepath=str(src),
     use_anim=True,
@@ -78,7 +106,8 @@ if not armatures:
 if not bpy.data.actions:
     raise RuntimeError('No actions imported from source FBX')
 
-for arm in armatures:
+for arm_index, arm in enumerate(armatures, start=1):
+    log_progress(f'3/6 applying armature transform {arm_index}/{len(armatures)}: {arm.name}')
     print('BEFORE', arm.name, 'rot', [round(v, 6) for v in arm.rotation_euler], 'scale', [round(v, 6) for v in arm.scale])
     bpy.ops.object.select_all(action='DESELECT')
     bpy.context.view_layer.objects.active = arm
@@ -86,13 +115,15 @@ for arm in armatures:
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True, properties=True)
     print('AFTER_APPLY_ROT_SCALE', arm.name, 'rot', [round(v, 6) for v in arm.rotation_euler], 'scale', [round(v, 6) for v in arm.scale])
 
+actions = list(bpy.data.actions)
+action_names = [action.name for action in actions]
 for arm in armatures:
     arm.animation_data_create()
-    actions = list(bpy.data.actions)
     arm.animation_data.action = None
     for track in list(arm.animation_data.nla_tracks):
         arm.animation_data.nla_tracks.remove(track)
-    for action in actions:
+    for action_index, action in enumerate(actions, start=1):
+        log_progress(f'4/6 preparing NLA strip {action_index}/{len(actions)}: {action.name}')
         start, end = action.frame_range
         track = arm.animation_data.nla_tracks.new()
         track.name = action.name
@@ -115,33 +146,39 @@ bpy.context.scene.frame_start = 0
 bpy.context.scene.frame_end = max_frame
 bpy.context.scene.render.fps = 60
 
-bpy.ops.export_scene.fbx(
-    filepath=str(out),
-    check_existing=False,
-    use_selection=False,
-    object_types={'ARMATURE', 'MESH'},
-    use_mesh_modifiers=True,
-    add_leaf_bones=False,
-    primary_bone_axis='Y',
-    secondary_bone_axis='X',
-    use_armature_deform_only=False,
-    bake_anim=True,
-    bake_anim_use_all_bones=True,
-    bake_anim_use_nla_strips=True,
-    bake_anim_use_all_actions=False,
-    bake_anim_force_startend_keying=True,
-    bake_anim_step=1.0,
-    bake_anim_simplify_factor=0.0,
-    axis_forward='-Z',
-    axis_up='Y',
-    global_scale=1.0,
-    apply_unit_scale=True,
-    apply_scale_options='FBX_SCALE_ALL',
-    use_space_transform=True,
-    bake_space_transform=False,
-    path_mode='AUTO',
-    embed_textures=False,
-)
+log_progress(f'5/6 exporting FBX with {len(actions)} animation stack(s)')
+real_print = install_fbx_pose_progress(action_names)
+try:
+    bpy.ops.export_scene.fbx(
+        filepath=str(out),
+        check_existing=False,
+        use_selection=False,
+        object_types={'ARMATURE', 'MESH'},
+        use_mesh_modifiers=True,
+        add_leaf_bones=False,
+        primary_bone_axis='Y',
+        secondary_bone_axis='X',
+        use_armature_deform_only=False,
+        bake_anim=True,
+        bake_anim_use_all_bones=True,
+        bake_anim_use_nla_strips=True,
+        bake_anim_use_all_actions=False,
+        bake_anim_force_startend_keying=True,
+        bake_anim_step=1.0,
+        bake_anim_simplify_factor=0.0,
+        axis_forward='-Z',
+        axis_up='Y',
+        global_scale=1.0,
+        apply_unit_scale=True,
+        apply_scale_options='FBX_SCALE_ALL',
+        use_space_transform=True,
+        bake_space_transform=False,
+        path_mode='AUTO',
+        embed_textures=False,
+    )
+finally:
+    builtins.print = real_print
+log_progress('6/6 Blender FBX export complete')
 print(f'EXPORTED {out} size={out.stat().st_size if out.exists() else 0}')
 "@ | Set-Content -Encoding UTF8 $Py
 
