@@ -8,3 +8,4 @@ latest/
 exported_files/
 .omc/
 .omx/
+*.list

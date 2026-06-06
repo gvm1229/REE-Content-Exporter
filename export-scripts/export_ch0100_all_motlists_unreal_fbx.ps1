@@ -308,6 +308,7 @@ $Start = Get-Date
   --additional-mesh "$Root\character\ch\ch01\ch0100\10\ch0100_10.mesh.251121828" `
   --additional-mesh "$Root\character\ch\ch01\ch0100\20\ch0100_20.mesh.251121828" `
   --additional-mesh "$Root\character\ch\ch01\ch0100\40\ch0100_40_neo.mesh.251121828" `
+  --additional-streaming "$Root\character\ch\ch01\ch0100\40\ch0100_40_neo.mesh.251121828=$Root\streaming\character\ch\ch01\ch0100\40\ch0100_40_neo.mesh.251121828" `
   --motlist-dir "$Root\character\animation\ch\ch01\ch0100\motlist" `
   --split-motlists `
   --no-placeholder-animation-bones `

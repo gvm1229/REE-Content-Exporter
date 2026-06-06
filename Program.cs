@@ -36,11 +36,39 @@ static float? GetFloatArg(string[] args, string name)
 }
 static bool HasFlag(string[] args, string name) => args.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
 
+static Dictionary<string, string> ParseAdditionalStreamingArgs(IEnumerable<string> values)
+{
+    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var value in values)
+    {
+        var separatorIndex = value.IndexOf('=');
+        if (separatorIndex < 0) separatorIndex = value.IndexOf('|');
+        if (separatorIndex <= 0 || separatorIndex >= value.Length - 1)
+        {
+            throw new ArgumentException("--additional-streaming must use <additional-mesh-path>=<streaming-mesh-path>.");
+        }
+
+        var meshPath = value[..separatorIndex].Trim().Trim('"');
+        var streamingPath = value[(separatorIndex + 1)..].Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(meshPath) || string.IsNullOrWhiteSpace(streamingPath))
+        {
+            throw new ArgumentException("--additional-streaming must use non-empty <additional-mesh-path>=<streaming-mesh-path> values.");
+        }
+        if (result.ContainsKey(meshPath))
+        {
+            throw new ArgumentException($"Duplicate --additional-streaming entry for additional mesh: {meshPath}");
+        }
+        result.Add(meshPath, streamingPath);
+    }
+
+    return result;
+}
+
 if (args.Length == 0 || HasFlag(args, "--help"))
 {
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     return;
 }
 
@@ -49,6 +77,7 @@ using var progress = new ProgressStatus();
 var meshPath = GetArg(args, "--mesh") ?? throw new ArgumentException("Missing --mesh");
 var additionalMeshPaths = GetArgs(args, "--additional-mesh").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var streamingPath = GetArg(args, "--streaming");
+var additionalStreamingByMesh = ParseAdditionalStreamingArgs(GetArgs(args, "--additional-streaming"));
 var mdfPath = GetArg(args, "--mdf");
 var motlistPaths = GetArgs(args, "--motlist").ToList();
 var motlistDir = GetArg(args, "--motlist-dir");
@@ -80,10 +109,19 @@ Console.WriteLine("REE Content Editor native export path");
 Console.WriteLine($"Mesh: {meshPath}");
 Console.WriteLine($"Additional meshes: {(additionalMeshPaths.Count == 0 ? "-" : string.Join("; ", additionalMeshPaths))}");
 Console.WriteLine($"Streaming: {streamingPath ?? "-"}");
+Console.WriteLine($"Additional streaming: {(additionalStreamingByMesh.Count == 0 ? "-" : string.Join("; ", additionalStreamingByMesh.Select(kvp => kvp.Key + " => " + kvp.Value)))}");
 Console.WriteLine($"MDF: {mdfPath ?? "auto"}");
 Console.WriteLine($"Motlists: {(motlistPaths.Count == 0 ? "-" : string.Join("; ", motlistPaths))}");
 Console.WriteLine($"Mots: {(motPaths.Count == 0 ? "-" : string.Join("; ", motPaths))}");
 Console.WriteLine($"Output: {outputPath}");
+
+var unknownAdditionalStreamingKeys = additionalStreamingByMesh.Keys
+    .Where(key => !additionalMeshPaths.Contains(key, StringComparer.OrdinalIgnoreCase))
+    .ToList();
+if (unknownAdditionalStreamingKeys.Count != 0)
+{
+    throw new ArgumentException("--additional-streaming keys must match a supplied --additional-mesh path. Unknown key(s): " + string.Join("; ", unknownAdditionalStreamingKeys));
+}
 
 var mesh = LoadMesh(meshPath, streamingPath, allowMissingStreaming);
 
@@ -146,7 +184,7 @@ foreach (var additionalMeshPath in additionalMeshPaths)
     var additionalName = PathUtils.GetFilenameWithoutExtensionOrVersion(additionalMeshPath).ToString();
     additionalResources.Add(new CommonMeshResource(additionalName, null!)
     {
-        NativeMesh = LoadMesh(additionalMeshPath, explicitStreamingPath: null, allowMissingStreaming),
+        NativeMesh = LoadMesh(additionalMeshPath, additionalStreamingByMesh.TryGetValue(additionalMeshPath, out var additionalStreamingPath) ? additionalStreamingPath : null, allowMissingStreaming),
         GameVersion = GameName.pragmata,
         ExportTextureFormat = textureFormat,
         ExportRootNodeName = "Armature",
