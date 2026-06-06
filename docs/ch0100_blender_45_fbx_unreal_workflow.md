@@ -61,7 +61,7 @@ Blender is invoked in headless/background mode:
 
 ## Current recommended FBX scripts
 
-The maintained Unreal-ready FBX scripts are one script per character. Both use `--motlist-dir`, do not split output, and produce **one FBX containing all MOTLIST animations** for the character.
+The maintained Unreal-ready FBX scripts are one script per character. Both use `--motlist-dir` and `--split-motlists` to produce **one Unreal-ready FBX per non-empty MOTLIST**. Empty MOTLISTs, or MOTLISTs with zero selected animations after filtering, are detected by the exporter and skipped before Blender is invoked.
 
 ```powershell
 .\export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1
@@ -91,12 +91,12 @@ character\animation\ch\ch01\ch0100\motlist
 
 ch0100 script output:
 
-- Unreal-ready FBX: `ch0100_all_motlists_unreal.fbx`
-- Export log: `ch0100_all_motlists_unreal_export-SUCCESS.log` or `ch0100_all_motlists_unreal_export-FAIL.log`
+- Unreal-ready FBX per non-empty MOTLIST, for example: `ch0100_Attack_unreal.fbx`
+- Export log: `ch0100_motlists_unreal_export-SUCCESS.log` or `ch0100_motlists_unreal_export-FAIL.log`
 - Texture directory: `textures\`
-- Skipped bone channel report, if needed: `ch0100_all_motlists.skipped-animation-bones.md`
+- Skipped bone channel report per MOTLIST, if needed: `ch0100_Attack.skipped-animation-bones.md`
 
-The temporary source FBX is named `ch0100_all_motlists_source.fbx` while Blender is running. It is deleted after a successful Blender re-export to avoid leaving two similar FBX files in the output folder. Run the script with `-KeepSourceFbx` only when debugging the Blender round trip.
+Temporary split source FBX files use names like `0000_ch0100_Attack_all_animations.fbx` while Blender is running. Each source FBX is deleted after its successful Blender re-export to avoid leaving two similar FBX files in the output folder. Run the script with `-KeepSourceFbx` only when debugging the Blender round trip.
 
 The script starts a PowerShell transcript before the exporter call and moves it into the final job folder at completion. The log captures the exporter output, Blender output, progress lines, final artifact paths, and failure status if the script stops early. Successful runs write `*-SUCCESS.log`; failed runs write `*-FAIL.log`, making the outcome visible without opening the file. If the script fails before a job folder is known, it prints `EXPORT_LOG_TEMP=...` so the temporary `*-FAIL__<timestamp>.log` can still be inspected.
 
@@ -112,6 +112,7 @@ The ch0100 script runs the exporter with this command shape:
   --additional-mesh "$Root\character\ch\ch01\ch0100\20\ch0100_20.mesh.251121828" `
   --additional-mesh "$Root\character\ch\ch01\ch0100\40\ch0100_40_neo.mesh.251121828" `
   --motlist-dir "$Root\character\animation\ch\ch01\ch0100\motlist" `
+  --split-motlists `
   --no-placeholder-animation-bones `
   --texture-format png `
   --fbx-scale 100 `
@@ -313,9 +314,9 @@ Success criteria:
 - Build: 0 warnings, 0 errors.
 - Exporter exit code: 0.
 - Blender exit code: 0.
-- Temporary source FBX generated, then removed unless `-KeepSourceFbx` was used.
-- Blender Unreal-ready FBX generated as `ch0100_all_motlists_unreal.fbx`.
-- Export log generated with a status suffix, e.g. `ch0100_all_motlists_unreal_export-SUCCESS.log`.
+- Temporary source FBX files generated per non-empty MOTLIST, then removed unless `-KeepSourceFbx` was used.
+- Blender Unreal-ready FBX files generated per non-empty MOTLIST, e.g. `ch0100_Attack_unreal.fbx`.
+- Export log generated with a status suffix, e.g. `ch0100_motlists_unreal_export-SUCCESS.log`.
 - `textures\` folder generated.
 - Texture file count greater than 0.
 - Animation stack count matches the test target:
@@ -325,9 +326,10 @@ Expected final output folder shape:
 
 ```text
 <job-folder>\
-  ch0100_all_motlists_unreal.fbx
-  ch0100_all_motlists_unreal_export-SUCCESS.log
-  ch0100_all_motlists.skipped-animation-bones.md   # only if missing animation bone channels were skipped
+  ch0100_Attack_unreal.fbx
+  ch0100_General_unreal.fbx
+  ch0100_motlists_unreal_export-SUCCESS.log
+  ch0100_Attack.skipped-animation-bones.md   # only if missing animation bone channels were skipped
   textures\
     materials.textures.json
     ...
@@ -335,7 +337,7 @@ Expected final output folder shape:
 
 ## All animation MOTLIST export
 
-The final FBX scripts already remove the `--animation-name` filter and use `--motlist-dir`. For ch0100, this means exporting all MOTLIST animations in the motlist folder into one FBX, not only the attack MOTLIST.
+The final FBX scripts already remove the `--animation-name` filter and use `--motlist-dir` plus `--split-motlists`. For ch0100, this means every non-empty MOTLIST in the motlist folder becomes its own Unreal-ready FBX.
 
 Keep these settings for many-animation export:
 

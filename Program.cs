@@ -212,15 +212,24 @@ if (splitMotlists)
     var outExt = Path.GetExtension(outputPath);
     if (string.IsNullOrEmpty(outExt)) outExt = ".glb";
     var jobDir = ResolveSplitMotlistOutputDirectory(outputPath, meshPath, BuildSourceFiles(meshPath, additionalMeshPaths, motlistPaths, []), animationFilter);
-    progress.WriteLine($"Split-motlist exporting {motlistGroups.Count} motlists to {jobDir} (*{outExt})");
-
-    for (var i = 0; i < motlistGroups.Count; i++)
+    var nonEmptyMotlistGroups = motlistGroups.Where(group => group.Motions.Count > 0).ToList();
+    var emptyMotlistGroups = motlistGroups.Where(group => group.Motions.Count == 0).ToList();
+    foreach (var group in emptyMotlistGroups)
     {
-        var group = motlistGroups[i];
+        var label = string.IsNullOrWhiteSpace(group.SourceName) ? group.MotlistPath : group.SourceName;
+        progress.WriteLine($"Skipping empty motlist with no selected animations: {label}");
+    }
+    if (nonEmptyMotlistGroups.Count == 0) throw new ArgumentException("--split-motlists found no motlists with selected animations.");
+
+    progress.WriteLine($"Split-motlist exporting {nonEmptyMotlistGroups.Count}/{motlistGroups.Count} non-empty motlists to {jobDir} (*{outExt})");
+
+    for (var i = 0; i < nonEmptyMotlistGroups.Count; i++)
+    {
+        var group = nonEmptyMotlistGroups[i];
         var safe = SanitizeFileName(string.IsNullOrWhiteSpace(group.SourceName) ? $"motlist_{i:0000}" : group.SourceName);
         var target = Path.Combine(jobDir, $"{i:0000}_{safe}_all_animations{outExt}");
-        ExportOne(resource, target, includeLods, includeOcc, group.Motions, materialWrappers, includeTextures && i == 0, additionalResources, progress, i + 1, motlistGroups.Count, safe);
-        progress.WriteLine($"[{i + 1}/{motlistGroups.Count}] {target}");
+        ExportOne(resource, target, includeLods, includeOcc, group.Motions, materialWrappers, includeTextures && i == 0, additionalResources, progress, i + 1, nonEmptyMotlistGroups.Count, safe);
+        progress.WriteLine($"[{i + 1}/{nonEmptyMotlistGroups.Count}] {target}");
     }
 }
 else if (exportSeparateAnimationFiles)

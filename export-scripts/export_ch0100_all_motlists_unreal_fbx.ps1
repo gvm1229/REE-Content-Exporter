@@ -16,8 +16,8 @@ if (!(Test-Path $Blender)) { throw "Missing Blender 4.5.9 executable: $Blender" 
 if (!(Test-Path $ExportRoot)) { New-Item -ItemType Directory -Force -Path $ExportRoot | Out-Null }
 
 $RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$LogTemp = Join-Path $env:TEMP "ch0100_all_motlists_unreal_export__$RunStamp.log"
-$FinalLogBaseName = "ch0100_all_motlists_unreal_export"
+$LogTemp = Join-Path $env:TEMP "ch0100_motlists_unreal_export__$RunStamp.log"
+$FinalLogBaseName = "ch0100_motlists_unreal_export"
 $TranscriptStarted = $false
 $LogCompleted = $false
 $OutDir = $null
@@ -50,75 +50,31 @@ function Complete-ExportLog {
     }
 }
 
-trap {
-    Write-Host "SCRIPT_STATUS=FAILED"
-    Write-Host "SCRIPT_ERROR=$($_.Exception.Message)"
-    Complete-ExportLog -Status "FAIL"
-    break
+function Get-FinalBaseName {
+    param([System.IO.FileInfo]$Source)
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($Source.Name)
+    $base = $base -replace '^\d{4}_', ''
+    $base = $base -replace '_all_animations$', ''
+    return $base
 }
 
-Start-Transcript -Path $LogTemp -Force | Out-Null
-$TranscriptStarted = $true
-Write-Host "SCRIPT=export_ch0100_all_motlists_unreal_fbx.ps1"
-Write-Host "EXPORT_LOG_TEMP=$LogTemp"
-Write-Host "ROOT=$Root"
-Write-Host "EXPORT_ROOT=$ExportRoot"
-Write-Host "BLENDER=$Blender"
-Write-Host "KEEP_SOURCE_FBX=$KeepSourceFbx"
+function Invoke-BlenderReexport {
+    param(
+        [System.IO.FileInfo]$Source,
+        [string]$BlenderOut,
+        [int]$Index,
+        [int]$Total
+    )
 
-$BlenderVersionLine = (& $Blender --version 2>&1 | Select-Object -First 1)
-if ($LASTEXITCODE -ne 0) { throw "Could not query Blender version from: $Blender" }
-if ($BlenderVersionLine -notmatch 'Blender\s+4\.5\.9') {
-    throw "Expected Blender 4.5.9 LTS, but found: $BlenderVersionLine"
-}
-Write-Host "BLENDER_VERSION=$BlenderVersionLine"
-
-$SourceFileName = "ch0100_all_motlists_source.fbx"
-$FinalFbxFileName = "ch0100_all_motlists_unreal.fbx"
-$ReportFileName = "ch0100_all_motlists.skipped-animation-bones.md"
-$OutputRequest = Join-Path $ExportRoot $SourceFileName
-$Start = Get-Date
-
-& $Exporter `
-  --mesh "$Root\character\ch\ch01\ch0100\00\ch0100_00.mesh.251121828" `
-  --streaming "$Root\streaming\character\ch\ch01\ch0100\00\ch0100_00.mesh.251121828" `
-  --additional-mesh "$Root\character\ch\ch01\ch0100\10\ch0100_10.mesh.251121828" `
-  --additional-mesh "$Root\character\ch\ch01\ch0100\20\ch0100_20.mesh.251121828" `
-  --additional-mesh "$Root\character\ch\ch01\ch0100\40\ch0100_40_neo.mesh.251121828" `
-  --motlist-dir "$Root\character\animation\ch\ch01\ch0100\motlist" `
-  --no-placeholder-animation-bones `
-  --texture-format png `
-  --fbx-scale 100 `
-  --output $OutputRequest
-if ($LASTEXITCODE -ne 0) { throw "Exporter failed with exit code $LASTEXITCODE" }
-
-$Source = Get-ChildItem $ExportRoot -Recurse -Filter $SourceFileName |
-  Where-Object { $_.LastWriteTime -ge $Start.AddMinutes(-1) } |
-  Sort-Object LastWriteTime -Descending |
-  Select-Object -First 1
-if (!$Source) { throw "Could not find generated source FBX under $ExportRoot" }
-
-$OutDir = Split-Path $Source.FullName -Parent
-$TextureDir = Join-Path $OutDir "textures"
-if (!(Test-Path $TextureDir)) { throw "Texture folder missing after export: $TextureDir" }
-$TextureCount = (Get-ChildItem $TextureDir -File -ErrorAction Stop | Measure-Object).Count
-if ($TextureCount -le 0) { throw "Texture folder exists but is empty: $TextureDir" }
-
-$SourceBaseName = [System.IO.Path]::GetFileNameWithoutExtension($Source.Name)
-$SourceReport = Join-Path $OutDir "$SourceBaseName.skipped-animation-bones.md"
-$FinalReport = Join-Path $OutDir $ReportFileName
-if (Test-Path $SourceReport) {
-    Move-Item -LiteralPath $SourceReport -Destination $FinalReport -Force
-}
-
-$BlenderOut = Join-Path $OutDir $FinalFbxFileName
-$Py = Join-Path $env:TEMP "blender_ch0100_all_motlists_unreal_cm_units.py"
-@"
+    $Py = Join-Path $env:TEMP "blender_ch0100_motlist_unreal_cm_units.py"
+    @"
 import bpy
 import builtins
 from pathlib import Path
 src = Path(r'$($Source.FullName)')
 out = Path(r'$BlenderOut')
+index = $Index
+total = $Total
 
 def log_progress(message):
     print(f'BLENDER_PROGRESS {message}', flush=True)
@@ -126,37 +82,33 @@ def log_progress(message):
 def install_fbx_pose_progress(action_names):
     real_print = builtins.print
     state = {'pose_count': 0}
-    total = max(1, len(action_names))
+    total_actions = max(1, len(action_names))
 
     def progress_print(*args, **kwargs):
-        # Blender 4.5.9's FBX exporter prints noisy tuples such as
-        # (bpy.data.armatures['Armature'], 'POSE') while baking animation
-        # stacks. Convert those into actionable indexed progress lines.
         if len(args) == 1 and isinstance(args[0], tuple) and len(args[0]) >= 2 and args[0][1] == 'POSE':
             state['pose_count'] += 1
-            index = state['pose_count']
-            if index <= len(action_names):
-                real_print(f'BLENDER_PROGRESS Exporting animation {index}/{total}: {action_names[index - 1]}', flush=True)
+            pose_index = state['pose_count']
+            if pose_index <= len(action_names):
+                real_print(f'BLENDER_PROGRESS Motlist {index}/{total} exporting animation {pose_index}/{total_actions}: {action_names[pose_index - 1]}', flush=True)
             else:
-                real_print(f'BLENDER_PROGRESS Exporting additional FBX pose data after {total} animation stack(s): event {index}', flush=True)
+                real_print(f'BLENDER_PROGRESS Motlist {index}/{total} exporting additional FBX pose data after {total_actions} animation stack(s): event {pose_index}', flush=True)
             return
         real_print(*args, **kwargs)
 
     builtins.print = progress_print
     return real_print
 
-log_progress('1/6 clearing scene')
+log_progress(f'Motlist {index}/{total} 1/6 clearing scene')
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete()
 for datablocks in (bpy.data.actions, bpy.data.armatures, bpy.data.meshes):
     for datablock in list(datablocks):
         datablocks.remove(datablock, do_unlink=True)
 
-# Use centimeter scene units so Unreal does not need import scale 100.
 bpy.context.scene.unit_settings.system = 'METRIC'
 bpy.context.scene.unit_settings.scale_length = 0.01
 
-log_progress('2/6 importing source FBX')
+log_progress(f'Motlist {index}/{total} 2/6 importing source FBX')
 bpy.ops.import_scene.fbx(
     filepath=str(src),
     use_anim=True,
@@ -167,14 +119,14 @@ bpy.ops.import_scene.fbx(
 
 armatures = [o for o in bpy.context.scene.objects if o.type == 'ARMATURE']
 meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
-print(f'IMPORTED armatures={len(armatures)} meshes={len(meshes)} actions={len(bpy.data.actions)}')
+print(f'IMPORTED motlist={index}/{total} armatures={len(armatures)} meshes={len(meshes)} actions={len(bpy.data.actions)}')
 if not armatures:
     raise RuntimeError('No armature imported from source FBX')
 if not bpy.data.actions:
     raise RuntimeError('No actions imported from source FBX')
 
 for arm_index, arm in enumerate(armatures, start=1):
-    log_progress(f'3/6 applying armature transform {arm_index}/{len(armatures)}: {arm.name}')
+    log_progress(f'Motlist {index}/{total} 3/6 applying armature transform {arm_index}/{len(armatures)}: {arm.name}')
     print('BEFORE', arm.name, 'rot', [round(v, 6) for v in arm.rotation_euler], 'scale', [round(v, 6) for v in arm.scale])
     bpy.ops.object.select_all(action='DESELECT')
     bpy.context.view_layer.objects.active = arm
@@ -190,7 +142,7 @@ for arm in armatures:
     for track in list(arm.animation_data.nla_tracks):
         arm.animation_data.nla_tracks.remove(track)
     for action_index, action in enumerate(actions, start=1):
-        log_progress(f'4/6 preparing NLA strip {action_index}/{len(actions)}: {action.name}')
+        log_progress(f'Motlist {index}/{total} 4/6 preparing NLA strip {action_index}/{len(actions)}: {action.name}')
         start, end = action.frame_range
         track = arm.animation_data.nla_tracks.new()
         track.name = action.name
@@ -213,7 +165,7 @@ bpy.context.scene.frame_start = 0
 bpy.context.scene.frame_end = max_frame
 bpy.context.scene.render.fps = 60
 
-log_progress(f'5/6 exporting FBX with {len(actions)} animation stack(s)')
+log_progress(f'Motlist {index}/{total} 5/6 exporting FBX with {len(actions)} animation stack(s)')
 real_print = install_fbx_pose_progress(action_names)
 try:
     bpy.ops.export_scene.fbx(
@@ -245,22 +197,97 @@ try:
     )
 finally:
     builtins.print = real_print
-log_progress('6/6 Blender FBX export complete')
+log_progress(f'Motlist {index}/{total} 6/6 Blender FBX export complete')
 print(f'EXPORTED {out} size={out.stat().st_size if out.exists() else 0}')
 "@ | Set-Content -Encoding UTF8 $Py
 
-& $Blender --background --python $Py
-if ($LASTEXITCODE -ne 0) { throw "Blender re-export failed with exit code $LASTEXITCODE" }
-if (!(Test-Path $BlenderOut)) { throw "Missing Blender output: $BlenderOut" }
-
-if ($KeepSourceFbx) {
-    Write-Host "SOURCE_FBX=$($Source.FullName)"
-} else {
-    Remove-Item -LiteralPath $Source.FullName -Force
-    Write-Host "SOURCE_FBX_REMOVED=$($Source.FullName)"
+    & $Blender --background --python $Py
+    if ($LASTEXITCODE -ne 0) { throw "Blender re-export failed for $($Source.Name) with exit code $LASTEXITCODE" }
+    if (!(Test-Path $BlenderOut)) { throw "Missing Blender output: $BlenderOut" }
 }
-Write-Host "BLENDER_FBX=$BlenderOut"
-if (Test-Path $FinalReport) { Write-Host "SKIPPED_BONE_REPORT=$FinalReport" }
+
+trap {
+    Write-Host "SCRIPT_STATUS=FAILED"
+    Write-Host "SCRIPT_ERROR=$($_.Exception.Message)"
+    Complete-ExportLog -Status "FAIL"
+    break
+}
+
+Start-Transcript -Path $LogTemp -Force | Out-Null
+$TranscriptStarted = $true
+Write-Host "SCRIPT=export_ch0100_all_motlists_unreal_fbx.ps1"
+Write-Host "EXPORT_LOG_TEMP=$LogTemp"
+Write-Host "ROOT=$Root"
+Write-Host "EXPORT_ROOT=$ExportRoot"
+Write-Host "BLENDER=$Blender"
+Write-Host "KEEP_SOURCE_FBX=$KeepSourceFbx"
+
+$BlenderVersionLine = (& $Blender --version 2>&1 | Select-Object -First 1)
+if ($LASTEXITCODE -ne 0) { throw "Could not query Blender version from: $Blender" }
+if ($BlenderVersionLine -notmatch 'Blender\s+4\.5\.9') {
+    throw "Expected Blender 4.5.9 LTS, but found: $BlenderVersionLine"
+}
+Write-Host "BLENDER_VERSION=$BlenderVersionLine"
+
+$OutputRequest = Join-Path $ExportRoot "ch0100_motlists_source.fbx"
+$Start = Get-Date
+
+& $Exporter `
+  --mesh "$Root\character\ch\ch01\ch0100\00\ch0100_00.mesh.251121828" `
+  --streaming "$Root\streaming\character\ch\ch01\ch0100\00\ch0100_00.mesh.251121828" `
+  --additional-mesh "$Root\character\ch\ch01\ch0100\10\ch0100_10.mesh.251121828" `
+  --additional-mesh "$Root\character\ch\ch01\ch0100\20\ch0100_20.mesh.251121828" `
+  --additional-mesh "$Root\character\ch\ch01\ch0100\40\ch0100_40_neo.mesh.251121828" `
+  --motlist-dir "$Root\character\animation\ch\ch01\ch0100\motlist" `
+  --split-motlists `
+  --no-placeholder-animation-bones `
+  --texture-format png `
+  --fbx-scale 100 `
+  --output $OutputRequest
+if ($LASTEXITCODE -ne 0) { throw "Exporter failed with exit code $LASTEXITCODE" }
+
+$RecentSources = Get-ChildItem $ExportRoot -Recurse -File -Filter "*_all_animations.fbx" |
+  Where-Object { $_.LastWriteTime -ge $Start.AddMinutes(-2) } |
+  Sort-Object FullName
+if (!$RecentSources -or $RecentSources.Count -eq 0) { throw "Could not find split MOTLIST source FBX files under $ExportRoot" }
+
+$OutDir = ($RecentSources | Sort-Object LastWriteTime -Descending | Select-Object -First 1).DirectoryName
+$SourceFiles = Get-ChildItem $OutDir -File -Filter "*_all_animations.fbx" | Sort-Object Name
+if (!$SourceFiles -or $SourceFiles.Count -eq 0) { throw "No source FBX files found in split MOTLIST job folder: $OutDir" }
+Write-Host "SPLIT_MOTLIST_SOURCE_COUNT=$($SourceFiles.Count)"
+Write-Host "JOB_DIR=$OutDir"
+
+$TextureDir = Join-Path $OutDir "textures"
+if (!(Test-Path $TextureDir)) { throw "Texture folder missing after export: $TextureDir" }
+$TextureCount = (Get-ChildItem $TextureDir -File -ErrorAction Stop | Measure-Object).Count
+if ($TextureCount -le 0) { throw "Texture folder exists but is empty: $TextureDir" }
+
+for ($i = 0; $i -lt $SourceFiles.Count; $i++) {
+    $Source = $SourceFiles[$i]
+    $finalBase = Get-FinalBaseName -Source $Source
+    $BlenderOut = Join-Path $OutDir "$($finalBase)_unreal.fbx"
+    $SourceReport = Join-Path $OutDir "$([System.IO.Path]::GetFileNameWithoutExtension($Source.Name)).skipped-animation-bones.md"
+    $FinalReport = Join-Path $OutDir "$finalBase.skipped-animation-bones.md"
+
+    Write-Host "MOTLIST_SOURCE=$($Source.FullName)"
+    Write-Host "MOTLIST_TARGET=$BlenderOut"
+    Invoke-BlenderReexport -Source $Source -BlenderOut $BlenderOut -Index ($i + 1) -Total $SourceFiles.Count
+
+    if (Test-Path $SourceReport) {
+        Move-Item -LiteralPath $SourceReport -Destination $FinalReport -Force
+        Write-Host "SKIPPED_BONE_REPORT=$FinalReport"
+    }
+
+    if ($KeepSourceFbx) {
+        Write-Host "SOURCE_FBX=$($Source.FullName)"
+    } else {
+        Remove-Item -LiteralPath $Source.FullName -Force
+        Write-Host "SOURCE_FBX_REMOVED=$($Source.FullName)"
+    }
+    Write-Host "BLENDER_FBX=$BlenderOut"
+    Write-Host "MOTLIST_DONE=$($i + 1)/$($SourceFiles.Count)"
+}
+
 Write-Host "TEXTURE_DIR=$TextureDir"
 Write-Host "TEXTURE_COUNT=$TextureCount"
 Write-Host "SCRIPT_STATUS=SUCCESS"
