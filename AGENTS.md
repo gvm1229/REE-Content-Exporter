@@ -4,6 +4,22 @@ Operational rules for future AI agent sessions working in this repository.
 
 This file captures the lessons learned while stabilizing the PRAGMATA `ch0000` and `ch0100` export scripts. Apply these rules when creating or modifying scripts for other model assets.
 
+
+## Documentation is mandatory
+
+Documentation must be kept current at all times.
+
+When an AI agent changes behavior, scripts, CLI flags, dependencies, generated outputs, logging, reports, validation rules, or asset workflow assumptions, it must update the relevant documentation in the same work session.
+
+Minimum expectations:
+
+- Update `README.md` when public CLI flags, script parameters, dependencies, or expected output behavior change.
+- Update `docs/CHANGELOG.md` when a meaningful feature, workflow, behavior, or verification milestone changes.
+- Update or add focused docs under `docs/` when the change introduces a workflow users need to repeat.
+- Update this `AGENTS.md` when a new durable rule is learned that should constrain future AI sessions.
+- Do not leave documentation as a later task unless the user explicitly instructs not to document yet.
+- If documentation is intentionally deferred because user verification is required, state that clearly and identify exactly which document needs the later update.
+
 ## Repository context
 
 - This repository is `REE-Content-Exporter`, a wrapper around REE-Content-Editor / RE-Engine-Lib export functionality.

@@ -1,5 +1,135 @@
 # CHANGELOG
 
+## 0.7.0 - Unreal-ready FBX pipeline, scripting hardening, and interactive export workflow
+
+Completed: 2026-06-07
+
+### What was attempted
+
+After `0.6.0`, split MOTLIST GLB export was stable enough for Blender inspection, but the Unreal import path still had several practical failures:
+
+- direct FBX exports could wobble in Unreal even when Blender played the same animations correctly;
+- Blender re-export was needed, but its version, axis, scale, and addon behavior had to be made deterministic;
+- source FBX files and final Unreal FBX files were easy to confuse;
+- large all-animation FBX files were slow to test and import;
+- MOTLISTs that generated source FBXs but imported into Blender with zero actions could abort whole batch runs;
+- texture output could silently disappear when paths or source folders were wrong;
+- streaming mesh usage needed to be explicit for both primary and additional meshes;
+- project documentation and future-agent scripting rules had fallen behind the actual workflow;
+- users needed an interactive way to discover and select export inputs instead of hand-writing every command.
+
+### Result
+
+The current Unreal-ready FBX workflow is a two-stage export:
+
+1. `REE-Content-Exporter` writes source FBX files from RE Engine mesh/MOTLIST data.
+2. Blender `4.5.9 LTS` imports those source FBXs, applies the verified unit/axis/export settings, creates explicit NLA strips, and writes final Unreal-ready FBX files.
+
+The verified Unreal path now uses:
+
+- `--fbx-scale 100` during source FBX export;
+- Blender scene/unit handling for centimeter-correct Unreal scale;
+- Blender export axis `-Z Forward`, `Y Up`;
+- Blender background execution with `--factory-startup` to isolate user addons;
+- per-MOTLIST Unreal FBX output instead of one huge all-animation FBX;
+- concise final filenames such as `<asset>_<motlist>_unreal.fbx`;
+- source FBX cleanup by default after successful Blender re-export.
+
+The known-good Unreal outcome is:
+
+- skeletal mesh stands upright;
+- animations play without wobble;
+- model scale imports correctly as `1.0` in Unreal;
+- textures are present in the export folder;
+- the root bone may still display a 90-degree roll/X value, but that was not the cause of the wobble or scale failures.
+
+### Exporter CLI changes
+
+- Added `--fbx-scale <scale>` to control the scale passed into the REE/Assimp FBX export stage.
+- Added explicit additional mesh streaming support:
+  ```text
+  --additional-streaming <additional-mesh-path>=<streaming-mesh-path>
+  ```
+- Preserved the correct relationship between normal and streaming meshes:
+  - normal mesh remains `--mesh` / `--additional-mesh`;
+  - streaming mesh is only passed through `--streaming` / `--additional-streaming`.
+- Added path fallback support for flat `re_chunk_000` layouts as well as older `natives\STM` style layouts.
+- Added dynamic streaming-file discovery for `re_chunk_000\streaming\...` sibling paths.
+- Added stronger validation around split export output creation and missing files.
+- Added support for skipped MOTLIST reporting in split-MOTLIST mode.
+- Added single-file publish/dependency version lookup fixes for the interactive workflow.
+
+### Unreal FBX script changes
+
+- Replaced one-off FBX scripts with final per-character Unreal-ready scripts:
+  - `export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1`
+  - `export-scripts\export_ch0100_all_motlists_unreal_fbx.ps1`
+- Moved execution scripts into `export-scripts\`.
+- Kept GLB scripts for each character:
+  - `export-scripts\export_ch0000_all_motlists_glb.bat`
+  - `export-scripts\export_ch0100_all_motlists_glb.bat`
+- Added a mesh-only Unreal FBX template:
+  - `export-scripts\template_mesh_only_unreal_fbx.ps1`
+- Added per-MOTLIST Unreal FBX generation to reduce import/test size and avoid one huge FBX.
+- Added Blender progress output so long FBX exports show current MOTLIST/action progress instead of only raw Blender tuple output.
+- Added export logs into each generated job folder.
+- Added `-SUCCESS.log` / `-FAIL.log` suffixes so the result is visible from the filename.
+- Added zero-action Blender MOTLIST detection. If Blender imports a source FBX with zero actions, the MOTLIST is skipped, recorded in `skipped-blender-motlists.md`, and the whole run continues.
+- Added source FBX cleanup by default after Blender re-export or zero-action skip; `-KeepSourceFbx` keeps intermediates for debugging.
+- Added texture folder validation so missing/empty textures are treated as export failures.
+- Added `--factory-startup` to Blender invocations to prevent user-installed addons from affecting exports or polluting logs.
+- Updated scripts to explicitly pass streaming buffers where matching streaming assets exist:
+  - ch0000 primary mesh now passes `--streaming`;
+  - ch0100 primary mesh passes `--streaming`;
+  - ch0100 additional mesh part `40` passes `--additional-streaming`;
+  - ch0100 parts `10` and `20` remain normal additional meshes because matching streaming files were not present in the extract.
+
+### Dependency and repository reproducibility changes
+
+- Reworked the REE-Content-Editor dependency setup so required custom dependency patches are reproducible instead of living only in an untracked local dependency folder.
+- Added dependency setup documentation under `docs/dependency_setup.md`.
+- Added patch files for the REE/Content Editor dependency changes needed by this exporter.
+- Added `pragmata.list` to the repository as a tracked asset/file reference list.
+
+### Documentation changes
+
+- Documented Blender as a required dependency for Unreal-ready FBX export.
+- Specified Blender `4.5.9 LTS` as the required and verified version.
+- Documented the Blender-to-Unreal workflow in detail.
+- Unified project documentation language to English.
+- Documented all exporter flags in the README, including behavior and expected outcomes.
+- Documented skipped MOTLIST behavior and skipped Blender MOTLIST behavior.
+- Documented macOS execution-script feasibility as a note only, because the current REE-Content-Editor dependency uses Windows executable assumptions.
+- Added `AGENTS.md` to encode future AI-agent rules for asset scripting, streaming mesh handling, Blender usage, logging, texture verification, and commit discipline.
+
+### Interactive export workflow changes
+
+- Added an interactive export wizard to reduce manual command construction.
+- Added a Windows single-file publish profile.
+- Updated README guidance for interactive usage.
+- Fixed dependency version lookup for single-file publishing.
+
+### Improvements over 0.6.0
+
+- Unreal-ready FBX export is now the documented path for Unreal imports.
+- Blender re-export is deterministic and isolated from user addons.
+- Per-MOTLIST Unreal FBX output makes large animation sets practical to test.
+- Zero-action MOTLISTs no longer abort full-character runs.
+- Logs and Markdown reports now make export failures/skips auditable after completion.
+- Streaming mesh usage is explicit and documented for both primary and additional meshes.
+- Source-vs-final FBX confusion is reduced by concise final names and source cleanup.
+- Texture output is validated instead of silently accepted when missing.
+- Future AI sessions now have repo-local guidance in `AGENTS.md`.
+- Interactive export discovery/selection is available on the feature branch.
+
+### Verification evidence
+
+- `dotnet build -c Release` succeeded after the major script/CLI changes.
+- PowerShell syntax validation succeeded for the Unreal FBX scripts and mesh-only template.
+- Blender `--factory-startup` smoke test ran without loading the problematic user addon.
+- A failed `*_Tree_*` source FBX was directly inspected in Blender and confirmed to import with an armature/meshes but zero actions, validating the zero-action skip logic.
+- The current ch0000/ch0100 scripts were checked against the extracted file tree for existing normal and streaming mesh paths.
+
 ## 0.6.0 - split MOTLIST exports and batch hardening
 
 Completed: 2026-06-04
