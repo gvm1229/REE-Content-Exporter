@@ -248,7 +248,7 @@ print(f'EXPORTED {out} size={out.stat().st_size if out.exists() else 0}')
 "@ | Set-Content -Encoding UTF8 $Py
 
     Remove-Item -LiteralPath $StatusPath -Force -ErrorAction SilentlyContinue
-    & $Blender --background --python $Py
+    & $Blender --background --factory-startup --python $Py
     if ($LASTEXITCODE -ne 0) { throw "Blender re-export failed for $($Source.Name) with exit code $LASTEXITCODE" }
     if (!(Test-Path $StatusPath)) { throw "Missing Blender status file for $($Source.Name): $StatusPath" }
 

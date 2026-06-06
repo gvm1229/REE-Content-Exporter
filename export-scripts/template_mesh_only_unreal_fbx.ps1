@@ -124,7 +124,7 @@ bpy.ops.export_scene.fbx(
 print(f'EXPORTED {out} size={out.stat().st_size if out.exists() else 0}')
 "@ | Set-Content -Encoding UTF8 $Py
 
-& $Blender --background --python $Py
+& $Blender --background --factory-startup --python $Py
 if ($LASTEXITCODE -ne 0) { throw "Blender re-export failed with exit code $LASTEXITCODE" }
 if (!(Test-Path $BlenderOut)) { throw "Missing Blender output: $BlenderOut" }
 
