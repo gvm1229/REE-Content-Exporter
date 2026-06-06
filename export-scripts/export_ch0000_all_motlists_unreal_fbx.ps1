@@ -21,6 +21,7 @@ $FinalLogBaseName = "ch0000_motlists_unreal_export"
 $TranscriptStarted = $false
 $LogCompleted = $false
 $OutDir = $null
+$BlenderSkippedMotlists = New-Object System.Collections.Generic.List[object]
 
 function Complete-ExportLog {
     param(
@@ -58,12 +59,48 @@ function Get-FinalBaseName {
     return $base
 }
 
+
+function Write-BlenderSkippedMotlistReport {
+    param(
+        [string]$JobDir,
+        [object[]]$SkippedMotlists
+    )
+
+    if (!$JobDir -or !(Test-Path $JobDir)) { return }
+
+    $ReportPath = Join-Path $JobDir "skipped-blender-motlists.md"
+    $Lines = New-Object System.Collections.Generic.List[string]
+    $Lines.Add("# Skipped Blender MOTLIST Re-exports")
+    $Lines.Add("")
+    $Lines.Add("This report lists split MOTLIST source FBX files that were created by REE-Content-Exporter but intentionally skipped during the Blender Unreal re-export phase.")
+    $Lines.Add("")
+    $Lines.Add("These entries usually represent MOTLIST files that contain resource data, but Blender imports zero animation actions from the generated source FBX. They are not treated as fatal export failures because there is no animation stack for Blender to re-export.")
+    $Lines.Add("")
+
+    if (!$SkippedMotlists -or $SkippedMotlists.Count -eq 0) {
+        $Lines.Add("No MOTLIST source FBX files were skipped by Blender re-export.")
+    } else {
+        $Lines.Add("| Source FBX | Intended Unreal FBX | Reason | Imported Actions |")
+        $Lines.Add("| --- | --- | --- | --- |")
+        foreach ($Skipped in $SkippedMotlists) {
+            $sourceName = [System.IO.Path]::GetFileName($Skipped.Source)
+            $targetName = [System.IO.Path]::GetFileName($Skipped.Target)
+            $reason = ($Skipped.Reason -replace '\|', '\/')
+            $Lines.Add("| $sourceName | $targetName | $reason | $($Skipped.ActionCount) |")
+        }
+    }
+
+    $Lines | Set-Content -Encoding UTF8 $ReportPath
+    Write-Host "BLENDER_SKIPPED_MOTLIST_REPORT=$ReportPath"
+}
+
 function Invoke-BlenderReexport {
     param(
         [System.IO.FileInfo]$Source,
         [string]$BlenderOut,
         [int]$Index,
-        [int]$Total
+        [int]$Total,
+        [string]$StatusPath
     )
 
     $Py = Join-Path $env:TEMP "blender_ch0000_motlist_unreal_cm_units.py"
@@ -73,8 +110,12 @@ import builtins
 from pathlib import Path
 src = Path(r'$($Source.FullName)')
 out = Path(r'$BlenderOut')
+status_path = Path(r'$StatusPath')
 index = $Index
 total = $Total
+
+def write_status(status, reason='', action_count=0):
+    status_path.write_text(f'STATUS={status}\nREASON={reason}\nACTION_COUNT={action_count}\n', encoding='utf-8')
 
 def log_progress(message):
     print(f'BLENDER_PROGRESS {message}', flush=True)
@@ -121,9 +162,13 @@ armatures = [o for o in bpy.context.scene.objects if o.type == 'ARMATURE']
 meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
 print(f'IMPORTED motlist={index}/{total} armatures={len(armatures)} meshes={len(meshes)} actions={len(bpy.data.actions)}')
 if not armatures:
+    write_status('FAILED', 'No armature imported from source FBX', len(bpy.data.actions))
     raise RuntimeError('No armature imported from source FBX')
 if not bpy.data.actions:
-    raise RuntimeError('No actions imported from source FBX')
+    reason = 'No actions imported from source FBX'
+    write_status('SKIPPED', reason, 0)
+    print(f'BLENDER_SKIP motlist={index}/{total} reason={reason} source={src.name}', flush=True)
+    raise SystemExit(0)
 
 for arm_index, arm in enumerate(armatures, start=1):
     log_progress(f'Motlist {index}/{total} 3/6 applying armature transform {arm_index}/{len(armatures)}: {arm.name}')
@@ -198,15 +243,40 @@ try:
 finally:
     builtins.print = real_print
 log_progress(f'Motlist {index}/{total} 6/6 Blender FBX export complete')
+write_status('EXPORTED', '', len(actions))
 print(f'EXPORTED {out} size={out.stat().st_size if out.exists() else 0}')
 "@ | Set-Content -Encoding UTF8 $Py
 
+    Remove-Item -LiteralPath $StatusPath -Force -ErrorAction SilentlyContinue
     & $Blender --background --python $Py
     if ($LASTEXITCODE -ne 0) { throw "Blender re-export failed for $($Source.Name) with exit code $LASTEXITCODE" }
+    if (!(Test-Path $StatusPath)) { throw "Missing Blender status file for $($Source.Name): $StatusPath" }
+
+    $Status = @{}
+    foreach ($Line in Get-Content -LiteralPath $StatusPath) {
+        $Parts = $Line -split '=', 2
+        if ($Parts.Count -eq 2) { $Status[$Parts[0]] = $Parts[1] }
+    }
+
+    $ActionCount = 0
+    if ($Status.ContainsKey('ACTION_COUNT')) { [void][int]::TryParse($Status['ACTION_COUNT'], [ref]$ActionCount) }
+    $Reason = if ($Status.ContainsKey('REASON')) { $Status['REASON'] } else { '' }
+
+    if ($Status['STATUS'] -eq 'SKIPPED') {
+        return [pscustomobject]@{ Status = 'SKIPPED'; Reason = $Reason; ActionCount = $ActionCount }
+    }
+    if ($Status['STATUS'] -ne 'EXPORTED') {
+        if (!$Reason) { $Reason = "Unexpected Blender status: $($Status['STATUS'])" }
+        throw $Reason
+    }
     if (!(Test-Path $BlenderOut)) { throw "Missing Blender output: $BlenderOut" }
+    return [pscustomobject]@{ Status = 'EXPORTED'; Reason = $Reason; ActionCount = $ActionCount }
 }
 
 trap {
+    if ($script:OutDir -and (Test-Path $script:OutDir)) {
+        Write-BlenderSkippedMotlistReport -JobDir $script:OutDir -SkippedMotlists $script:BlenderSkippedMotlists.ToArray()
+    }
     Write-Host "SCRIPT_STATUS=FAILED"
     Write-Host "SCRIPT_ERROR=$($_.Exception.Message)"
     Complete-ExportLog -Status "FAIL"
@@ -267,7 +337,31 @@ for ($i = 0; $i -lt $SourceFiles.Count; $i++) {
 
     Write-Host "MOTLIST_SOURCE=$($Source.FullName)"
     Write-Host "MOTLIST_TARGET=$BlenderOut"
-    Invoke-BlenderReexport -Source $Source -BlenderOut $BlenderOut -Index ($i + 1) -Total $SourceFiles.Count
+    $StatusPath = Join-Path $env:TEMP ("{0}_blender_status.txt" -f ([System.IO.Path]::GetFileNameWithoutExtension($Source.Name)))
+    $BlenderResult = Invoke-BlenderReexport -Source $Source -BlenderOut $BlenderOut -Index ($i + 1) -Total $SourceFiles.Count -StatusPath $StatusPath
+
+    if ($BlenderResult.Status -eq 'SKIPPED') {
+        $script:BlenderSkippedMotlists.Add([pscustomobject]@{
+            Source = $Source.FullName
+            Target = $BlenderOut
+            Reason = $BlenderResult.Reason
+            ActionCount = $BlenderResult.ActionCount
+        })
+        Write-Host "MOTLIST_SKIPPED_BY_BLENDER=$($Source.FullName)"
+        Write-Host "MOTLIST_SKIP_REASON=$($BlenderResult.Reason)"
+        if ($KeepSourceFbx) {
+            Write-Host "SOURCE_FBX=$($Source.FullName)"
+        } else {
+            Remove-Item -LiteralPath $Source.FullName -Force
+            Write-Host "SOURCE_FBX_REMOVED=$($Source.FullName)"
+            if (Test-Path $SourceReport) {
+                Remove-Item -LiteralPath $SourceReport -Force
+                Write-Host "SOURCE_SKIPPED_BONE_REPORT_REMOVED=$SourceReport"
+            }
+        }
+        Write-Host "MOTLIST_DONE=$($i + 1)/$($SourceFiles.Count)"
+        continue
+    }
 
     if (Test-Path $SourceReport) {
         Move-Item -LiteralPath $SourceReport -Destination $FinalReport -Force
@@ -284,6 +378,7 @@ for ($i = 0; $i -lt $SourceFiles.Count; $i++) {
     Write-Host "MOTLIST_DONE=$($i + 1)/$($SourceFiles.Count)"
 }
 
+Write-BlenderSkippedMotlistReport -JobDir $OutDir -SkippedMotlists $BlenderSkippedMotlists.ToArray()
 Write-Host "TEXTURE_DIR=$TextureDir"
 Write-Host "TEXTURE_COUNT=$TextureCount"
 Write-Host "SCRIPT_STATUS=SUCCESS"

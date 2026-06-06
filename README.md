@@ -70,7 +70,7 @@ Generated or local folders such as build output are intentionally not listed her
     ```powershell
     & "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" --background --python <generated-script.py>
     ```
-    The current Unreal-ready FBX scripts are `export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1` and `export-scripts\export_ch0100_all_motlists_unreal_fbx.ps1`. They expect Blender at `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`, export one source FBX per non-empty MOTLIST, import each source FBX through Blender, apply the Blender-side transform/unit fixes, create explicit NLA animation strips, and export one Unreal-ready FBX per MOTLIST. Intermediate source FBX files are deleted after successful Blender re-export unless the script is run with `-KeepSourceFbx`. Each run also writes an export log into the generated job folder with a `-SUCCESS.log` or `-FAIL.log` suffix. For mesh-only exports, use `export-scripts\template_mesh_only_unreal_fbx.ps1`.
+    The current Unreal-ready FBX scripts are `export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1` and `export-scripts\export_ch0100_all_motlists_unreal_fbx.ps1`. They expect Blender at `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`, export one source FBX per non-empty MOTLIST, import each source FBX through Blender, apply the Blender-side transform/unit fixes, create explicit NLA animation strips, and export one Unreal-ready FBX per MOTLIST. Intermediate source FBX files are deleted after successful Blender re-export unless the script is run with `-KeepSourceFbx`. If Blender imports a source FBX with zero animation actions, that MOTLIST source is skipped rather than treated as a fatal failure and documented in `skipped-blender-motlists.md`. Each run also writes an export log into the generated job folder with a `-SUCCESS.log` or `-FAIL.log` suffix. For mesh-only exports, use `export-scripts\template_mesh_only_unreal_fbx.ps1`.
   - Detailed workflow notes are in `docs/ch0100_blender_45_fbx_unreal_workflow.md`. A macOS execution-script feasibility note is in `docs/macos_export_script_feasibility.md`.
 
 - [DirectXTex texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv)
@@ -218,7 +218,7 @@ The scripts under `export-scripts\` are convenience wrappers around the CLI. The
 | `-Root` | Extracted `re_chunk_000` path | Sets the loose-file extract root. | ch0000 mesh and MOTLIST paths are resolved under this root. | `.\export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1 -Root "D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000"` |
 | `-ExportRoot` | Output parent folder | Selects where the generated job folder is created. | Per-MOTLIST Unreal FBXs, textures, reports, and log are written under one new job folder. | `-ExportRoot "C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter"` |
 | `-Blender` | Path to `blender.exe` | Selects the Blender executable. The script requires Blender `4.5.9 LTS`. | Blender imports each source FBX and writes Unreal-ready per-MOTLIST FBX files. | `-Blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"` |
-| `-KeepSourceFbx` | Switch | Keeps the intermediate per-MOTLIST source FBX files after Blender succeeds. | Useful for debugging; otherwise source FBXs are deleted to avoid confusion. | `.\export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1 -KeepSourceFbx` |
+| `-KeepSourceFbx` | Switch | Keeps the intermediate per-MOTLIST source FBX files after Blender succeeds or after a zero-action source is skipped. | Useful for debugging; otherwise source FBXs are deleted to avoid confusion. | `.\export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1 -KeepSourceFbx` |
 
 #### `export_ch0100_all_motlists_unreal_fbx.ps1`
 
@@ -227,7 +227,9 @@ The scripts under `export-scripts\` are convenience wrappers around the CLI. The
 | `-Root` | Extracted `re_chunk_000` path | Sets the loose-file extract root. | ch0100 mesh parts `00`, `10`, `20`, `40`, streaming data, and MOTLIST paths are resolved under this root. | `.\export-scripts\export_ch0100_all_motlists_unreal_fbx.ps1 -Root "D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000"` |
 | `-ExportRoot` | Output parent folder | Selects where the generated job folder is created. | Per-MOTLIST Unreal FBXs, textures, reports, and log are written under one new job folder. | `-ExportRoot "C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter"` |
 | `-Blender` | Path to `blender.exe` | Selects the Blender executable. The script requires Blender `4.5.9 LTS`. | Blender imports each source FBX and writes Unreal-ready per-MOTLIST FBX files. | `-Blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"` |
-| `-KeepSourceFbx` | Switch | Keeps the intermediate per-MOTLIST source FBX files after Blender succeeds. | Useful for debugging; otherwise source FBXs are deleted to avoid confusion. | `.\export-scripts\export_ch0100_all_motlists_unreal_fbx.ps1 -KeepSourceFbx` |
+| `-KeepSourceFbx` | Switch | Keeps the intermediate per-MOTLIST source FBX files after Blender succeeds or after a zero-action source is skipped. | Useful for debugging; otherwise source FBXs are deleted to avoid confusion. | `.\export-scripts\export_ch0100_all_motlists_unreal_fbx.ps1 -KeepSourceFbx` |
+
+For the per-MOTLIST Unreal scripts, `skipped-motlists.md` is written by the exporter when a MOTLIST has no selected animation entries before source-FBX generation. `skipped-blender-motlists.md` is written by the PowerShell/Blender phase when a source FBX exists but Blender imports zero animation actions from it. The latter is expected for some tree/control MOTLIST resources and does not make the run fail.
 
 #### `template_mesh_only_unreal_fbx.ps1`
 
