@@ -14,12 +14,18 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <Target Name="CopyAssimpNativeToPublish" AfterTargets="Publish">
+  <Target Name="CopyNativeDependenciesToPublish" AfterTargets="Publish">
     <ItemGroup>
       <AssimpNative Include="$(OutputPath)assimp.dll" Condition="Exists('$(OutputPath)assimp.dll')" />
       <AssimpNative Include="$(OutputPath)runtimes\win-x64\native\assimp.dll" Condition="'@(AssimpNative)' == '' and Exists('$(OutputPath)runtimes\win-x64\native\assimp.dll')" />
+      <GDeflateNative Include="$(OutputPath)libGDeflate.dll" Condition="Exists('$(OutputPath)libGDeflate.dll')" />
+      <GDeflateNative Include="$(OutputPath)runtimes\win-x64\native\libGDeflate.dll" Condition="'@(GDeflateNative)' == '' and Exists('$(OutputPath)runtimes\win-x64\native\libGDeflate.dll')" />
+      <DirectXTexNative Include="$(OutputPath)DirectXTex.dll" Condition="Exists('$(OutputPath)DirectXTex.dll')" />
+      <DirectXTexNative Include="$(OutputPath)runtimes\win-x64\native\DirectXTex.dll" Condition="'@(DirectXTexNative)' == '' and Exists('$(OutputPath)runtimes\win-x64\native\DirectXTex.dll')" />
     </ItemGroup>
     <Copy SourceFiles="@(AssimpNative)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(GDeflateNative)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DirectXTexNative)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>
