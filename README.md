@@ -59,6 +59,15 @@ Generated or local folders such as build output are intentionally not listed her
     dotnet build -c Release
     ```
 
+- [Blender 4.5.x](https://www.blender.org/)
+  - Why: Blender is required for the current Unreal-ready FBX workflow. The direct Assimp-authored FBX can import into Unreal, but its animation curves wobble in Unreal. Blender imports the same FBX correctly, then re-bakes/re-exports the animation into an Unreal-friendly FBX.
+  - Scope: Blender is not required for the basic exporter build, nor for producing the first source FBX. It is required when using the Unreal-ready sample/export scripts that perform the Blender bake/re-export step.
+  - How this repository accesses Blender: the Unreal sample script calls Blender as an external executable in background mode and passes it a generated Python script:
+    ```powershell
+    & "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" --background --python <generated-script.py>
+    ```
+    The currently tested script is `export_ch0100_attack_0110_unreal_textured_sample.ps1`. It expects Blender at `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`, imports the source FBX, applies the Blender-side transform/unit fixes, creates explicit NLA animation strips, and exports the Unreal-ready FBX.
+
 - [DirectXTex texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv)
   - Why: REE-Content-Exporter first asks REE-Lib to convert RE Engine TEX data to DDS. When `--texture-format png` is used, `texconv` converts those DDS files to PNG.
   - How: install `texconv.exe` and make it available on `PATH`, or install it through WinGet:
