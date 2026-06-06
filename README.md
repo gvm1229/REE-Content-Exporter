@@ -59,7 +59,8 @@ Generated or local folders such as build output are intentionally not listed her
     dotnet build -c Release
     ```
 
-- [Blender 4.5.x](https://www.blender.org/)
+- [Blender 4.5.9 LTS](https://www.blender.org/)
+  - Required version: `4.5.9 LTS`. This workflow is version-sensitive; different Blender FBX importer/exporter behavior may change axis, scale, or animation baking results. Do not assume another 4.5.x or newer Blender version is equivalent until it is re-verified in Unreal.
   - Why: Blender is required for the current Unreal-ready FBX workflow. The direct Assimp-authored FBX can import into Unreal, but its animation curves wobble in Unreal. Blender imports the same FBX correctly, then re-bakes/re-exports the animation into an Unreal-friendly FBX.
   - Scope: Blender is not required for the basic exporter build, nor for producing the first source FBX. It is required when using the Unreal-ready sample/export scripts that perform the Blender bake/re-export step.
   - How this repository accesses Blender: the Unreal sample script calls Blender as an external executable in background mode and passes it a generated Python script:
