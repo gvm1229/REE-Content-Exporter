@@ -133,6 +133,114 @@ Choose the output format with the extension in `--output`:
 - `.glb` exports GLB.
 - `.fbx` exports FBX.
 
+### CLI option and flag reference
+
+General usage shape:
+
+```powershell
+REE-Content-Exporter.exe `
+  --mesh "<primary.mesh.version>" `
+  [mesh/material options] `
+  [animation options] `
+  [output/export options] `
+  --output "<output.fbx|output.glb|output-folder>"
+```
+
+Options can be passed in any order. Options marked as repeatable can be supplied more than once.
+
+#### Required input/output options
+
+| Option | Value | Behavior | Expected outcome | How to use |
+| --- | --- | --- | --- | --- |
+| `--mesh` | Path to a `.mesh.*` file | Loads the primary RE Engine mesh. | Creates the main skeleton, mesh groups, material slots, and export job folder name. | Always pass exactly one primary mesh: `--mesh "<extract>\character\...\ch0100_00.mesh.251121828"`. |
+| `--output` | `.glb` file, `.fbx` file, or folder path | Selects export format from the extension and controls where the export job folder is created. | `.glb` writes GLB, `.fbx` writes FBX. If no extension is supplied, the value is treated as a folder and a default GLB filename is used for single-output mode. | Use a file path for a predictable output filename: `--output "C:\out\ch0100_attack.fbx"`. Use a folder path for default naming. |
+
+#### Mesh, streaming, and material options
+
+| Option | Value | Behavior | Expected outcome | How to use |
+| --- | --- | --- | --- | --- |
+| `--additional-mesh` | Path to another `.mesh.*` file. Repeatable. | Adds extra mesh parts into the same export scene and armature. | Multi-part characters such as ch0100 can export body, gear, accessories, and additional parts together. | Repeat once per extra part: `--additional-mesh "<extract>\character\...\10\ch0100_10.mesh.251121828"`. |
+| `--streaming` | Path to a streaming `.mesh.*` buffer | Explicitly supplies streaming geometry for the primary mesh. | Required vertex/index data is loaded when the mesh needs a streaming buffer. | Use when auto-detection is not enough: `--streaming "<extract>\streaming\character\...\ch0100_00.mesh.251121828"`. |
+| `--allow-missing-streaming` | Flag | Allows export to continue if a required streaming buffer is missing. | Useful for diagnosis, but output may have incomplete geometry. | Add the flag only for troubleshooting: `--allow-missing-streaming`. |
+| `--mdf` | Path to an `.mdf2.*` file | Explicitly supplies material data for the primary mesh. | Material slots and texture references are taken from the specified MDF instead of auto-discovery. | Use when auto MDF lookup chooses the wrong file: `--mdf "<extract>\character\...\ch0100_00_mat.mdf2.51"`. |
+| `--no-textures` | Flag | Disables texture export and material texture file writing. | Faster export with no `textures\` folder. Material texture reconnection data may be absent. | Add for geometry/animation-only tests: `--no-textures`. |
+| `--texture-format` | `png` or `dds` | Selects exported texture file format. Default is `png`. | `png` is easier to inspect and use in DCC tools; `dds` avoids PNG conversion. | Use `--texture-format png` for normal workflows, or `--texture-format dds` when `texconv.exe` is unavailable. |
+
+#### Animation source options
+
+| Option | Value | Behavior | Expected outcome | How to use |
+| --- | --- | --- | --- | --- |
+| `--motlist` | Path to a `.motlist.*` file. Repeatable. | Reads one MOTLIST and all MOT files referenced by it. | Selected animations from each supplied MOTLIST are exported. | Use once for one MOTLIST or repeat for several: `--motlist "<extract>\...\ch0100_attack.motlist.1057"`. |
+| `--motlist-dir` | Folder path | Recursively finds `*.motlist*` files under the folder. | All MOTLIST files in the folder become animation sources. Empty/no-selected MOTLISTs are skipped in `--split-motlists` mode and documented in `skipped-motlists.md`. | Use for full character animation coverage: `--motlist-dir "<extract>\character\animation\ch\ch01\ch0100\motlist"`. |
+| `--mot` | Path to a `.mot.*` file. Repeatable. | Reads individual MOT files directly without a MOTLIST. | Supplied MOT animations are exported. | Use for targeted tests when a raw MOT path is known: `--mot "<extract>\...\motion.mot.78"`. |
+| `--animation-name` | Case-insensitive substring | Filters MOT/MOTLIST animations by name. | Only animations whose names contain the substring are selected. In split mode, MOTLISTs with zero selected animations are skipped. | Use to export a smaller test set: `--animation-name 0110_Hacking_Loop` or `--animation-name Attack`. |
+| `--no-animations` | Flag | Disables animation loading/export even if MOT/MOTLIST options are supplied. | Mesh-only export with skeleton and mesh data but no animation stacks. | Use for skeletal mesh tests: `--no-animations`. |
+
+#### Animation splitting and batching flags
+
+| Option | Value | Behavior | Expected outcome | How to use |
+| --- | --- | --- | --- | --- |
+| `--split-motlists` | Flag | With `--motlist-dir` or repeated `--motlist`, exports one file per non-empty MOTLIST. Empty/no-selected MOTLISTs are skipped and listed in `skipped-motlists.md`. Cannot be combined with `--mot` or `--split-animations`. | Produces manageable per-MOTLIST files such as `0000_ch0100_Attack_all_animations.fbx` instead of one huge all-animation file. | Use for Unreal-ready script source generation or large characters: `--motlist-dir "<motlist-folder>" --split-motlists`. |
+| `--split-animations` | Flag | Exports one file per selected animation. Cannot be combined with `--split-motlists`. | Produces many small files, each containing one animation. | Use for isolated animation debugging: `--split-animations --animation-name 0110`. |
+| `--batch-motlist` | Flag | Compatibility alias for split-per-animation behavior when only one MOT/MOTLIST source is supplied. With multiple animation sources, the exporter keeps combined-output behavior unless `--split-animations` is used. | Older batch workflows still work. | Prefer `--split-animations` for new commands; use `--batch-motlist` only for older scripts. |
+
+#### Missing animation bone handling
+
+| Option | Value | Behavior | Expected outcome | How to use |
+| --- | --- | --- | --- | --- |
+| `--skip-missing-animation-bones` | Flag | Skips entire animations that reference bones missing from the exported skeleton. | Output has fewer animations but no placeholder bones for those skipped animations. A `*.skipped-animations.md` report is written. | Use when you want a clean animation set and can discard incompatible animations. |
+| `--no-placeholder-animation-bones` | Flag | Keeps animations but skips only channels that target missing bones. | Output keeps more animations while avoiding generated `hash...` placeholder bones. A `*.skipped-animation-bones.md` report is written. | Use for the current PRAGMATA Unreal workflow: `--no-placeholder-animation-bones`. |
+
+Do not use `--skip-missing-animation-bones` and `--no-placeholder-animation-bones` together for normal exports; they represent different policies for missing animation bone channels.
+
+#### Geometry/export detail options
+
+| Option | Value | Behavior | Expected outcome | How to use |
+| --- | --- | --- | --- | --- |
+| `--fbx-scale` | Positive number | Sets the scale passed into the REE/Assimp FBX export stage. Default is `1`. | Direct source FBX size changes. For the current Blender-to-Unreal workflow, `100` is required before Blender converts to centimeter scene units. | Use `--fbx-scale 100` for Unreal-ready FBX scripts. |
+| `--include-lods` | Flag | Includes mesh LODs where supported by the underlying exporter. | Larger output with additional LOD geometry. | Add only when LODs are needed: `--include-lods`. |
+| `--include-occlusion` | Flag | Includes occlusion-related mesh data where supported. | Larger output with occlusion data included. | Add only when testing or needing occlusion data: `--include-occlusion`. |
+
+#### Help flag
+
+| Option | Value | Behavior | Expected outcome | How to use |
+| --- | --- | --- | --- | --- |
+| `--help` | Flag | Prints the command summary and exits. | No export is run. | `REE-Content-Exporter.exe --help` |
+
+### PowerShell execution script parameters
+
+The scripts under `export-scripts\` are convenience wrappers around the CLI. They build the source FBX first, then optionally run Blender 4.5.9 for Unreal-ready output.
+
+#### `export_ch0000_all_motlists_unreal_fbx.ps1`
+
+| Parameter | Value | Behavior | Expected outcome | How to use |
+| --- | --- | --- | --- | --- |
+| `-Root` | Extracted `re_chunk_000` path | Sets the loose-file extract root. | ch0000 mesh and MOTLIST paths are resolved under this root. | `.\export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1 -Root "D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000"` |
+| `-ExportRoot` | Output parent folder | Selects where the generated job folder is created. | Per-MOTLIST Unreal FBXs, textures, reports, and log are written under one new job folder. | `-ExportRoot "C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter"` |
+| `-Blender` | Path to `blender.exe` | Selects the Blender executable. The script requires Blender `4.5.9 LTS`. | Blender imports each source FBX and writes Unreal-ready per-MOTLIST FBX files. | `-Blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"` |
+| `-KeepSourceFbx` | Switch | Keeps the intermediate per-MOTLIST source FBX files after Blender succeeds. | Useful for debugging; otherwise source FBXs are deleted to avoid confusion. | `.\export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1 -KeepSourceFbx` |
+
+#### `export_ch0100_all_motlists_unreal_fbx.ps1`
+
+| Parameter | Value | Behavior | Expected outcome | How to use |
+| --- | --- | --- | --- | --- |
+| `-Root` | Extracted `re_chunk_000` path | Sets the loose-file extract root. | ch0100 mesh parts `00`, `10`, `20`, `40`, streaming data, and MOTLIST paths are resolved under this root. | `.\export-scripts\export_ch0100_all_motlists_unreal_fbx.ps1 -Root "D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000"` |
+| `-ExportRoot` | Output parent folder | Selects where the generated job folder is created. | Per-MOTLIST Unreal FBXs, textures, reports, and log are written under one new job folder. | `-ExportRoot "C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter"` |
+| `-Blender` | Path to `blender.exe` | Selects the Blender executable. The script requires Blender `4.5.9 LTS`. | Blender imports each source FBX and writes Unreal-ready per-MOTLIST FBX files. | `-Blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"` |
+| `-KeepSourceFbx` | Switch | Keeps the intermediate per-MOTLIST source FBX files after Blender succeeds. | Useful for debugging; otherwise source FBXs are deleted to avoid confusion. | `.\export-scripts\export_ch0100_all_motlists_unreal_fbx.ps1 -KeepSourceFbx` |
+
+#### `template_mesh_only_unreal_fbx.ps1`
+
+| Parameter | Value | Behavior | Expected outcome | How to use |
+| --- | --- | --- | --- | --- |
+| `-Mesh` | Path to a `.mesh.*` file | Required primary mesh input. | Mesh-only source FBX is created before Blender re-export. | `-Mesh "D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\character\ch\ch01\ch0100\00\ch0100_00.mesh.251121828"` |
+| `-AdditionalMesh` | Array of extra mesh paths | Adds extra mesh parts into the same mesh-only export. | Multi-part skeletal mesh output without animations. | `-AdditionalMesh "...\10\ch0100_10.mesh.251121828","...\20\ch0100_20.mesh.251121828"` |
+| `-Streaming` | Streaming mesh buffer path | Explicitly supplies streaming geometry for the primary mesh. | Required streaming data is available during mesh-only export. | `-Streaming "D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\streaming\character\...\ch0100_00.mesh.251121828"` |
+| `-OutputName` | Final `.fbx` filename | Sets the final Blender-reexported mesh-only FBX filename. | Output uses the requested concise filename. | `-OutputName "ch0100_mesh_unreal.fbx"` |
+| `-ExportRoot` | Output parent folder | Selects where the generated job folder is created. | Mesh-only Unreal FBX and textures are written under one new job folder. | `-ExportRoot "C:\Users\hojin\Downloads\PRAG_PROJ\ree_exporter"` |
+| `-Blender` | Path to `blender.exe` | Selects the Blender executable. The script requires Blender `4.5.9 LTS`. | Blender writes an Unreal-ready mesh-only FBX. | `-Blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"` |
+| `-KeepSourceFbx` | Switch | Keeps the intermediate source FBX after Blender succeeds. | Useful for debugging; otherwise source FBX is deleted. | `.\export-scripts\template_mesh_only_unreal_fbx.ps1 -Mesh "<mesh>" -KeepSourceFbx` |
+
 Example PRAGMATA export with one selected walk-loop animation from a RETool extract rooted at `<path-to-RETool-extract>\re_chunk_000`:
 
 ```powershell
