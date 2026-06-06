@@ -17,12 +17,17 @@ if (!(Test-Path $ExportRoot)) { New-Item -ItemType Directory -Force -Path $Expor
 
 $RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $LogTemp = Join-Path $env:TEMP "ch0000_all_motlists_unreal_export__$RunStamp.log"
-$FinalLogFileName = "ch0000_all_motlists_unreal_export.log"
+$FinalLogBaseName = "ch0000_all_motlists_unreal_export"
 $TranscriptStarted = $false
 $LogCompleted = $false
 $OutDir = $null
 
 function Complete-ExportLog {
+    param(
+        [ValidateSet("SUCCESS", "FAIL")]
+        [string]$Status
+    )
+
     if ($script:LogCompleted) { return }
     $script:LogCompleted = $true
 
@@ -32,12 +37,15 @@ function Complete-ExportLog {
     }
 
     if (Test-Path $script:LogTemp) {
+        $finalLogName = "{0}-{1}.log" -f $script:FinalLogBaseName, $Status
         if ($script:OutDir -and (Test-Path $script:OutDir)) {
-            $finalLog = Join-Path $script:OutDir $script:FinalLogFileName
+            $finalLog = Join-Path $script:OutDir $finalLogName
             Move-Item -LiteralPath $script:LogTemp -Destination $finalLog -Force
             Write-Host "EXPORT_LOG=$finalLog"
         } else {
-            Write-Host "EXPORT_LOG_TEMP=$script:LogTemp"
+            $finalTempLog = Join-Path ([System.IO.Path]::GetDirectoryName($script:LogTemp)) ("{0}-{1}__{2}.log" -f $script:FinalLogBaseName, $Status, $script:RunStamp)
+            Move-Item -LiteralPath $script:LogTemp -Destination $finalTempLog -Force
+            Write-Host "EXPORT_LOG_TEMP=$finalTempLog"
         }
     }
 }
@@ -45,7 +53,7 @@ function Complete-ExportLog {
 trap {
     Write-Host "SCRIPT_STATUS=FAILED"
     Write-Host "SCRIPT_ERROR=$($_.Exception.Message)"
-    Complete-ExportLog
+    Complete-ExportLog -Status "FAIL"
     break
 }
 
@@ -252,4 +260,4 @@ if (Test-Path $FinalReport) { Write-Host "SKIPPED_BONE_REPORT=$FinalReport" }
 Write-Host "TEXTURE_DIR=$TextureDir"
 Write-Host "TEXTURE_COUNT=$TextureCount"
 Write-Host "SCRIPT_STATUS=SUCCESS"
-Complete-ExportLog
+Complete-ExportLog -Status "SUCCESS"
