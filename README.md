@@ -67,6 +67,7 @@ Generated or local folders such as build output are intentionally not listed her
     & "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" --background --python <generated-script.py>
     ```
     The currently tested script is `export_ch0100_attack_0110_unreal_textured_sample.ps1`. It expects Blender at `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`, imports the source FBX, applies the Blender-side transform/unit fixes, creates explicit NLA animation strips, and exports the Unreal-ready FBX.
+  - Detailed Korean workflow notes are in `docs/ch0100_blender_45_fbx_unreal_workflow.md`.
 
 - [DirectXTex texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv)
   - Why: REE-Content-Exporter first asks REE-Lib to convert RE Engine TEX data to DDS. When `--texture-format png` is used, `texconv` converts those DDS files to PNG.
