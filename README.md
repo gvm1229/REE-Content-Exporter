@@ -128,6 +128,48 @@ This prevents GLB/FBX files, texture folders, and Markdown reports from overwrit
 
 ## Usage
 
+### Interactive wizard
+
+Run the executable with no arguments to launch the interactive Unreal-ready FBX wizard:
+
+```powershell
+.\bin\Release\net10.0\REE-Content-Exporter.exe
+```
+
+The wizard saves its setup in:
+
+```text
+%LOCALAPPDATA%\REE-Content-Exporter\config.json
+```
+
+It accepts a game extract root, a folder inside the extract, or a full asset path such as:
+
+```text
+D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\character\ch\ch01\ch0100\00\ch0100_00.mesh.251121828
+```
+
+The resolver can also accept a bare filename such as `ch0100_00.mesh.251121828`. It uses `pragmata.list` as an index, then probes common extract layouts including `natives\stm\character\...`, direct `character\...`, and their matching `streaming\...` counterparts.
+
+Useful wizard options:
+
+```powershell
+.\bin\Release\net10.0\REE-Content-Exporter.exe --wizard
+.\bin\Release\net10.0\REE-Content-Exporter.exe --reset-config
+.\bin\Release\net10.0\REE-Content-Exporter.exe --config "C:\path\to\config.json"
+```
+
+To publish a self-contained Windows package:
+
+```powershell
+dotnet publish -c Release -p:PublishProfile=win-x64-singlefile
+```
+
+The publish output is written under:
+
+```text
+bin\Release\net10.0\win-x64\publish\
+```
+
 Choose the output format with the extension in `--output`:
 
 - `.glb` exports GLB.
