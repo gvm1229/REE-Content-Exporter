@@ -92,10 +92,13 @@ character\animation\ch\ch01\ch0100\motlist
 ch0100 script output:
 
 - Unreal-ready FBX: `ch0100_all_motlists_unreal.fbx`
+- Export log: `ch0100_all_motlists_unreal_export.log`
 - Texture directory: `textures\`
 - Skipped bone channel report, if needed: `ch0100_all_motlists.skipped-animation-bones.md`
 
 The temporary source FBX is named `ch0100_all_motlists_source.fbx` while Blender is running. It is deleted after a successful Blender re-export to avoid leaving two similar FBX files in the output folder. Run the script with `-KeepSourceFbx` only when debugging the Blender round trip.
+
+The script starts a PowerShell transcript before the exporter call and moves it into the final job folder at completion. The log captures the exporter output, Blender output, progress lines, final artifact paths, and failure status if the script stops early. If the script fails before a job folder is known, it prints `EXPORT_LOG_TEMP=...` so the temporary log can still be inspected.
 
 ## REE-Content-Exporter stage
 
@@ -312,6 +315,7 @@ Success criteria:
 - Blender exit code: 0.
 - Temporary source FBX generated, then removed unless `-KeepSourceFbx` was used.
 - Blender Unreal-ready FBX generated as `ch0100_all_motlists_unreal.fbx`.
+- Export log generated as `ch0100_all_motlists_unreal_export.log`.
 - `textures\` folder generated.
 - Texture file count greater than 0.
 - Animation stack count matches the test target:
@@ -322,6 +326,7 @@ Expected final output folder shape:
 ```text
 <job-folder>\
   ch0100_all_motlists_unreal.fbx
+  ch0100_all_motlists_unreal_export.log
   ch0100_all_motlists.skipped-animation-bones.md   # only if missing animation bone channels were skipped
   textures\
     materials.textures.json

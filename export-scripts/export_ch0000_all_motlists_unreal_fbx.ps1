@@ -15,11 +15,55 @@ if (!(Test-Path $Exporter)) { throw "Missing exporter: $Exporter. Build with dot
 if (!(Test-Path $Blender)) { throw "Missing Blender 4.5.9 executable: $Blender" }
 if (!(Test-Path $ExportRoot)) { New-Item -ItemType Directory -Force -Path $ExportRoot | Out-Null }
 
+$RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$LogTemp = Join-Path $env:TEMP "ch0000_all_motlists_unreal_export__$RunStamp.log"
+$FinalLogFileName = "ch0000_all_motlists_unreal_export.log"
+$TranscriptStarted = $false
+$LogCompleted = $false
+$OutDir = $null
+
+function Complete-ExportLog {
+    if ($script:LogCompleted) { return }
+    $script:LogCompleted = $true
+
+    if ($script:TranscriptStarted) {
+        Stop-Transcript | Out-Null
+        $script:TranscriptStarted = $false
+    }
+
+    if (Test-Path $script:LogTemp) {
+        if ($script:OutDir -and (Test-Path $script:OutDir)) {
+            $finalLog = Join-Path $script:OutDir $script:FinalLogFileName
+            Move-Item -LiteralPath $script:LogTemp -Destination $finalLog -Force
+            Write-Host "EXPORT_LOG=$finalLog"
+        } else {
+            Write-Host "EXPORT_LOG_TEMP=$script:LogTemp"
+        }
+    }
+}
+
+trap {
+    Write-Host "SCRIPT_STATUS=FAILED"
+    Write-Host "SCRIPT_ERROR=$($_.Exception.Message)"
+    Complete-ExportLog
+    break
+}
+
+Start-Transcript -Path $LogTemp -Force | Out-Null
+$TranscriptStarted = $true
+Write-Host "SCRIPT=export_ch0000_all_motlists_unreal_fbx.ps1"
+Write-Host "EXPORT_LOG_TEMP=$LogTemp"
+Write-Host "ROOT=$Root"
+Write-Host "EXPORT_ROOT=$ExportRoot"
+Write-Host "BLENDER=$Blender"
+Write-Host "KEEP_SOURCE_FBX=$KeepSourceFbx"
+
 $BlenderVersionLine = (& $Blender --version 2>&1 | Select-Object -First 1)
 if ($LASTEXITCODE -ne 0) { throw "Could not query Blender version from: $Blender" }
 if ($BlenderVersionLine -notmatch 'Blender\s+4\.5\.9') {
     throw "Expected Blender 4.5.9 LTS, but found: $BlenderVersionLine"
 }
+Write-Host "BLENDER_VERSION=$BlenderVersionLine"
 
 $SourceFileName = "ch0000_all_motlists_source.fbx"
 $FinalFbxFileName = "ch0000_all_motlists_unreal.fbx"
@@ -207,3 +251,5 @@ Write-Host "BLENDER_FBX=$BlenderOut"
 if (Test-Path $FinalReport) { Write-Host "SKIPPED_BONE_REPORT=$FinalReport" }
 Write-Host "TEXTURE_DIR=$TextureDir"
 Write-Host "TEXTURE_COUNT=$TextureCount"
+Write-Host "SCRIPT_STATUS=SUCCESS"
+Complete-ExportLog

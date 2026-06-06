@@ -69,7 +69,7 @@ Generated or local folders such as build output are intentionally not listed her
     ```powershell
     & "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" --background --python <generated-script.py>
     ```
-    The current Unreal-ready FBX scripts are `export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1` and `export-scripts\export_ch0100_all_motlists_unreal_fbx.ps1`. They expect Blender at `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`, import the source FBX, apply the Blender-side transform/unit fixes, create explicit NLA animation strips, and export one Unreal-ready FBX containing all MOTLIST animations for the character. The intermediate source FBX is deleted after a successful Blender re-export unless the script is run with `-KeepSourceFbx`.
+    The current Unreal-ready FBX scripts are `export-scripts\export_ch0000_all_motlists_unreal_fbx.ps1` and `export-scripts\export_ch0100_all_motlists_unreal_fbx.ps1`. They expect Blender at `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`, import the source FBX, apply the Blender-side transform/unit fixes, create explicit NLA animation strips, and export one Unreal-ready FBX containing all MOTLIST animations for the character. The intermediate source FBX is deleted after a successful Blender re-export unless the script is run with `-KeepSourceFbx`. Each run also writes an export log into the generated job folder.
   - Detailed workflow notes are in `docs/ch0100_blender_45_fbx_unreal_workflow.md`. A macOS execution-script feasibility note is in `docs/macos_export_script_feasibility.md`.
 
 - [DirectXTex texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv)
