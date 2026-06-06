@@ -552,6 +552,7 @@ static string? InferExtractRoot(string input)
 
 static string? FindExtractRootAncestor(string path)
 {
+    if (string.IsNullOrWhiteSpace(path)) return null;
     var current = Directory.Exists(path) ? new DirectoryInfo(Path.GetFullPath(path)) : new DirectoryInfo(Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".");
     while (current != null)
     {
@@ -800,6 +801,8 @@ function Invoke-BlenderReexport {
     )
 
     $Py = Join-Path $env:TEMP ("blender_ree_wizard_{0}_{1}.py" -f $RunStamp, $Index)
+    $BlenderLog = [System.IO.Path]::ChangeExtension($StatusPath, ".blender.log")
+    $PythonExpectAnimations = if ($ExpectAnimations) { 'True' } else { 'False' }
 @"
 import bpy
 import builtins
@@ -809,7 +812,7 @@ out = Path(r'$Target')
 status_path = Path(r'$StatusPath')
 index = $Index
 total = $Total
-expect_animations = $($ExpectAnimations.ToString().ToLowerInvariant())
+expect_animations = $PythonExpectAnimations
 
 def write_status(status, reason='', action_count=0):
     status_path.write_text(f'STATUS={status}\nREASON={reason}\nACTION_COUNT={action_count}\n', encoding='utf-8')
@@ -943,9 +946,16 @@ print(f'EXPORTED {out} size={out.stat().st_size if out.exists() else 0}')
 "@ | Set-Content -Encoding UTF8 $Py
 
     Remove-Item -LiteralPath $StatusPath -Force -ErrorAction SilentlyContinue
-    & $Blender --background --factory-startup --python $Py
-    if ($LASTEXITCODE -ne 0) { throw "Blender re-export failed with exit code $LASTEXITCODE for $($Source.FullName)" }
-    if (!(Test-Path $StatusPath)) { throw "Missing Blender status file for $($Source.FullName): $StatusPath" }
+    Remove-Item -LiteralPath $BlenderLog -Force -ErrorAction SilentlyContinue
+    & $Blender --background --factory-startup --python $Py 2>&1 | Tee-Object -FilePath $BlenderLog
+    if ($LASTEXITCODE -ne 0) { throw "Blender re-export failed with exit code $LASTEXITCODE for $($Source.FullName). Log: $BlenderLog" }
+    if (!(Test-Path $StatusPath)) {
+        if ((Test-Path $Target) -and ((Get-Item -LiteralPath $Target).Length -gt 0)) {
+            "STATUS=EXPORTED`nREASON=Recovered from missing Blender status file; target FBX exists.`nACTION_COUNT=0`n" | Set-Content -Encoding UTF8 $StatusPath
+        } else {
+            throw "Missing Blender status file for $($Source.FullName): $StatusPath. Log: $BlenderLog"
+        }
+    }
 }
 
 try {

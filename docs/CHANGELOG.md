@@ -108,6 +108,7 @@ The known-good Unreal outcome is:
 - Added a Windows single-file publish profile.
 - Updated README guidance for interactive usage.
 - Fixed dependency version lookup for single-file publishing.
+- Fixed generated Blender Python boolean literals (`True`/`False`) and added per-source Blender log capture for clearer generated-script failures.
 
 ### Improvements over 0.6.0
 

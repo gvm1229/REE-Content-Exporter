@@ -150,6 +150,8 @@ D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\character\ch\ch01\ch0100\00\ch0100_00.me
 
 The resolver can also accept a bare filename such as `ch0100_00.mesh.251121828`. It uses `pragmata.list` as an index, then probes common extract layouts including `natives\stm\character\...`, direct `character\...`, and their matching `streaming\...` counterparts.
 
+Generated Unreal-ready scripts write Blender re-export diagnostics next to the temporary status file in `%TEMP%` as `*.blender.log`. If Blender fails during the Python import/export phase, the script reports that log path in the error message. Pressing Enter at the Blender path prompt accepts the displayed default path.
+
 Useful wizard options:
 
 ```powershell
