@@ -24,8 +24,8 @@ Assimp export failures are now checked directly. If `ExportFile(...)` returns fa
 
 The character batch files were refined so only one combined script remains per character:
 
-- `export_ch0000_all_motlists_glb.bat`
-- `export_ch0100_combined_glb.bat`
+- `export-scripts\export_ch0000_all_motlists_glb.bat`
+- `export-scripts\export_ch0100_combined_glb.bat`
 
 Both scripts now use `--motlist-dir` and `--split-motlists`.
 
@@ -41,13 +41,13 @@ Both scripts now use `--motlist-dir` and `--split-motlists`.
 
 ### Current batch behavior
 
-`export_ch0000_all_motlists_glb.bat` exports every MOTLIST under:
+`export-scripts\export_ch0000_all_motlists_glb.bat` exports every MOTLIST under:
 
 ```text
 D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\animation\ch\ch00\ch0000\motlist
 ```
 
-`export_ch0100_combined_glb.bat` exports every MOTLIST under:
+`export-scripts\export_ch0100_combined_glb.bat` exports every MOTLIST under:
 
 ```text
 D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\animation\ch\ch01\ch0100\motlist
