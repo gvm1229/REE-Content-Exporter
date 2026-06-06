@@ -214,6 +214,7 @@ if (splitMotlists)
     var jobDir = ResolveSplitMotlistOutputDirectory(outputPath, meshPath, BuildSourceFiles(meshPath, additionalMeshPaths, motlistPaths, []), animationFilter);
     var nonEmptyMotlistGroups = motlistGroups.Where(group => group.Motions.Count > 0).ToList();
     var emptyMotlistGroups = motlistGroups.Where(group => group.Motions.Count == 0).ToList();
+    WriteSkippedMotlistReport(jobDir, emptyMotlistGroups.Select(group => (group.SourceName, group.MotlistPath)).ToList(), animationFilter, progress);
     foreach (var group in emptyMotlistGroups)
     {
         var label = string.IsNullOrWhiteSpace(group.SourceName) ? group.MotlistPath : group.SourceName;
@@ -365,6 +366,39 @@ static void WriteSkippedAnimationBoneChannelReport(string target, IReadOnlyList<
         }
     }
     progress.WriteLine($"Wrote skipped animation bone channel report: {reportPath}");
+}
+
+static void WriteSkippedMotlistReport(string jobDir, IReadOnlyList<(string SourceName, string MotlistPath)> skippedMotlists, string? animationFilter, ProgressStatus progress)
+{
+    var reportPath = Path.Combine(jobDir, "skipped-motlists.md");
+    using var writer = new StreamWriter(reportPath, append: false, Encoding.UTF8);
+    writer.WriteLine("# Skipped MOTLISTs");
+    writer.WriteLine();
+    writer.WriteLine($"Output directory: `{jobDir}`");
+    writer.WriteLine();
+    writer.WriteLine("Reason: `--split-motlists` skips MOTLISTs with zero selected animations, so empty FBX files and unnecessary Blender re-export work are not created.");
+    writer.WriteLine();
+    if (!string.IsNullOrWhiteSpace(animationFilter))
+    {
+        writer.WriteLine($"Animation filter: `{animationFilter}`");
+        writer.WriteLine();
+    }
+    if (skippedMotlists.Count == 0)
+    {
+        writer.WriteLine("No MOTLISTs were skipped.");
+    }
+    else
+    {
+        writer.WriteLine($"Skipped MOTLIST count: {skippedMotlists.Count}");
+        writer.WriteLine();
+        foreach (var (sourceName, motlistPath) in skippedMotlists)
+        {
+            var label = string.IsNullOrWhiteSpace(sourceName) ? PathUtils.GetFilenameWithoutExtensionOrVersion(motlistPath).ToString() : sourceName;
+            writer.WriteLine($"- `{label}`");
+            writer.WriteLine($"  - Path: `{motlistPath}`");
+        }
+    }
+    progress.WriteLine($"Wrote skipped MOTLIST report: {reportPath}");
 }
 
 static string ResolveSingleOutputPath(string outputPath, string meshPath, string meshName, IReadOnlyList<string> sourceFiles, string? animationFilter)

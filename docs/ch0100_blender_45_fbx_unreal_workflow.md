@@ -94,6 +94,7 @@ ch0100 script output:
 - Unreal-ready FBX per non-empty MOTLIST, for example: `ch0100_Attack_unreal.fbx`
 - Export log: `ch0100_motlists_unreal_export-SUCCESS.log` or `ch0100_motlists_unreal_export-FAIL.log`
 - Texture directory: `textures\`
+- Skipped MOTLIST report: `skipped-motlists.md`
 - Skipped bone channel report per MOTLIST, if needed: `ch0100_Attack.skipped-animation-bones.md`
 
 Temporary split source FBX files use names like `0000_ch0100_Attack_all_animations.fbx` while Blender is running. Each source FBX is deleted after its successful Blender re-export to avoid leaving two similar FBX files in the output folder. Run the script with `-KeepSourceFbx` only when debugging the Blender round trip.
@@ -329,6 +330,7 @@ Expected final output folder shape:
   ch0100_Attack_unreal.fbx
   ch0100_General_unreal.fbx
   ch0100_motlists_unreal_export-SUCCESS.log
+  skipped-motlists.md
   ch0100_Attack.skipped-animation-bones.md   # only if missing animation bone channels were skipped
   textures\
     materials.textures.json
