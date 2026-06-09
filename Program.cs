@@ -347,6 +347,7 @@ static string PromptText(string label, string? defaultValue = null)
 {
     Console.Write(string.IsNullOrWhiteSpace(defaultValue) ? $"{label}: " : $"{label} [{defaultValue}]: ");
     var input = Console.ReadLine();
+    PrintWizardPromptSeparator();
     if (string.IsNullOrWhiteSpace(input) && !string.IsNullOrWhiteSpace(defaultValue)) return defaultValue;
     return input?.Trim() ?? "";
 }
@@ -358,11 +359,30 @@ static bool PromptYesNo(string label, bool defaultValue, WizardLanguage language
     {
         Console.Write($"{label} [{suffix}]: ");
         var input = (Console.ReadLine() ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(input)) return defaultValue;
-        if (input.Equals("y", StringComparison.OrdinalIgnoreCase) || input.Equals("yes", StringComparison.OrdinalIgnoreCase)) return true;
-        if (input.Equals("n", StringComparison.OrdinalIgnoreCase) || input.Equals("no", StringComparison.OrdinalIgnoreCase)) return false;
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            PrintWizardPromptSeparator();
+            return defaultValue;
+        }
+        if (input.Equals("y", StringComparison.OrdinalIgnoreCase) || input.Equals("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            PrintWizardPromptSeparator();
+            return true;
+        }
+        if (input.Equals("n", StringComparison.OrdinalIgnoreCase) || input.Equals("no", StringComparison.OrdinalIgnoreCase))
+        {
+            PrintWizardPromptSeparator();
+            return false;
+        }
         Console.WriteLine(language == WizardLanguage.Korean ? "yes 또는 no를 입력해 주세요." : "Enter yes or no.");
     }
+}
+
+static void PrintWizardPromptSeparator()
+{
+    Console.WriteLine();
+    Console.WriteLine("------------------------------------------------------------");
+    Console.WriteLine();
 }
 
 static WizardLanguage PromptWizardLanguage()
@@ -374,8 +394,16 @@ static WizardLanguage PromptWizardLanguage()
     {
         Console.Write("Choose 1-2 [1]: ");
         var input = (Console.ReadLine() ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(input) || input == "1") return WizardLanguage.English;
-        if (input == "2") return WizardLanguage.Korean;
+        if (string.IsNullOrWhiteSpace(input) || input == "1")
+        {
+            PrintWizardPromptSeparator();
+            return WizardLanguage.English;
+        }
+        if (input == "2")
+        {
+            PrintWizardPromptSeparator();
+            return WizardLanguage.Korean;
+        }
         Console.WriteLine("Invalid selection. / 잘못된 선택입니다.");
     }
 }
@@ -410,8 +438,16 @@ static WizardMode PromptWizardMode(WizardLanguage language)
     {
         Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
         var input = (Console.ReadLine() ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(input) || input == "1") return WizardMode.SingleMesh;
-        if (input == "2") return WizardMode.BatchCsv;
+        if (string.IsNullOrWhiteSpace(input) || input == "1")
+        {
+            PrintWizardPromptSeparator();
+            return WizardMode.SingleMesh;
+        }
+        if (input == "2")
+        {
+            PrintWizardPromptSeparator();
+            return WizardMode.BatchCsv;
+        }
         Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
     }
 }
@@ -425,8 +461,16 @@ static WizardBatchSkeletalMode PromptBatchSkeletalMode(WizardLanguage language)
     {
         Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
         var input = (Console.ReadLine() ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(input) || input == "1") return WizardBatchSkeletalMode.PromptForAnimations;
-        if (input == "2") return WizardBatchSkeletalMode.SkipAnimationPrompts;
+        if (string.IsNullOrWhiteSpace(input) || input == "1")
+        {
+            PrintWizardPromptSeparator();
+            return WizardBatchSkeletalMode.PromptForAnimations;
+        }
+        if (input == "2")
+        {
+            PrintWizardPromptSeparator();
+            return WizardBatchSkeletalMode.SkipAnimationPrompts;
+        }
         Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
     }
 }
@@ -582,7 +626,10 @@ static ResolvedAsset ChooseAsset(string label, IReadOnlyList<ResolvedAsset> matc
     {
         Console.Write(language == WizardLanguage.Korean ? $"1-{limit} 중 선택: " : $"Choose 1-{limit}: ");
         if (int.TryParse(Console.ReadLine(), out var selected) && selected >= 1 && selected <= limit)
+        {
+            PrintWizardPromptSeparator();
             return matches[selected - 1];
+        }
         Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
     }
 }
@@ -642,7 +689,10 @@ static string ChoosePath(string label, IReadOnlyList<string> paths, WizardLangua
     {
         Console.Write(language == WizardLanguage.Korean ? $"1-{limit} 중 선택: " : $"Choose 1-{limit}: ");
         if (int.TryParse(Console.ReadLine(), out var selected) && selected >= 1 && selected <= limit)
+        {
+            PrintWizardPromptSeparator();
             return paths[selected - 1];
+        }
         Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
     }
 }
