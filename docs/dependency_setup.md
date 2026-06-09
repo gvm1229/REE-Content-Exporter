@@ -30,5 +30,14 @@ Current patch scope:
 - Export progress hooks.
 - Root node/mesh name controls used by the wrapper.
 - Missing animation bone skip/no-placeholder behavior.
+- Single-file publish-safe version lookup for `ContentEditor.AppConfig`.
+
+The setup script also applies:
+
+```text
+patches\ree-lib-single-file-version.patch
+```
+
+That submodule patch makes REE-Lib's remote resource user-agent version lookup safe when assemblies are bundled into a single-file executable.
 
 The removed experimental FBX root-rotation normalization is **not** part of this patch.

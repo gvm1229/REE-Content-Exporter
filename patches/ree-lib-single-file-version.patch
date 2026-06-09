@@ -1,0 +1,16 @@
+﻿diff --git a/REE-Lib/Resources/ResourceRepository.cs b/REE-Lib/Resources/ResourceRepository.cs
+index c222b3f..40478cb 100644
+--- a/REE-Lib/Resources/ResourceRepository.cs
++++ b/REE-Lib/Resources/ResourceRepository.cs
+@@ -169,7 +169,10 @@ public class ResourceRepository
+     private static HttpResponseMessage Fetch(string url)
+     {
+         var request = new HttpRequestMessage(HttpMethod.Get, url);
+-        request.Headers.Add("User-Agent", $"{AppDomain.CurrentDomain.FriendlyName}/{FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).ProductVersion ?? "x"}");
++        var assemblyPath = Assembly.GetExecutingAssembly().Location;
++        var versionSource = string.IsNullOrWhiteSpace(assemblyPath) ? Environment.ProcessPath : assemblyPath;
++        var version = string.IsNullOrWhiteSpace(versionSource) ? "x" : FileVersionInfo.GetVersionInfo(versionSource).ProductVersion ?? "x";
++        request.Headers.Add("User-Agent", $"{AppDomain.CurrentDomain.FriendlyName}/{version}");
+         if (!AllowThreadedFetch) {
+             var http = new HttpClient();
+             return http.Send(request);

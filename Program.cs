@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -36,11 +37,1500 @@ static float? GetFloatArg(string[] args, string name)
 }
 static bool HasFlag(string[] args, string name) => args.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
 
-if (args.Length == 0 || HasFlag(args, "--help"))
+static void PrintUsage()
 {
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter [--wizard] [--reset-config] [--config <path>]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+}
+
+static Dictionary<string, string> ParseAdditionalStreamingArgs(IEnumerable<string> values)
+{
+    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var value in values)
+    {
+        var separatorIndex = value.IndexOf('=');
+        if (separatorIndex < 0) separatorIndex = value.IndexOf('|');
+        if (separatorIndex <= 0 || separatorIndex >= value.Length - 1)
+        {
+            throw new ArgumentException("--additional-streaming must use <additional-mesh-path>=<streaming-mesh-path>.");
+        }
+
+        var meshPath = value[..separatorIndex].Trim().Trim('"');
+        var streamingPath = value[(separatorIndex + 1)..].Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(meshPath) || string.IsNullOrWhiteSpace(streamingPath))
+        {
+            throw new ArgumentException("--additional-streaming must use non-empty <additional-mesh-path>=<streaming-mesh-path> values.");
+        }
+        if (result.ContainsKey(meshPath))
+        {
+            throw new ArgumentException($"Duplicate --additional-streaming entry for additional mesh: {meshPath}");
+        }
+        result.Add(meshPath, streamingPath);
+    }
+
+    return result;
+}
+
+static void RunWizard(string? configPathOverride)
+{
+    var configPath = ResolveWizardConfigPath(configPathOverride);
+    var config = LoadWizardConfig(configPath);
+    var language = ResolveWizardLanguage(config);
+    Console.WriteLine(language == WizardLanguage.Korean ? "REE-Content-Exporter 대화형 마법사" : "REE-Content-Exporter interactive wizard");
+
+    if (config != null && string.IsNullOrWhiteSpace(config.Language))
+    {
+        config.Language = SerializeWizardLanguage(language);
+        SaveWizardConfig(configPath, config);
+        Console.WriteLine(language == WizardLanguage.Korean ? $"마법사 언어 설정을 저장했습니다: {configPath}" : $"Saved wizard language setting: {configPath}");
+    }
+
+    var reason = "";
+    if (config == null || !ValidateWizardConfig(config, out reason))
+    {
+        if (!string.IsNullOrWhiteSpace(reason)) Console.WriteLine(language == WizardLanguage.Korean ? $"설정이 필요합니다: {LocalizeConfigReason(reason, language)}" : $"Config setup required: {reason}");
+        config = PromptForWizardConfig(config, language);
+        config.Language = SerializeWizardLanguage(language);
+        SaveWizardConfig(configPath, config);
+        Console.WriteLine(language == WizardLanguage.Korean ? $"마법사 설정을 저장했습니다: {configPath}" : $"Saved wizard config: {configPath}");
+    }
+
+    var index = LoadPragmataIndex();
+    var mode = PromptWizardMode(language);
+    if (mode == WizardMode.BatchCsv)
+    {
+        var skeletalMode = PromptBatchSkeletalMode(language);
+        RunBatchCsvWizard(config, index, skeletalMode, language);
+        return;
+    }
+
+    RunSingleMeshWizard(config, index, language);
+}
+
+static void RunSingleMeshWizard(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
+{
+    var mesh = PromptForAsset(language == WizardLanguage.Korean ? "기본 메시" : "Primary mesh", AssetKind.Mesh, config, index, language);
+    var additionalMeshes = new List<ResolvedAsset>();
+    while (PromptYesNo(language == WizardLanguage.Korean ? "다른 메시 파트를 추가할까요?" : "Add another mesh part?", defaultValue: false, language))
+    {
+        additionalMeshes.Add(PromptForAsset(language == WizardLanguage.Korean ? "추가 메시" : "Additional mesh", AssetKind.Mesh, config, index, language));
+    }
+
+    var streaming = FindStreamingCandidate(mesh.Path);
+    var additionalStreaming = additionalMeshes
+        .Select(asset => new { Mesh = asset.Path, Streaming = FindStreamingCandidate(asset.Path) })
+        .Where(pair => pair.Streaming != null)
+        .ToDictionary(pair => pair.Mesh, pair => pair.Streaming!, StringComparer.OrdinalIgnoreCase);
+
+    var inspected = InspectMeshForWizard(mesh.Path, streaming);
+    var isSkeletal = inspected.BoneCount > 0;
+    Console.WriteLine(FormatMeshInspection(inspected, language));
+
+    var animation = WizardAnimationSelection.None;
+    if (isSkeletal && PromptYesNo(language == WizardLanguage.Korean ? "애니메이션을 포함할까요?" : "Include animations?", defaultValue: false, language))
+    {
+        animation = PromptForAnimationSelection(config, index, language);
+    }
+
+    var exportRoot = PromptExportRoot(config.DefaultExportRoot, language);
+    var scriptPath = GenerateWizardScript(config, exportRoot, mesh.Path, additionalMeshes.Select(m => m.Path).ToList(), streaming, additionalStreaming, animation, isSkeletal);
+    Console.WriteLine(language == WizardLanguage.Korean ? $"스크립트를 생성했습니다: {scriptPath}" : $"Generated script: {scriptPath}");
+
+    if (PromptYesNo(language == WizardLanguage.Korean ? "생성된 스크립트를 지금 실행할까요?" : "Run the generated script now?", defaultValue: false, language))
+    {
+        RunGeneratedScript(scriptPath, language);
+    }
+}
+
+static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardBatchSkeletalMode skeletalMode, WizardLanguage language)
+{
+    var csvPath = PromptFilePath(language == WizardLanguage.Korean ? "CSV 파일 경로" : "CSV file path", null, mustExist: true, language);
+    if (!csvPath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+        throw new ArgumentException(language == WizardLanguage.Korean ? "배치 가져오기는 .csv 파일이 필요합니다." : "Batch import requires a .csv file.");
+
+    var meshQueries = ReadWizardCsvMeshQueries(csvPath, language);
+    Console.WriteLine(language == WizardLanguage.Korean ? $"CSV에서 메시 행 {meshQueries.Count}개를 불러왔습니다." : $"Loaded {meshQueries.Count} mesh row(s) from CSV.");
+
+    var jobs = new List<WizardExportJob>();
+    var usedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var (rowNumber, query) in meshQueries)
+    {
+        var mesh = ResolveCsvMesh(rowNumber, query, config, index, language);
+        var streaming = FindStreamingCandidate(mesh.Path);
+        var inspected = InspectMeshForWizard(mesh.Path, streaming);
+        var isSkeletal = inspected.BoneCount > 0;
+        var assetName = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(mesh.Path).ToString());
+        var outputFolderName = MakeUniqueWizardFolderName(assetName, usedFolders);
+
+        Console.WriteLine(language == WizardLanguage.Korean ? $"CSV {rowNumber}행: {mesh.Path}" : $"CSV row {rowNumber}: {mesh.Path}");
+        Console.WriteLine(FormatMeshInspection(inspected, language));
+
+        var animation = WizardAnimationSelection.None;
+        if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.PromptForAnimations && PromptYesNo(language == WizardLanguage.Korean ? $"{assetName}의 애니메이션을 포함할까요?" : $"Include animations for {assetName}?", defaultValue: false, language))
+        {
+            animation = PromptForAnimationSelection(config, index, language);
+        }
+        else if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.SkipAnimationPrompts)
+        {
+            Console.WriteLine(language == WizardLanguage.Korean ? $"배치 스켈레탈 정책: {assetName}은(는) 스켈레톤을 포함하되 애니메이션 없이 자동으로 내보냅니다." : $"Batch skeletal policy: exporting {assetName} with its skeleton, but without animations.");
+        }
+
+        jobs.Add(new WizardExportJob(
+            RowNumber: rowNumber,
+            MeshQuery: query,
+            MeshPath: mesh.Path,
+            OutputFolderName: outputFolderName,
+            StreamingPath: streaming,
+            Inspection: inspected,
+            Animation: animation));
+    }
+
+    var exportRoot = PromptExportRoot(config.DefaultExportRoot, language);
+    var scriptPath = GenerateWizardBatchScript(config, exportRoot, jobs);
+    Console.WriteLine(language == WizardLanguage.Korean ? $"배치 스크립트를 생성했습니다: {scriptPath}" : $"Generated batch script: {scriptPath}");
+
+    if (PromptYesNo(language == WizardLanguage.Korean ? "생성된 배치 스크립트를 지금 실행할까요?" : "Run the generated batch script now?", defaultValue: false, language))
+    {
+        RunGeneratedScript(scriptPath, language);
+    }
+}
+
+static WizardConfig? LoadWizardConfig(string path)
+{
+    try
+    {
+        if (!File.Exists(path)) return null;
+        return JsonSerializer.Deserialize<WizardConfig>(File.ReadAllText(path));
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"WARNING: failed to read config {path}: {ex.Message}");
+        return null;
+    }
+}
+
+static WizardLanguage ResolveWizardLanguage(WizardConfig? config)
+{
+    if (TryParseWizardLanguage(config?.Language, out var language))
+        return language;
+    return PromptWizardLanguage();
+}
+
+static bool TryParseWizardLanguage(string? value, out WizardLanguage language)
+{
+    if (value != null)
+    {
+        if (value.Equals("en", StringComparison.OrdinalIgnoreCase) || value.Equals("english", StringComparison.OrdinalIgnoreCase))
+        {
+            language = WizardLanguage.English;
+            return true;
+        }
+        if (value.Equals("ko", StringComparison.OrdinalIgnoreCase) || value.Equals("kr", StringComparison.OrdinalIgnoreCase) || value.Equals("korean", StringComparison.OrdinalIgnoreCase))
+        {
+            language = WizardLanguage.Korean;
+            return true;
+        }
+    }
+
+    language = WizardLanguage.English;
+    return false;
+}
+
+static string SerializeWizardLanguage(WizardLanguage language) => language == WizardLanguage.Korean ? "ko" : "en";
+
+static void SaveWizardConfig(string path, WizardConfig config)
+{
+    Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+    config.UpdatedUtc = DateTimeOffset.UtcNow;
+    if (config.CreatedUtc == default) config.CreatedUtc = config.UpdatedUtc;
+    File.WriteAllText(path, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+}
+
+static bool ValidateWizardConfig(WizardConfig config, out string reason)
+{
+    if (string.IsNullOrWhiteSpace(config.ExtractRoot) || !Directory.Exists(config.ExtractRoot))
+    {
+        reason = "game extract path is missing or does not exist";
+        return false;
+    }
+    if (!HasLikelyExtractLayout(config.ExtractRoot))
+    {
+        reason = "game extract path does not look like a PRAGMATA loose-file extract";
+        return false;
+    }
+    if (string.IsNullOrWhiteSpace(config.DefaultExportRoot))
+    {
+        reason = "default export path is missing";
+        return false;
+    }
+    if (string.IsNullOrWhiteSpace(config.BlenderPath) || !File.Exists(config.BlenderPath))
+    {
+        reason = "Blender executable is missing or does not exist";
+        return false;
+    }
+    reason = "";
+    return true;
+}
+
+static WizardConfig PromptForWizardConfig(WizardConfig? existing, WizardLanguage language)
+{
+    var extractRoot = PromptExistingExtractRoot(existing?.ExtractRoot, language);
+    var defaultExportRoot = PromptDirectoryPath(language == WizardLanguage.Korean ? "기본 내보내기 폴더" : "Default export folder", existing?.DefaultExportRoot, mustExist: false, language);
+    var blenderPath = PromptFilePath(language == WizardLanguage.Korean ? "Blender 4.5.9 실행 파일" : "Blender 4.5.9 executable", existing?.BlenderPath ?? @"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe", mustExist: true, language);
+    return new WizardConfig
+    {
+        ExtractRoot = extractRoot,
+        DefaultExportRoot = defaultExportRoot,
+        BlenderPath = blenderPath,
+        TextureFormat = string.IsNullOrWhiteSpace(existing?.TextureFormat) ? "png" : existing!.TextureFormat,
+        CreatedUtc = existing?.CreatedUtc == default ? DateTimeOffset.UtcNow : existing!.CreatedUtc,
+        UpdatedUtc = DateTimeOffset.UtcNow,
+    };
+}
+
+static string PromptExistingExtractRoot(string? defaultValue, WizardLanguage language)
+{
+    while (true)
+    {
+        var input = PromptText(language == WizardLanguage.Korean ? "게임 추출 폴더 또는 그 안의 파일/폴더" : "Game extract folder or any file/folder inside it", defaultValue);
+        var inferred = InferExtractRoot(input);
+        if (inferred != null && Directory.Exists(inferred) && HasLikelyExtractLayout(inferred))
+            return inferred;
+        Console.WriteLine(language == WizardLanguage.Korean ? "기존 추출 루트를 찾을 수 없습니다. re_chunk_000, natives\\stm 같은 폴더 또는 추출 폴더 안의 파일을 붙여넣어 주세요." : "Could not infer an existing extract root. Paste a folder such as re_chunk_000, natives\\stm, or a file inside the extract.");
+    }
+}
+
+static string PromptDirectoryPath(string label, string? defaultValue, bool mustExist, WizardLanguage language = WizardLanguage.English)
+{
+    while (true)
+    {
+        var input = NormalizeUserPath(PromptText(label, defaultValue));
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            Console.WriteLine(language == WizardLanguage.Korean ? "경로는 비워둘 수 없습니다." : "Path cannot be empty.");
+            continue;
+        }
+        if (Directory.Exists(input) || !mustExist)
+            return Path.GetFullPath(input);
+        Console.WriteLine(language == WizardLanguage.Korean ? "폴더가 존재하지 않습니다." : "Folder does not exist.");
+    }
+}
+
+static string PromptFilePath(string label, string? defaultValue, bool mustExist, WizardLanguage language = WizardLanguage.English)
+{
+    while (true)
+    {
+        var input = NormalizeUserPath(PromptText(label, defaultValue));
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            Console.WriteLine(language == WizardLanguage.Korean ? "경로는 비워둘 수 없습니다." : "Path cannot be empty.");
+            continue;
+        }
+        if (File.Exists(input) || !mustExist)
+            return Path.GetFullPath(input);
+        Console.WriteLine(language == WizardLanguage.Korean ? "파일이 존재하지 않습니다." : "File does not exist.");
+    }
+}
+
+static string PromptText(string label, string? defaultValue = null)
+{
+    Console.Write(string.IsNullOrWhiteSpace(defaultValue) ? $"{label}: " : $"{label} [{defaultValue}]: ");
+    var input = Console.ReadLine();
+    if (string.IsNullOrWhiteSpace(input) && !string.IsNullOrWhiteSpace(defaultValue)) return defaultValue;
+    return input?.Trim() ?? "";
+}
+
+static bool PromptYesNo(string label, bool defaultValue, WizardLanguage language = WizardLanguage.English)
+{
+    var suffix = defaultValue ? "Y/n" : "y/N";
+    while (true)
+    {
+        Console.Write($"{label} [{suffix}]: ");
+        var input = (Console.ReadLine() ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(input)) return defaultValue;
+        if (input.Equals("y", StringComparison.OrdinalIgnoreCase) || input.Equals("yes", StringComparison.OrdinalIgnoreCase)) return true;
+        if (input.Equals("n", StringComparison.OrdinalIgnoreCase) || input.Equals("no", StringComparison.OrdinalIgnoreCase)) return false;
+        Console.WriteLine(language == WizardLanguage.Korean ? "yes 또는 no를 입력해 주세요." : "Enter yes or no.");
+    }
+}
+
+static WizardLanguage PromptWizardLanguage()
+{
+    Console.WriteLine("Language / 언어:");
+    Console.WriteLine("  1. English");
+    Console.WriteLine("  2. Korean");
+    while (true)
+    {
+        Console.Write("Choose 1-2 [1]: ");
+        var input = (Console.ReadLine() ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(input) || input == "1") return WizardLanguage.English;
+        if (input == "2") return WizardLanguage.Korean;
+        Console.WriteLine("Invalid selection. / 잘못된 선택입니다.");
+    }
+}
+
+static string LocalizeConfigReason(string reason, WizardLanguage language)
+{
+    if (language != WizardLanguage.Korean) return reason;
+    return reason switch
+    {
+        "game extract path is missing or does not exist" => "게임 추출 경로가 없거나 존재하지 않습니다",
+        "game extract path does not look like a PRAGMATA loose-file extract" => "게임 추출 경로가 PRAGMATA loose-file 추출 구조처럼 보이지 않습니다",
+        "default export path is missing" => "기본 내보내기 경로가 없습니다",
+        "Blender executable is missing or does not exist" => "Blender 실행 파일이 없거나 존재하지 않습니다",
+        _ => reason,
+    };
+}
+
+static string FormatMeshInspection(WizardMeshInspection inspected, WizardLanguage language)
+{
+    var isSkeletal = inspected.BoneCount > 0;
+    return language == WizardLanguage.Korean
+        ? $"메시 유형: {(isSkeletal ? "스켈레탈" : "정적")} (본={inspected.BoneCount}, 머티리얼={inspected.MaterialCount}, LOD={inspected.LodCount}, 스트리밍필요={inspected.RequiresStreaming})"
+        : $"Mesh type: {(isSkeletal ? "skeletal" : "static")} (bones={inspected.BoneCount}, materials={inspected.MaterialCount}, lods={inspected.LodCount}, requiresStreaming={inspected.RequiresStreaming})";
+}
+
+static WizardMode PromptWizardMode(WizardLanguage language)
+{
+    Console.WriteLine(language == WizardLanguage.Korean ? "마법사 내보내기 모드:" : "Wizard export mode:");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  1. 내보낼 메시 선택" : "  1. Select a mesh to export");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  2. 배치 메시 내보내기용 CSV 파일 선택" : "  2. Choose a CSV file for batch mesh export");
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
+        var input = (Console.ReadLine() ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(input) || input == "1") return WizardMode.SingleMesh;
+        if (input == "2") return WizardMode.BatchCsv;
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
+    }
+}
+
+static WizardBatchSkeletalMode PromptBatchSkeletalMode(WizardLanguage language)
+{
+    Console.WriteLine(language == WizardLanguage.Korean ? "배치 스켈레탈 메시 처리:" : "Batch skeletal mesh handling:");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  1. 스켈레탈 메시를 찾으면 애니메이션 지정 여부 묻기" : "  1. Prompt for animations when a skeletal mesh is found");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  2. 스켈레탈 메시도 애니메이션 질문 없이 자동 처리" : "  2. Auto-export skeletal meshes without prompting for animations");
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
+        var input = (Console.ReadLine() ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(input) || input == "1") return WizardBatchSkeletalMode.PromptForAnimations;
+        if (input == "2") return WizardBatchSkeletalMode.SkipAnimationPrompts;
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
+    }
+}
+
+static IReadOnlyList<(int RowNumber, string Query)> ReadWizardCsvMeshQueries(string csvPath, WizardLanguage language)
+{
+    var rows = new List<(int RowNumber, string Query)>();
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var firstRow = true;
+    var lineNumber = 0;
+    foreach (var line in File.ReadLines(csvPath))
+    {
+        lineNumber++;
+        var cells = ParseCsvLine(line, lineNumber, language);
+        if (cells.Count != 1)
+            throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {lineNumber}행은 정확히 한 개의 열만 포함해야 하지만 {cells.Count}개를 찾았습니다." : $"CSV row {lineNumber} must contain exactly one column, but found {cells.Count}.");
+
+        var value = NormalizeCsvCell(cells[0]);
+        if (firstRow)
+        {
+            firstRow = false;
+            if (IsWizardCsvMeshHeader(value)) continue;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {lineNumber}행이 비어 있습니다. 배치 메시 CSV에서 빈 행을 제거해 주세요." : $"CSV row {lineNumber} is blank. Remove blank rows from the batch mesh CSV.");
+
+        var normalized = NormalizeIndexPath(value);
+        if (!seen.Add(normalized))
+            throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {lineNumber}행이 이전 메시 항목과 중복됩니다: {value}" : $"CSV row {lineNumber} duplicates an earlier mesh entry: {value}");
+
+        rows.Add((lineNumber, value));
+    }
+
+    if (rows.Count == 0)
+        throw new ArgumentException(language == WizardLanguage.Korean ? "CSV 가져오기에 메시 이름이 없습니다." : "CSV import did not contain any mesh names.");
+
+    return rows;
+}
+
+static IReadOnlyList<string> ParseCsvLine(string line, int lineNumber, WizardLanguage language = WizardLanguage.English)
+{
+    var cells = new List<string>();
+    var current = new StringBuilder();
+    var inQuotes = false;
+    for (var i = 0; i < line.Length; i++)
+    {
+        var c = line[i];
+        if (inQuotes)
+        {
+            if (c == '"')
+            {
+                if (i + 1 < line.Length && line[i + 1] == '"')
+                {
+                    current.Append('"');
+                    i++;
+                }
+                else
+                {
+                    inQuotes = false;
+                }
+            }
+            else
+            {
+                current.Append(c);
+            }
+            continue;
+        }
+
+        if (c == ',')
+        {
+            cells.Add(current.ToString());
+            current.Clear();
+            continue;
+        }
+
+        if (c == '"')
+        {
+            if (current.ToString().Trim().Length != 0)
+                throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {lineNumber}행의 따옴표 없는 필드 안에 예상치 못한 따옴표가 있습니다." : $"CSV row {lineNumber} has an unexpected quote inside an unquoted field.");
+            current.Clear();
+            inQuotes = true;
+            continue;
+        }
+
+        current.Append(c);
+    }
+
+    if (inQuotes)
+        throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {lineNumber}행에 닫히지 않은 따옴표 필드가 있습니다." : $"CSV row {lineNumber} has an unterminated quoted field.");
+
+    cells.Add(current.ToString());
+    return cells;
+}
+
+static string NormalizeCsvCell(string value) => value.Trim().Trim('\uFEFF');
+
+static bool IsWizardCsvMeshHeader(string value)
+    => value.Equals("mesh", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("mesh_name", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("name", StringComparison.OrdinalIgnoreCase);
+
+static ResolvedAsset ResolveCsvMesh(int rowNumber, string query, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
+{
+    var matches = ResolveAssetQuery(query, AssetKind.Mesh, config, index);
+    if (matches.Count == 0)
+        throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {rowNumber}행이 기존 non-streaming 메시로 해석되지 않았습니다: {query}" : $"CSV row {rowNumber} did not resolve to an existing non-streaming mesh: {query}");
+    if (matches.Count == 1) return matches[0];
+    Console.WriteLine(language == WizardLanguage.Korean ? $"CSV {rowNumber}행이 여러 메시와 일치합니다: {query}" : $"CSV row {rowNumber} matched multiple meshes for: {query}");
+    return ChooseAsset(language == WizardLanguage.Korean ? $"CSV {rowNumber}행 메시" : $"CSV row {rowNumber} mesh", matches, language);
+}
+
+static string MakeUniqueWizardFolderName(string baseName, ISet<string> usedFolders)
+{
+    var safe = string.IsNullOrWhiteSpace(baseName) ? "mesh" : SanitizeFileName(baseName);
+    var candidate = safe;
+    var index = 2;
+    while (!usedFolders.Add(candidate))
+    {
+        candidate = $"{safe}_{index}";
+        index++;
+    }
+    return candidate;
+}
+
+static ResolvedAsset PromptForAsset(string label, AssetKind kind, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
+{
+    while (true)
+    {
+        var query = PromptText(language == WizardLanguage.Korean ? $"{label} 파일 이름/경로" : $"{label} filename/path");
+        if (string.IsNullOrWhiteSpace(query)) continue;
+        var matches = ResolveAssetQuery(query, kind, config, index);
+        if (matches.Count == 0)
+        {
+            Console.WriteLine(language == WizardLanguage.Korean ? "일치하는 기존 파일을 찾지 못했습니다. 전체 파일 경로나 추출 파일의 파일 이름을 붙여넣을 수 있습니다." : "No matching existing file was found. You can paste a full file path or a filename from the extract.");
+            continue;
+        }
+        if (matches.Count == 1) return matches[0];
+        return ChooseAsset(label, matches, language);
+    }
+}
+
+static ResolvedAsset ChooseAsset(string label, IReadOnlyList<ResolvedAsset> matches, WizardLanguage language)
+{
+    var limit = Math.Min(matches.Count, 25);
+    Console.WriteLine(language == WizardLanguage.Korean ? $"{label} 일치 항목:" : $"{label} matches:");
+    for (var i = 0; i < limit; i++)
+    {
+        Console.WriteLine($"  {i + 1}. {matches[i].Path}");
+    }
+    if (matches.Count > limit) Console.WriteLine(language == WizardLanguage.Korean ? $"  ... {matches.Count - limit}개의 추가 일치 항목은 숨겨졌습니다. 더 구체적인 검색어로 좁혀 주세요." : $"  ... {matches.Count - limit} more matches hidden. Type a more specific query to narrow them.");
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? $"1-{limit} 중 선택: " : $"Choose 1-{limit}: ");
+        if (int.TryParse(Console.ReadLine(), out var selected) && selected >= 1 && selected <= limit)
+            return matches[selected - 1];
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
+    }
+}
+
+static WizardAnimationSelection PromptForAnimationSelection(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
+{
+    if (PromptYesNo(language == WizardLanguage.Korean ? "MOTLIST 파일을 하나씩 선택하는 대신 MOTLIST 폴더를 사용할까요?" : "Use a MOTLIST folder instead of selecting MOTLIST files one by one?", defaultValue: true, language))
+    {
+        while (true)
+        {
+            var query = PromptText(language == WizardLanguage.Korean ? "MOTLIST 폴더 경로 또는 검색어" : "MOTLIST folder path or search term");
+            var matches = ResolveMotlistDirectoryQuery(query, config, index);
+            if (matches.Count == 0)
+            {
+                Console.WriteLine(language == WizardLanguage.Korean ? "일치하는 MOTLIST 폴더를 찾지 못했습니다." : "No matching MOTLIST folder was found.");
+                continue;
+            }
+            var folder = matches.Count == 1 ? matches[0] : ChoosePath(language == WizardLanguage.Korean ? "MOTLIST 폴더" : "MOTLIST folder", matches, language);
+            return WizardAnimationSelection.FromMotlistDirectory(folder);
+        }
+    }
+
+    var motlists = new List<string>();
+    while (true)
+    {
+        var query = PromptText(motlists.Count == 0
+            ? (language == WizardLanguage.Korean ? "MOTLIST 파일 이름/경로" : "MOTLIST filename/path")
+            : (language == WizardLanguage.Korean ? "다음 MOTLIST 파일 이름/경로, 또는 done" : "Next MOTLIST filename/path, or done"));
+        if (IsDoneInput(query))
+        {
+            if (motlists.Count > 0) break;
+            Console.WriteLine(language == WizardLanguage.Korean ? "MOTLIST를 하나 이상 선택하거나, 다시 시작해서 애니메이션 없음을 선택해 주세요." : "Select at least one MOTLIST, or restart and choose no animations.");
+            continue;
+        }
+        var matches = ResolveAssetQuery(query, AssetKind.Motlist, config, index);
+        if (matches.Count == 0)
+        {
+            Console.WriteLine(language == WizardLanguage.Korean ? "일치하는 MOTLIST를 찾지 못했습니다." : "No matching MOTLIST was found.");
+            continue;
+        }
+        var selected = matches.Count == 1 ? matches[0] : ChooseAsset("MOTLIST", matches, language);
+        if (!motlists.Contains(selected.Path, StringComparer.OrdinalIgnoreCase)) motlists.Add(selected.Path);
+    }
+    return WizardAnimationSelection.FromMotlists(motlists);
+}
+
+static string ChoosePath(string label, IReadOnlyList<string> paths, WizardLanguage language)
+{
+    var limit = Math.Min(paths.Count, 25);
+    Console.WriteLine(language == WizardLanguage.Korean ? $"{label} 일치 항목:" : $"{label} matches:");
+    for (var i = 0; i < limit; i++)
+    {
+        Console.WriteLine($"  {i + 1}. {paths[i]}");
+    }
+    if (paths.Count > limit) Console.WriteLine(language == WizardLanguage.Korean ? $"  ... {paths.Count - limit}개의 추가 일치 항목은 숨겨졌습니다. 더 구체적인 검색어로 좁혀 주세요." : $"  ... {paths.Count - limit} more matches hidden. Type a more specific query to narrow them.");
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? $"1-{limit} 중 선택: " : $"Choose 1-{limit}: ");
+        if (int.TryParse(Console.ReadLine(), out var selected) && selected >= 1 && selected <= limit)
+            return paths[selected - 1];
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
+    }
+}
+
+static bool IsDoneInput(string value)
+{
+    var normalized = value.Trim().Trim('.').Trim();
+    return string.IsNullOrWhiteSpace(normalized)
+        || normalized.Equals("done", StringComparison.OrdinalIgnoreCase)
+        || normalized.Equals("all", StringComparison.OrdinalIgnoreCase)
+        || normalized.Equals("that's all", StringComparison.OrdinalIgnoreCase)
+        || normalized.Equals("thats all", StringComparison.OrdinalIgnoreCase);
+}
+
+static string PromptExportRoot(string defaultExportRoot, WizardLanguage language)
+{
+    if (PromptYesNo(language == WizardLanguage.Korean ? $"기본 내보내기 폴더를 사용할까요? ({defaultExportRoot})" : $"Use default export folder ({defaultExportRoot})?", defaultValue: true, language))
+        return defaultExportRoot;
+    return PromptDirectoryPath(language == WizardLanguage.Korean ? "사용자 지정 내보내기 폴더" : "Custom export folder", null, mustExist: false, language);
+}
+
+static WizardMeshInspection InspectMeshForWizard(string meshPath, string? streamingPath)
+{
+    var mesh = LoadMesh(meshPath, streamingPath, allowMissingStreaming: false);
+    return new WizardMeshInspection(
+        BoneCount: mesh.BoneData?.Bones.Count ?? 0,
+        MaterialCount: mesh.MaterialNames.Count,
+        LodCount: mesh.MeshData?.LODs.Count ?? 0,
+        RequiresStreaming: mesh.RequiresStreamingData);
+}
+
+static IReadOnlyList<PragmataIndexEntry> LoadPragmataIndex()
+{
+    Stream? stream = null;
+    var localList = Path.Combine(AppContext.BaseDirectory, "pragmata.list");
+    if (File.Exists(localList))
+    {
+        stream = File.OpenRead(localList);
+    }
+    else if (File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "pragmata.list")))
+    {
+        stream = File.OpenRead(Path.Combine(Directory.GetCurrentDirectory(), "pragmata.list"));
+    }
+    else
+    {
+        stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("pragmata.list");
+    }
+    if (stream == null) throw new FileNotFoundException("Could not find pragmata.list beside the executable or as an embedded resource.");
+
+    using var reader = new StreamReader(stream);
+    var entries = new List<PragmataIndexEntry>();
+    string? line;
+    while ((line = reader.ReadLine()) != null)
+    {
+        line = line.Trim();
+        if (line.Length == 0) continue;
+        entries.Add(new PragmataIndexEntry(line));
+    }
+    return entries;
+}
+
+static IReadOnlyList<ResolvedAsset> ResolveAssetQuery(string query, AssetKind kind, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index)
+{
+    query = NormalizeUserPath(query);
+    var direct = ResolveDirectAsset(query, kind);
+    if (direct != null) return [direct];
+
+    var normalizedQuery = NormalizeIndexPath(query);
+    var fileQuery = Path.GetFileName(query);
+    var matches = index
+        .Where(entry => EntryMatchesKind(entry, kind))
+        .Where(entry => EntryMatchesQuery(entry, normalizedQuery, fileQuery))
+        .SelectMany(entry => GenerateDiskCandidates(config.ExtractRoot, entry.RelativePath).Select(path => new ResolvedAsset(path, entry.RelativePath)))
+        .Where(asset => File.Exists(asset.Path))
+        .Where(asset => kind != AssetKind.Mesh || !IsStreamingPath(asset.Path))
+        .DistinctBy(asset => Path.GetFullPath(asset.Path), StringComparer.OrdinalIgnoreCase)
+        .OrderBy(asset => asset.Path.Contains(Path.DirectorySeparatorChar + "natives" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+        .ThenBy(asset => asset.Path, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    return matches;
+}
+
+static ResolvedAsset? ResolveDirectAsset(string query, AssetKind kind)
+{
+    if (!File.Exists(query)) return null;
+    var full = Path.GetFullPath(query);
+    if (kind == AssetKind.Mesh && (!IsMeshPath(full) || IsStreamingPath(full))) return null;
+    if (kind == AssetKind.Motlist && !IsMotlistPath(full)) return null;
+    return new ResolvedAsset(full, null);
+}
+
+static IReadOnlyList<string> ResolveMotlistDirectoryQuery(string query, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index)
+{
+    query = NormalizeUserPath(query);
+    if (Directory.Exists(query))
+    {
+        var full = Path.GetFullPath(query);
+        if (Directory.GetFiles(full, "*.motlist*", SearchOption.AllDirectories).Length > 0) return [full];
+    }
+
+    var normalizedQuery = NormalizeIndexPath(query);
+    var dirs = index
+        .Where(entry => EntryMatchesKind(entry, AssetKind.Motlist))
+        .Where(entry => entry.RelativeDirectory.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase) || entry.FileName.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
+        .Select(entry => entry.RelativeDirectory)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .SelectMany(relativeDir => GenerateDiskCandidates(config.ExtractRoot, relativeDir))
+        .Where(Directory.Exists)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    return dirs;
+}
+
+static bool EntryMatchesKind(PragmataIndexEntry entry, AssetKind kind) => kind switch
+{
+    AssetKind.Mesh => IsMeshPath(entry.RelativePath) && !IsStreamingPath(entry.RelativePath),
+    AssetKind.Motlist => IsMotlistPath(entry.RelativePath),
+    _ => false,
+};
+
+static bool EntryMatchesQuery(PragmataIndexEntry entry, string normalizedQuery, string fileQuery)
+{
+    if (!string.IsNullOrWhiteSpace(fileQuery) && entry.FileName.Equals(fileQuery, StringComparison.OrdinalIgnoreCase)) return true;
+    if (entry.RelativePath.Equals(normalizedQuery, StringComparison.OrdinalIgnoreCase)) return true;
+    if (entry.RelativePath.EndsWith("/" + normalizedQuery, StringComparison.OrdinalIgnoreCase)) return true;
+    return entry.RelativePath.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase);
+}
+
+static IEnumerable<string> GenerateDiskCandidates(string configuredRoot, string relativePath)
+{
+    var root = Path.GetFullPath(NormalizeUserPath(configuredRoot));
+    var rel = relativePath.Replace('/', Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
+    var directRel = StripNativesStmPrefix(rel);
+    var roots = new List<string> { root };
+    if (Directory.Exists(Path.Combine(root, "re_chunk_000"))) roots.Add(Path.Combine(root, "re_chunk_000"));
+    if (EndsWithSegments(root, "natives", "stm"))
+    {
+        roots.Add(Path.GetFullPath(Path.Combine(root, "..", "..")));
+    }
+
+    foreach (var candidateRoot in roots.Distinct(StringComparer.OrdinalIgnoreCase))
+    {
+        yield return Path.Combine(candidateRoot, rel);
+        yield return Path.Combine(candidateRoot, directRel);
+        yield return Path.Combine(candidateRoot, "re_chunk_000", rel);
+        yield return Path.Combine(candidateRoot, "re_chunk_000", directRel);
+    }
+}
+
+static string StripNativesStmPrefix(string rel)
+{
+    var prefix = "natives" + Path.DirectorySeparatorChar + "stm" + Path.DirectorySeparatorChar;
+    return rel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? rel[prefix.Length..] : rel;
+}
+
+static string NormalizeIndexPath(string value) => NormalizeUserPath(value).Replace('\\', '/').TrimStart('/');
+
+static string NormalizeUserPath(string value)
+{
+    value = value.Trim().Trim('"').Trim('\'');
+    return Environment.ExpandEnvironmentVariables(value);
+}
+
+static string? InferExtractRoot(string input)
+{
+    input = NormalizeUserPath(input);
+    if (string.IsNullOrWhiteSpace(input)) return null;
+    var anchored = InferExtractRootFromAnchors(input);
+    if (anchored != null && HasLikelyExtractLayout(anchored)) return anchored;
+
+    var original = input;
+    if (File.Exists(input))
+    {
+        input = Path.GetDirectoryName(Path.GetFullPath(input)) ?? input;
+    }
+    else if (!Directory.Exists(input) && Path.HasExtension(input))
+    {
+        input = Path.GetDirectoryName(input) ?? input;
+    }
+
+    var ancestor = FindExtractRootAncestor(input);
+    if (ancestor != null) return ancestor;
+
+    var full = Directory.Exists(input) ? Path.GetFullPath(input) : Path.GetFullPath(original);
+    var parts = full.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Where(p => p.Length > 0).ToList();
+    var reChunkIndex = parts.FindIndex(p => p.Equals("re_chunk_000", StringComparison.OrdinalIgnoreCase));
+    if (reChunkIndex >= 0)
+    {
+        var candidate = RebuildPath(parts.Take(reChunkIndex + 1));
+        return Directory.Exists(candidate) ? candidate : null;
+    }
+    for (var i = 0; i < parts.Count - 1; i++)
+    {
+        if (parts[i].Equals("natives", StringComparison.OrdinalIgnoreCase) && parts[i + 1].Equals("stm", StringComparison.OrdinalIgnoreCase))
+        {
+            var candidate = RebuildPath(parts.Take(i));
+            return Directory.Exists(candidate) ? candidate : null;
+        }
+    }
+    var topLevelIndex = parts.FindIndex(IsTopLevelGameFolder);
+    if (topLevelIndex >= 0)
+    {
+        var candidate = RebuildPath(parts.Take(topLevelIndex));
+        return Directory.Exists(candidate) ? candidate : null;
+    }
+    return Directory.Exists(full) ? full : null;
+}
+
+static string? FindExtractRootAncestor(string path)
+{
+    if (string.IsNullOrWhiteSpace(path)) return null;
+    var current = Directory.Exists(path) ? new DirectoryInfo(Path.GetFullPath(path)) : new DirectoryInfo(Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".");
+    while (current != null)
+    {
+        if (HasLikelyExtractLayout(current.FullName)) return current.FullName;
+        current = current.Parent;
+    }
+    return null;
+}
+
+static string? InferExtractRootFromAnchors(string input)
+{
+    var normalized = input.Replace('/', Path.DirectorySeparatorChar);
+    var reChunkMarker = Path.DirectorySeparatorChar + "re_chunk_000";
+    var reChunkIndex = normalized.IndexOf(reChunkMarker, StringComparison.OrdinalIgnoreCase);
+    if (reChunkIndex >= 0)
+    {
+        var end = reChunkIndex + reChunkMarker.Length;
+        var candidate = normalized[..end];
+        return Directory.Exists(candidate) ? Path.GetFullPath(candidate) : null;
+    }
+
+    var nativesMarker = Path.DirectorySeparatorChar + "natives" + Path.DirectorySeparatorChar + "stm";
+    var nativesIndex = normalized.IndexOf(nativesMarker, StringComparison.OrdinalIgnoreCase);
+    if (nativesIndex >= 0)
+    {
+        var candidate = normalized[..nativesIndex];
+        return Directory.Exists(candidate) ? Path.GetFullPath(candidate) : null;
+    }
+
+    foreach (var markerName in new[] { "character", "camera", "event", "object", "stage", "streaming" })
+    {
+        var marker = Path.DirectorySeparatorChar + markerName + Path.DirectorySeparatorChar;
+        var index = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (index <= 0) continue;
+        var candidate = normalized[..index];
+        return Directory.Exists(candidate) ? Path.GetFullPath(candidate) : null;
+    }
+
+    return null;
+}
+
+static bool HasLikelyExtractLayout(string root)
+{
+    if (!Directory.Exists(root)) return false;
+    if (Directory.Exists(Path.Combine(root, "natives", "stm"))) return true;
+    if (Directory.Exists(Path.Combine(root, "re_chunk_000"))) return true;
+    return Directory.EnumerateDirectories(root)
+        .Select(Path.GetFileName)
+        .Where(name => name != null)
+        .Any(name => IsTopLevelGameFolder(name!));
+}
+
+static string RebuildPath(IEnumerable<string> parts)
+{
+    var list = parts.ToList();
+    if (list.Count == 0) return Directory.GetCurrentDirectory();
+    var path = list[0] + Path.DirectorySeparatorChar;
+    foreach (var part in list.Skip(1)) path = Path.Combine(path, part);
+    return Path.GetFullPath(path);
+}
+
+static bool EndsWithSegments(string path, params string[] segments)
+{
+    var parts = Path.GetFullPath(path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Where(p => p.Length > 0).ToArray();
+    if (parts.Length < segments.Length) return false;
+    for (var i = 0; i < segments.Length; i++)
+    {
+        if (!parts[parts.Length - segments.Length + i].Equals(segments[i], StringComparison.OrdinalIgnoreCase)) return false;
+    }
+    return true;
+}
+
+static bool IsTopLevelGameFolder(string value) => value.Equals("camera", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("character", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("effect", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("event", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("gui", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("leveldesign", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("object", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("render", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("scene", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("sound", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("stage", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("streaming", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("systems", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("ui", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("userdata", StringComparison.OrdinalIgnoreCase);
+
+static bool IsMeshPath(string path) => path.Contains(".mesh.", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".mesh", StringComparison.OrdinalIgnoreCase);
+static bool IsMotlistPath(string path) => path.Contains(".motlist.", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".motlist", StringComparison.OrdinalIgnoreCase);
+static bool IsStreamingPath(string path) => NormalizeIndexPath(path).Split('/').Contains("streaming", StringComparer.OrdinalIgnoreCase);
+
+static string ResolveWizardConfigPath(string? overridePath)
+{
+    if (!string.IsNullOrWhiteSpace(overridePath)) return Path.GetFullPath(NormalizeUserPath(overridePath));
+    return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "REE-Content-Exporter", "config.json");
+}
+
+static string GenerateWizardScript(
+    WizardConfig config,
+    string exportRoot,
+    string meshPath,
+    IReadOnlyList<string> additionalMeshes,
+    string? streamingPath,
+    IReadOnlyDictionary<string, string> additionalStreaming,
+    WizardAnimationSelection animation,
+    bool isSkeletal)
+{
+    Directory.CreateDirectory(exportRoot);
+    var scriptDir = Path.Combine(exportRoot, "generated-scripts");
+    Directory.CreateDirectory(scriptDir);
+    var assetName = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString());
+    var scriptPath = Path.Combine(scriptDir, $"{assetName}_unreal_export_{DateTime.Now:yyyyMMdd_HHmmss}.ps1");
+    var exporterPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter.exe");
+    var script = BuildWizardPowerShell(config, exporterPath, exportRoot, meshPath, additionalMeshes, streamingPath, additionalStreaming, animation, isSkeletal);
+    File.WriteAllText(scriptPath, script, Encoding.UTF8);
+    return scriptPath;
+}
+
+static string GenerateWizardBatchScript(WizardConfig config, string exportRoot, IReadOnlyList<WizardExportJob> jobs)
+{
+    Directory.CreateDirectory(exportRoot);
+    var scriptDir = Path.Combine(exportRoot, "generated-scripts");
+    Directory.CreateDirectory(scriptDir);
+    var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+    var batchRoot = Path.Combine(exportRoot, $"wizard_batch_{timestamp}");
+    var scriptPath = Path.Combine(scriptDir, $"wizard_batch_unreal_export_{timestamp}.ps1");
+    var exporterPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter.exe");
+    var script = BuildWizardBatchPowerShell(config, exporterPath, batchRoot, jobs);
+    File.WriteAllText(scriptPath, script, Encoding.UTF8);
+    return scriptPath;
+}
+
+static string BuildWizardBatchPowerShell(WizardConfig config, string exporterPath, string batchRoot, IReadOnlyList<WizardExportJob> jobs)
+{
+    var emptyAdditionalStreaming = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    var jobBlocks = new List<string>();
+    foreach (var job in jobs)
+    {
+        var jobRoot = Path.Combine(batchRoot, job.OutputFolderName);
+        var jobScript = BuildWizardPowerShell(config, exporterPath, jobRoot, job.MeshPath, [], job.StreamingPath, emptyAdditionalStreaming, job.Animation, job.IsSkeletal);
+        var jobScriptBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(jobScript));
+        jobBlocks.Add($$"""
+    [pscustomobject]@{
+        Row = {{job.RowNumber.ToString(CultureInfo.InvariantCulture)}}
+        Query = {{PsQuote(job.MeshQuery)}}
+        Mesh = {{PsQuote(job.MeshPath)}}
+        Folder = {{PsQuote(job.OutputFolderName)}}
+        IsSkeletal = {{PsBool(job.IsSkeletal)}}
+        HasAnimations = {{PsBool(job.Animation.Mode != WizardAnimationMode.None)}}
+        ScriptBase64 = {{PsQuote(jobScriptBase64)}}
+    }
+""");
+    }
+
+    return $$"""
+param(
+    [switch]$KeepSourceFbx
+)
+
+$ErrorActionPreference = "Stop"
+$BatchRoot = {{PsQuote(batchRoot)}}
+$RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$Jobs = @(
+{{string.Join(",\n", jobBlocks)}}
+)
+$Results = New-Object System.Collections.Generic.List[object]
+
+function Format-MarkdownCell {
+    param([object]$Value)
+    if ($null -eq $Value) { return "" }
+    return ($Value.ToString() -replace '\|', '\|' -replace "(`r`n|`n|`r)", " ")
+}
+
+function Get-PrefixedValue {
+    param(
+        [string[]]$Lines,
+        [string]$Prefix
+    )
+    $match = $Lines | Where-Object { $_.StartsWith($Prefix, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -Last 1
+    if (!$match) { return "" }
+    return $match.Substring($Prefix.Length)
+}
+
+New-Item -ItemType Directory -Force -Path $BatchRoot | Out-Null
+Write-Host "BATCH_EXPORT_ROOT=$BatchRoot"
+Write-Host "BATCH_JOB_COUNT=$($Jobs.Count)"
+
+foreach ($Job in $Jobs) {
+    Write-Host "BATCH_JOB_START row=$($Job.Row) mesh=$($Job.Mesh)"
+    $TempScript = Join-Path $env:TEMP ("ree_wizard_batch_{0}_row{1}.ps1" -f $RunStamp, $Job.Row)
+    $ScriptText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Job.ScriptBase64))
+    $ScriptText | Set-Content -LiteralPath $TempScript -Encoding UTF8
+
+    $Arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $TempScript)
+    if ($KeepSourceFbx) { $Arguments += "-KeepSourceFbx" }
+    $JobOutput = @(powershell @Arguments 2>&1)
+    $ExitCode = $LASTEXITCODE
+    $TextOutput = @($JobOutput | ForEach-Object { $_.ToString() })
+    foreach ($Line in $TextOutput) { Write-Host $Line }
+
+    $ExportDir = Get-PrefixedValue -Lines $TextOutput -Prefix "EXPORT_DIR="
+    $Failure = Get-PrefixedValue -Lines $TextOutput -Prefix "EXPORT_FAILED="
+    $SkippedCount = @($TextOutput | Where-Object { $_.StartsWith("BLENDER_SKIPPED_SOURCE=", [System.StringComparison]::OrdinalIgnoreCase) }).Count
+    $Status = if ($ExitCode -eq 0) {
+        if ($SkippedCount -gt 0) { "Exported with skips" } else { "Exported" }
+    } else {
+        "Failed"
+    }
+    $Details = if ($ExitCode -ne 0) {
+        if ([string]::IsNullOrWhiteSpace($Failure)) { "Child export failed with exit code $ExitCode" } else { $Failure }
+    } elseif ($SkippedCount -gt 0) {
+        "$SkippedCount Blender MOTLIST source(s) skipped"
+    } else {
+        "Resolved and exported"
+    }
+
+    $Results.Add([pscustomobject]@{
+        Row = $Job.Row
+        Query = $Job.Query
+        Mesh = $Job.Mesh
+        Status = $Status
+        Output = $ExportDir
+        Details = $Details
+    }) | Out-Null
+
+    Remove-Item -LiteralPath $TempScript -Force -ErrorAction SilentlyContinue
+    Write-Host "BATCH_JOB_DONE row=$($Job.Row) status=$Status"
+}
+
+$SummaryPath = Join-Path $BatchRoot "batch-summary.md"
+$Lines = New-Object System.Collections.Generic.List[string]
+$Lines.Add("# Wizard Batch Export Summary")
+$Lines.Add("")
+$Lines.Add("Batch root: ``$BatchRoot``")
+$Lines.Add("")
+$Lines.Add("| Row | Status | Mesh | Output | Details |")
+$Lines.Add("| --- | --- | --- | --- | --- |")
+foreach ($Result in $Results) {
+    $Lines.Add("| $($Result.Row) | $(Format-MarkdownCell $Result.Status) | $(Format-MarkdownCell $Result.Mesh) | $(Format-MarkdownCell $Result.Output) | $(Format-MarkdownCell $Result.Details) |")
+}
+$Lines.Add("")
+$Lines.Add("Resolved rows: $($Results.Count)")
+$Lines.Add("Exported rows: $(($Results | Where-Object { $_.Status -like 'Exported*' }).Count)")
+$Lines.Add("Failed rows: $(($Results | Where-Object { $_.Status -eq 'Failed' }).Count)")
+$Lines | Set-Content -LiteralPath $SummaryPath -Encoding UTF8
+Write-Host "BATCH_SUMMARY=$SummaryPath"
+
+$FailedCount = ($Results | Where-Object { $_.Status -eq "Failed" }).Count
+if ($FailedCount -gt 0) {
+    Write-Host "BATCH_COMPLETED_WITH_FAILURES=$FailedCount"
+    exit 1
+}
+
+Write-Host "BATCH_COMPLETED_SUCCESSFULLY"
+""";
+}
+
+static string BuildWizardPowerShell(
+    WizardConfig config,
+    string exporterPath,
+    string exportRoot,
+    string meshPath,
+    IReadOnlyList<string> additionalMeshes,
+    string? streamingPath,
+    IReadOnlyDictionary<string, string> additionalStreaming,
+    WizardAnimationSelection animation,
+    bool isSkeletal)
+{
+    var sourceName = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString()) + "_source.fbx";
+    var args = new List<string>
+    {
+        "--mesh", meshPath,
+        "--texture-format", string.IsNullOrWhiteSpace(config.TextureFormat) ? "png" : config.TextureFormat,
+        "--fbx-scale", "100",
+        "--output", "$OutputRequest",
+    };
+    if (!string.IsNullOrWhiteSpace(streamingPath)) args.InsertRange(0, ["--streaming", streamingPath]);
+    foreach (var additional in additionalMeshes)
+    {
+        args.Add("--additional-mesh");
+        args.Add(additional);
+        if (additionalStreaming.TryGetValue(additional, out var addStreaming))
+        {
+            args.Add("--additional-streaming");
+            args.Add(additional + "=" + addStreaming);
+        }
+    }
+    if (animation.Mode == WizardAnimationMode.None)
+    {
+        args.Add("--no-animations");
+    }
+    else
+    {
+        args.Add("--no-placeholder-animation-bones");
+        if (animation.Mode == WizardAnimationMode.MotlistDirectory)
+        {
+            args.Add("--motlist-dir");
+            args.Add(animation.MotlistDirectory!);
+            args.Add("--split-motlists");
+        }
+        else
+        {
+            foreach (var motlist in animation.Motlists)
+            {
+                args.Add("--motlist");
+                args.Add(motlist);
+            }
+            args.Add("--split-motlists");
+        }
+    }
+
+    var argLines = args.Select(arg => arg == "$OutputRequest" ? "    $OutputRequest" : "    " + PsQuote(arg)).ToList();
+    var outputRequestLine = animation.Mode == WizardAnimationMode.None
+        ? $"$OutputRequest = Join-Path $ExportRoot {PsQuote(sourceName)}"
+        : $"$OutputRequest = Join-Path $ExportRoot {PsQuote(sourceName)}";
+    var sourceDiscovery = animation.Mode == WizardAnimationMode.None
+        ? $$"""
+    $Source = Get-ChildItem $ExportRoot -Recurse -File -Filter {{PsQuote(sourceName)}} |
+        Where-Object { $_.LastWriteTime -ge $Start.AddMinutes(-2) } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (!$Source) { throw "Could not find generated source FBX under $ExportRoot" }
+    $OutDir = Split-Path $Source.FullName -Parent
+    $Sources = @($Source)
+"""
+        : """
+    $RecentSources = Get-ChildItem $ExportRoot -Recurse -File -Filter "*_all_animations.fbx" |
+        Where-Object { $_.LastWriteTime -ge $Start.AddMinutes(-2) } |
+        Sort-Object FullName
+    if (!$RecentSources -or $RecentSources.Count -eq 0) { throw "Could not find split MOTLIST source FBX files under $ExportRoot" }
+    $OutDir = ($RecentSources | Sort-Object LastWriteTime -Descending | Select-Object -First 1).DirectoryName
+    $Sources = @(Get-ChildItem $OutDir -File -Filter "*_all_animations.fbx" | Sort-Object Name)
+    if (!$Sources -or $Sources.Count -eq 0) { throw "No source FBX files found in split MOTLIST job folder: $OutDir" }
+    Write-Host "SPLIT_MOTLIST_SOURCE_COUNT=$($Sources.Count)"
+    Write-Host "JOB_DIR=$OutDir"
+""";
+
+    return $$"""
+param(
+    [switch]$KeepSourceFbx
+)
+
+$ErrorActionPreference = "Stop"
+$Exporter = {{PsQuote(exporterPath)}}
+$ExportRoot = {{PsQuote(exportRoot)}}
+$Blender = {{PsQuote(config.BlenderPath)}}
+$RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$LogTemp = Join-Path $env:TEMP ("ree_export_wizard__{0}.log" -f $RunStamp)
+$TranscriptStarted = $false
+$LogCompleted = $false
+$OutDir = $null
+$BlenderSkipped = New-Object System.Collections.Generic.List[object]
+
+function Complete-ExportLog {
+    param([ValidateSet("SUCCESS", "FAIL")][string]$Status)
+    if ($script:LogCompleted) { return }
+    $script:LogCompleted = $true
+    if ($script:TranscriptStarted) {
+        Stop-Transcript | Out-Null
+        $script:TranscriptStarted = $false
+    }
+    if (Test-Path $script:LogTemp) {
+        $name = "ree_export_wizard-$Status.log"
+        if ($script:OutDir -and (Test-Path $script:OutDir)) {
+            $target = Join-Path $script:OutDir $name
+            Move-Item -LiteralPath $script:LogTemp -Destination $target -Force
+            Write-Host "EXPORT_LOG=$target"
+        } else {
+            $target = Join-Path ([System.IO.Path]::GetDirectoryName($script:LogTemp)) ("ree_export_wizard-$Status__$($script:RunStamp).log")
+            Move-Item -LiteralPath $script:LogTemp -Destination $target -Force
+            Write-Host "EXPORT_LOG_TEMP=$target"
+        }
+    }
+}
+
+function Invoke-BlenderReexport {
+    param(
+        [System.IO.FileInfo]$Source,
+        [string]$Target,
+        [int]$Index,
+        [int]$Total,
+        [bool]$ExpectAnimations,
+        [string]$StatusPath
+    )
+
+    $Py = Join-Path $env:TEMP ("blender_ree_wizard_{0}_{1}.py" -f $RunStamp, $Index)
+    $BlenderLog = [System.IO.Path]::ChangeExtension($StatusPath, ".blender.log")
+    $PythonExpectAnimations = if ($ExpectAnimations) { 'True' } else { 'False' }
+@"
+import bpy
+import builtins
+from pathlib import Path
+src = Path(r'$($Source.FullName)')
+out = Path(r'$Target')
+status_path = Path(r'$StatusPath')
+index = $Index
+total = $Total
+expect_animations = $PythonExpectAnimations
+
+def write_status(status, reason='', action_count=0):
+    status_path.write_text(f'STATUS={status}\nREASON={reason}\nACTION_COUNT={action_count}\n', encoding='utf-8')
+
+def log(message):
+    print(f'BLENDER_PROGRESS {message}', flush=True)
+
+def install_fbx_pose_progress(action_names):
+    real_print = builtins.print
+    state = {'pose_count': 0}
+    total_actions = max(1, len(action_names))
+    def progress_print(*args, **kwargs):
+        if len(args) == 1 and isinstance(args[0], tuple) and len(args[0]) >= 2 and args[0][1] == 'POSE':
+            state['pose_count'] += 1
+            pose_index = state['pose_count']
+            if pose_index <= len(action_names):
+                real_print(f'BLENDER_PROGRESS File {index}/{total} exporting animation {pose_index}/{total_actions}: {action_names[pose_index - 1]}', flush=True)
+            else:
+                real_print(f'BLENDER_PROGRESS File {index}/{total} exporting additional FBX pose data: event {pose_index}', flush=True)
+            return
+        real_print(*args, **kwargs)
+    builtins.print = progress_print
+    return real_print
+
+log(f'File {index}/{total} 1/6 clearing scene')
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete()
+for datablocks in (bpy.data.actions, bpy.data.armatures, bpy.data.meshes):
+    for datablock in list(datablocks):
+        datablocks.remove(datablock, do_unlink=True)
+
+bpy.context.scene.unit_settings.system = 'METRIC'
+bpy.context.scene.unit_settings.scale_length = 0.01
+
+log(f'File {index}/{total} 2/6 importing source FBX')
+bpy.ops.import_scene.fbx(
+    filepath=str(src),
+    use_anim=expect_animations,
+    automatic_bone_orientation=False,
+    ignore_leaf_bones=False,
+    force_connect_children=False,
+)
+
+armatures = [o for o in bpy.context.scene.objects if o.type == 'ARMATURE']
+meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
+actions = list(bpy.data.actions)
+print(f'IMPORTED file={index}/{total} armatures={len(armatures)} meshes={len(meshes)} actions={len(actions)}')
+if expect_animations and not armatures:
+    write_status('FAILED', 'No armature imported from animated source FBX', len(actions))
+    raise RuntimeError('No armature imported from animated source FBX')
+if expect_animations and not actions:
+    write_status('SKIPPED', 'No actions imported from source FBX', 0)
+    raise SystemExit(0)
+if not meshes and not armatures:
+    write_status('FAILED', 'No mesh or armature imported from source FBX', len(actions))
+    raise RuntimeError('No mesh or armature imported from source FBX')
+
+for arm_index, arm in enumerate(armatures, start=1):
+    log(f'File {index}/{total} 3/6 applying armature transform {arm_index}/{len(armatures)}: {arm.name}')
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True, properties=True)
+
+if expect_animations:
+    for arm in armatures:
+        arm.animation_data_create()
+        arm.animation_data.action = None
+        for track in list(arm.animation_data.nla_tracks):
+            arm.animation_data.nla_tracks.remove(track)
+        for action_index, action in enumerate(actions, start=1):
+            log(f'File {index}/{total} 4/6 preparing NLA strip {action_index}/{len(actions)}: {action.name}')
+            start, end = action.frame_range
+            track = arm.animation_data.nla_tracks.new()
+            track.name = action.name
+            strip = track.strips.new(action.name, 0, action)
+            strip.name = action.name
+            strip.action_frame_start = start
+            strip.action_frame_end = end
+            strip.frame_start = 0
+            strip.frame_end = max(1, end - start)
+            strip.blend_type = 'REPLACE'
+            strip.extrapolation = 'NOTHING'
+    for action in bpy.data.actions:
+        action.use_fake_user = True
+    max_frame = 1
+    for action in bpy.data.actions:
+        if action.frame_range:
+            max_frame = max(max_frame, int(action.frame_range[1] - action.frame_range[0]))
+    bpy.context.scene.frame_start = 0
+    bpy.context.scene.frame_end = max_frame
+    bpy.context.scene.render.fps = 60
+
+log(f'File {index}/{total} 5/6 exporting Unreal FBX')
+object_types = {'MESH', 'ARMATURE'} if armatures else {'MESH'}
+real_print = install_fbx_pose_progress([action.name for action in actions]) if expect_animations else builtins.print
+try:
+    bpy.ops.export_scene.fbx(
+        filepath=str(out),
+        check_existing=False,
+        use_selection=False,
+        object_types=object_types,
+        use_mesh_modifiers=True,
+        add_leaf_bones=False,
+        primary_bone_axis='Y',
+        secondary_bone_axis='X',
+        use_armature_deform_only=False,
+        bake_anim=expect_animations,
+        bake_anim_use_all_bones=expect_animations,
+        bake_anim_use_all_actions=False,
+        bake_anim_use_nla_strips=expect_animations,
+        bake_anim_force_startend_keying=expect_animations,
+        bake_anim_step=1.0,
+        bake_anim_simplify_factor=0.0,
+        axis_forward='-Z',
+        axis_up='Y',
+        global_scale=1.0,
+        apply_unit_scale=True,
+        apply_scale_options='FBX_SCALE_ALL',
+        use_space_transform=True,
+        bake_space_transform=False,
+        path_mode='AUTO',
+        embed_textures=False,
+    )
+finally:
+    builtins.print = real_print
+
+log(f'File {index}/{total} 6/6 done')
+write_status('EXPORTED', '', len(actions))
+print(f'EXPORTED {out} size={out.stat().st_size if out.exists() else 0}')
+"@ | Set-Content -Encoding UTF8 $Py
+
+    Remove-Item -LiteralPath $StatusPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $BlenderLog -Force -ErrorAction SilentlyContinue
+    & $Blender --background --factory-startup --python $Py 2>&1 | Tee-Object -FilePath $BlenderLog
+    if ($LASTEXITCODE -ne 0) { throw "Blender re-export failed with exit code $LASTEXITCODE for $($Source.FullName). Log: $BlenderLog" }
+    if (!(Test-Path $StatusPath)) {
+        if ((Test-Path $Target) -and ((Get-Item -LiteralPath $Target).Length -gt 0)) {
+            "STATUS=EXPORTED`nREASON=Recovered from missing Blender status file; target FBX exists.`nACTION_COUNT=0`n" | Set-Content -Encoding UTF8 $StatusPath
+        } else {
+            throw "Missing Blender status file for $($Source.FullName): $StatusPath. Log: $BlenderLog"
+        }
+    }
+}
+
+try {
+    if (!(Test-Path $Exporter)) { throw "Missing exporter: $Exporter" }
+    if (!(Test-Path $Blender)) { throw "Missing Blender 4.5.9 executable: $Blender" }
+    if (!(Test-Path $ExportRoot)) { New-Item -ItemType Directory -Force -Path $ExportRoot | Out-Null }
+
+    $BlenderVersionLine = (& $Blender --version 2>&1 | Select-Object -First 1)
+    if ($LASTEXITCODE -ne 0) { throw "Could not query Blender version from: $Blender" }
+    if ($BlenderVersionLine -notmatch 'Blender\s+4\.5\.9') { throw "Expected Blender 4.5.9 LTS, but found: $BlenderVersionLine" }
+
+    Start-Transcript -Path $LogTemp -Force | Out-Null
+    $TranscriptStarted = $true
+    $Start = Get-Date
+    {{outputRequestLine}}
+    $argsList = @(
+{{string.Join(",\n", argLines)}}
+    )
+    & $Exporter @argsList
+    if ($LASTEXITCODE -ne 0) { throw "Exporter failed with exit code $LASTEXITCODE" }
+
+{{sourceDiscovery}}
+
+    $TextureDir = Join-Path $OutDir "textures"
+    if (!(Test-Path $TextureDir)) { throw "Texture folder missing after export: $TextureDir" }
+    $TextureCount = (Get-ChildItem $TextureDir -File -ErrorAction Stop | Measure-Object).Count
+    if ($TextureCount -le 0) { throw "Texture folder exists but is empty: $TextureDir" }
+
+    for ($i = 0; $i -lt $Sources.Count; $i++) {
+        $Source = $Sources[$i]
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($Source.Name)
+        $base = $base -replace '^\d{4}_', ''
+        $base = $base -replace '_source$', ''
+        $base = $base -replace '_all_animations$', ''
+        $Target = Join-Path $Source.DirectoryName ($base + "_unreal.fbx")
+        $SourceReport = Join-Path $Source.DirectoryName "$([System.IO.Path]::GetFileNameWithoutExtension($Source.Name)).skipped-animation-bones.md"
+        $FinalReport = Join-Path $Source.DirectoryName "$base.skipped-animation-bones.md"
+        $StatusPath = Join-Path $env:TEMP ("ree_wizard_blender_status_{0}_{1}.txt" -f $RunStamp, $i)
+        $statusText = ""
+        Write-Host "SOURCE_FBX=$($Source.FullName)"
+        Write-Host "BLENDER_TARGET=$Target"
+        Invoke-BlenderReexport -Source $Source -Target $Target -Index ($i + 1) -Total $Sources.Count -ExpectAnimations ${{(animation.Mode == WizardAnimationMode.None ? "false" : "true")}} -StatusPath $StatusPath
+        if (Test-Path $StatusPath) {
+            $statusText = Get-Content -LiteralPath $StatusPath -Raw
+            if ($statusText -match 'STATUS=SKIPPED') {
+                $BlenderSkipped.Add([pscustomobject]@{ Source = $Source.FullName; Target = $Target; Reason = "No actions imported from source FBX" })
+            }
+        }
+        if (!(Test-Path $Target) -and !($statusText -match 'STATUS=SKIPPED')) { throw "Missing Blender output: $Target" }
+        if ($statusText -match 'STATUS=SKIPPED') {
+            Write-Host "BLENDER_SKIPPED_SOURCE=$($Source.FullName)"
+            if (!$KeepSourceFbx) {
+                Remove-Item -LiteralPath $Source.FullName -Force
+                Write-Host "SOURCE_FBX_REMOVED=$($Source.FullName)"
+                if (Test-Path $SourceReport) {
+                    Remove-Item -LiteralPath $SourceReport -Force
+                    Write-Host "SOURCE_SKIPPED_BONE_REPORT_REMOVED=$SourceReport"
+                }
+            }
+            continue
+        }
+        if (Test-Path $SourceReport) {
+            Move-Item -LiteralPath $SourceReport -Destination $FinalReport -Force
+            Write-Host "SKIPPED_BONE_REPORT=$FinalReport"
+        }
+        if (!$KeepSourceFbx) {
+            Remove-Item -LiteralPath $Source.FullName -Force
+            Write-Host "SOURCE_FBX_REMOVED=$($Source.FullName)"
+        }
+        Write-Host "BLENDER_FBX=$Target"
+    }
+
+    if ($BlenderSkipped.Count -gt 0) {
+        $ReportPath = Join-Path $OutDir "skipped-blender-motlists.md"
+        $lines = New-Object System.Collections.Generic.List[string]
+        $lines.Add("# Skipped Blender MOTLIST Re-exports")
+        $lines.Add("")
+        foreach ($item in $BlenderSkipped) { $lines.Add("- $($item.Source): $($item.Reason)") }
+        $lines | Set-Content -Encoding UTF8 $ReportPath
+        Write-Host "BLENDER_SKIPPED_MOTLIST_REPORT=$ReportPath"
+    }
+
+    Complete-ExportLog -Status SUCCESS
+    Write-Host "EXPORT_DIR=$OutDir"
+} catch {
+    Write-Host "EXPORT_FAILED=$($_.Exception.Message)"
+    Complete-ExportLog -Status FAIL
+    throw
+}
+""";
+}
+
+static string PsQuote(string value) => "'" + value.Replace("'", "''") + "'";
+static string PsBool(bool value) => value ? "$true" : "$false";
+
+static void RunGeneratedScript(string scriptPath, WizardLanguage language = WizardLanguage.English)
+{
+    var psi = new ProcessStartInfo
+    {
+        FileName = "powershell",
+        UseShellExecute = false,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+    };
+    psi.ArgumentList.Add("-ExecutionPolicy");
+    psi.ArgumentList.Add("Bypass");
+    psi.ArgumentList.Add("-File");
+    psi.ArgumentList.Add(scriptPath);
+    using var proc = Process.Start(psi) ?? throw new Exception("Failed to start PowerShell.");
+    proc.OutputDataReceived += (_, e) => { if (e.Data != null) Console.WriteLine(e.Data); };
+    proc.ErrorDataReceived += (_, e) => { if (e.Data != null) Console.Error.WriteLine(e.Data); };
+    proc.BeginOutputReadLine();
+    proc.BeginErrorReadLine();
+    proc.WaitForExit();
+    if (proc.ExitCode == 0)
+    {
+        Console.WriteLine(language == WizardLanguage.Korean ? "스크립트가 성공적으로 완료되었습니다." : "Script completed successfully.");
+    }
+    else
+    {
+        Console.WriteLine(language == WizardLanguage.Korean ? $"스크립트가 종료 코드 {proc.ExitCode}(으)로 실패했습니다." : $"Script failed with exit code {proc.ExitCode}.");
+    }
+}
+
+var wizardConfigPath = GetArg(args, "--config");
+if (HasFlag(args, "--reset-config"))
+{
+    var path = ResolveWizardConfigPath(wizardConfigPath);
+    if (File.Exists(path))
+    {
+        File.Delete(path);
+        Console.WriteLine($"Deleted wizard config: {path}");
+    }
+}
+if (args.Length == 0 || HasFlag(args, "--wizard") || HasFlag(args, "--reset-config"))
+{
+    RunWizard(wizardConfigPath);
+    return;
+}
+if (HasFlag(args, "--help"))
+{
+    PrintUsage();
     return;
 }
 
@@ -49,6 +1539,7 @@ using var progress = new ProgressStatus();
 var meshPath = GetArg(args, "--mesh") ?? throw new ArgumentException("Missing --mesh");
 var additionalMeshPaths = GetArgs(args, "--additional-mesh").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var streamingPath = GetArg(args, "--streaming");
+var additionalStreamingByMesh = ParseAdditionalStreamingArgs(GetArgs(args, "--additional-streaming"));
 var mdfPath = GetArg(args, "--mdf");
 var motlistPaths = GetArgs(args, "--motlist").ToList();
 var motlistDir = GetArg(args, "--motlist-dir");
@@ -80,10 +1571,19 @@ Console.WriteLine("REE Content Editor native export path");
 Console.WriteLine($"Mesh: {meshPath}");
 Console.WriteLine($"Additional meshes: {(additionalMeshPaths.Count == 0 ? "-" : string.Join("; ", additionalMeshPaths))}");
 Console.WriteLine($"Streaming: {streamingPath ?? "-"}");
+Console.WriteLine($"Additional streaming: {(additionalStreamingByMesh.Count == 0 ? "-" : string.Join("; ", additionalStreamingByMesh.Select(kvp => kvp.Key + " => " + kvp.Value)))}");
 Console.WriteLine($"MDF: {mdfPath ?? "auto"}");
 Console.WriteLine($"Motlists: {(motlistPaths.Count == 0 ? "-" : string.Join("; ", motlistPaths))}");
 Console.WriteLine($"Mots: {(motPaths.Count == 0 ? "-" : string.Join("; ", motPaths))}");
 Console.WriteLine($"Output: {outputPath}");
+
+var unknownAdditionalStreamingKeys = additionalStreamingByMesh.Keys
+    .Where(key => !additionalMeshPaths.Contains(key, StringComparer.OrdinalIgnoreCase))
+    .ToList();
+if (unknownAdditionalStreamingKeys.Count != 0)
+{
+    throw new ArgumentException("--additional-streaming keys must match a supplied --additional-mesh path. Unknown key(s): " + string.Join("; ", unknownAdditionalStreamingKeys));
+}
 
 var mesh = LoadMesh(meshPath, streamingPath, allowMissingStreaming);
 
@@ -146,7 +1646,7 @@ foreach (var additionalMeshPath in additionalMeshPaths)
     var additionalName = PathUtils.GetFilenameWithoutExtensionOrVersion(additionalMeshPath).ToString();
     additionalResources.Add(new CommonMeshResource(additionalName, null!)
     {
-        NativeMesh = LoadMesh(additionalMeshPath, explicitStreamingPath: null, allowMissingStreaming),
+        NativeMesh = LoadMesh(additionalMeshPath, additionalStreamingByMesh.TryGetValue(additionalMeshPath, out var additionalStreamingPath) ? additionalStreamingPath : null, allowMissingStreaming),
         GameVersion = GameName.pragmata,
         ExportTextureFormat = textureFormat,
         ExportRootNodeName = "Armature",
@@ -554,6 +2054,7 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
 {
     Directory.CreateDirectory(outputDir);
     var exported = new Dictionary<string, object>();
+    var failures = new List<string>();
     var textureCount = materialGroups.Sum(group => group.Materials.Materials.Sum(mat => mat.Textures.Count(tex => !string.IsNullOrWhiteSpace(tex.texPath) && !tex.texPath.Contains("/null", StringComparison.OrdinalIgnoreCase))));
     var textureIndex = 0;
     progress.Start($"Exporting textures 0/{textureCount}");
@@ -568,7 +2069,13 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
                 textureIndex++;
                 progress.Update($"Exporting texture {textureIndex}/{textureCount}: {PathUtils.GetFilenameWithoutExtensionOrVersion(tex.texPath)}");
                 var source = ResolveLooseGameFile(meshPath, tex.texPath, "tex");
-                if (source == null) continue;
+                if (source == null)
+                {
+                    var message = $"texture source not found {tex.texPath}";
+                    failures.Add(message);
+                    progress.WriteLine($"WARNING: {message}");
+                    continue;
+                }
                 FileHandler? texHandler = null;
                 FileHandler? streamHandler = null;
                 try
@@ -600,19 +2107,30 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
                     else
                     {
                         var tempDds = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(outName) + ".dds");
-                        texFile.SaveAsDDS(tempDds);
-                        ConvertDdsToPng(tempDds, outPath);
-                        try { File.Delete(tempDds); }
-                        catch (Exception cleanupError)
+                        try
                         {
-                            Console.WriteLine($"WARNING: temporary DDS cleanup failed {tempDds}: {cleanupError.Message}");
+                            texFile.SaveAsDDS(tempDds);
+                            ConvertDdsToPng(tempDds, outPath);
+                        }
+                        finally
+                        {
+                            try
+                            {
+                                if (File.Exists(tempDds)) File.Delete(tempDds);
+                            }
+                            catch (Exception cleanupError)
+                            {
+                                Console.WriteLine($"WARNING: temporary DDS cleanup failed {tempDds}: {cleanupError.Message}");
+                            }
                         }
                     }
                     matEntries.Add(new { type = tex.texType, gamePath = tex.texPath, source, output = outPath });
                 }
                 catch (Exception ex)
                 {
-                    progress.WriteLine($"WARNING: texture export failed {tex.texPath}: {ex.Message}");
+                    var message = $"texture export failed {tex.texPath}: {ex.Message}";
+                    failures.Add(message);
+                    progress.WriteLine($"WARNING: {message}");
                 }
                 finally
                 {
@@ -627,6 +2145,10 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
     File.WriteAllText(manifest, JsonSerializer.Serialize(exported, new JsonSerializerOptions { WriteIndented = true }));
     progress.WriteLine($"Exported material texture manifest: {manifest}");
     progress.Stop();
+    if (failures.Count > 0)
+    {
+        throw new Exception($"Texture export failed for {failures.Count} texture(s). See warnings above.");
+    }
 }
 
 static void DecompressTextureIfNeeded(TexFile tex)
@@ -657,8 +2179,8 @@ static string TextureOutputName(MaterialGroupWrapper.MaterialLookupData mat, Tex
 static void ConvertDdsToPng(string ddsPath, string pngPath)
 {
     var texconv = ResolveTool("texconv")
-        ?? Directory.GetFiles(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WinGet", "Packages"), "texconv.exe", SearchOption.AllDirectories).FirstOrDefault()
-        ?? throw new FileNotFoundException("texconv.exe not found. Install Microsoft.DirectXTex.Texconv or use --texture-format dds.");
+        ?? ResolveWinGetTool("texconv")
+        ?? throw new FileNotFoundException("texconv.exe not found. Released builds must include texconv.exe beside REE-Content-Exporter.exe. Source builds can install Microsoft.DirectXTex.Texconv or pass -p:TexconvPath=<path> during build.");
     var outDir = Path.GetDirectoryName(pngPath) ?? ".";
     var psi = new ProcessStartInfo
     {
@@ -691,14 +2213,52 @@ static void ConvertDdsToPng(string ddsPath, string pngPath)
 
 static string? ResolveTool(string exe)
 {
+    var fileName = exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exe : exe + ".exe";
+    foreach (var dir in GetBundledToolDirectories())
+    {
+        var candidate = Path.Combine(dir, fileName);
+        if (File.Exists(candidate)) return candidate;
+    }
+
     var path = Environment.GetEnvironmentVariable("PATH") ?? "";
     foreach (var dir in path.Split(Path.PathSeparator))
     {
         if (string.IsNullOrWhiteSpace(dir)) continue;
-        var candidate = Path.Combine(dir.Trim(), exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exe : exe + ".exe");
+        var candidate = Path.Combine(dir.Trim(), fileName);
         if (File.Exists(candidate)) return candidate;
     }
     return null;
+}
+
+static IEnumerable<string> GetBundledToolDirectories()
+{
+    var dirs = new List<string>();
+
+    AddUniqueToolDir(AppContext.BaseDirectory);
+    if (Environment.ProcessPath is { } processPath)
+    {
+        var processDir = Path.GetDirectoryName(processPath);
+        if (!string.IsNullOrWhiteSpace(processDir)) AddUniqueToolDir(processDir);
+    }
+
+    return dirs;
+
+    void AddUniqueToolDir(string? dir)
+    {
+        if (string.IsNullOrWhiteSpace(dir)) return;
+        var full = Path.GetFullPath(dir);
+        if (!dirs.Contains(full, StringComparer.OrdinalIgnoreCase))
+            dirs.Add(full);
+    }
+}
+
+static string? ResolveWinGetTool(string exe)
+{
+    var packagesDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WinGet", "Packages");
+    if (!Directory.Exists(packagesDir)) return null;
+
+    var fileName = exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exe : exe + ".exe";
+    return Directory.GetFiles(packagesDir, fileName, SearchOption.AllDirectories).FirstOrDefault();
 }
 
 static MeshFile LoadMesh(string meshPath, string? explicitStreamingPath, bool allowMissingStreaming)
@@ -970,4 +2530,87 @@ sealed class ProgressStatus : IDisposable
         Console.Write('\r');
         lastLength = 0;
     }
+}
+
+sealed class WizardConfig
+{
+    public string Language { get; set; } = "";
+    public string ExtractRoot { get; set; } = "";
+    public string DefaultExportRoot { get; set; } = "";
+    public string BlenderPath { get; set; } = "";
+    public string TextureFormat { get; set; } = "png";
+    public DateTimeOffset CreatedUtc { get; set; }
+    public DateTimeOffset UpdatedUtc { get; set; }
+}
+
+sealed record PragmataIndexEntry(string RelativePath)
+{
+    public string FileName { get; } = Path.GetFileName(RelativePath.Replace('/', Path.DirectorySeparatorChar));
+    public string RelativeDirectory { get; } = Path.GetDirectoryName(RelativePath.Replace('/', Path.DirectorySeparatorChar))?.Replace('\\', '/') ?? "";
+}
+
+sealed record ResolvedAsset(string Path, string? IndexedRelativePath);
+
+sealed record WizardMeshInspection(int BoneCount, int MaterialCount, int LodCount, bool RequiresStreaming);
+
+sealed record WizardExportJob(
+    int RowNumber,
+    string MeshQuery,
+    string MeshPath,
+    string OutputFolderName,
+    string? StreamingPath,
+    WizardMeshInspection Inspection,
+    WizardAnimationSelection Animation)
+{
+    public bool IsSkeletal => Inspection.BoneCount > 0;
+}
+
+enum WizardLanguage
+{
+    English,
+    Korean,
+}
+
+enum WizardMode
+{
+    SingleMesh,
+    BatchCsv,
+}
+
+enum WizardBatchSkeletalMode
+{
+    PromptForAnimations,
+    SkipAnimationPrompts,
+}
+
+enum AssetKind
+{
+    Mesh,
+    Motlist,
+}
+
+enum WizardAnimationMode
+{
+    None,
+    MotlistDirectory,
+    Motlists,
+}
+
+sealed class WizardAnimationSelection
+{
+    public static WizardAnimationSelection None { get; } = new(WizardAnimationMode.None, null, []);
+
+    public WizardAnimationMode Mode { get; }
+    public string? MotlistDirectory { get; }
+    public IReadOnlyList<string> Motlists { get; }
+
+    private WizardAnimationSelection(WizardAnimationMode mode, string? motlistDirectory, IReadOnlyList<string> motlists)
+    {
+        Mode = mode;
+        MotlistDirectory = motlistDirectory;
+        Motlists = motlists;
+    }
+
+    public static WizardAnimationSelection FromMotlistDirectory(string path) => new(WizardAnimationMode.MotlistDirectory, path, []);
+    public static WizardAnimationSelection FromMotlists(IReadOnlyList<string> paths) => new(WizardAnimationMode.Motlists, null, paths);
 }

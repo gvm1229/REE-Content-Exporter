@@ -22,9 +22,13 @@ function Invoke-Git {
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $dependencyFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $DependencyPath))
 $patchPath = Join-Path $repoRoot "patches\ree-content-editor-commonmeshresource-material-textures.patch"
+$reeLibPatchPath = Join-Path $repoRoot "patches\ree-lib-single-file-version.patch"
 
 if (-not (Test-Path $patchPath)) {
     throw "Missing dependency patch: $patchPath"
+}
+if (-not (Test-Path $reeLibPatchPath)) {
+    throw "Missing REE-Lib dependency patch: $reeLibPatchPath"
 }
 
 if (Test-Path $dependencyFullPath) {
@@ -63,8 +67,10 @@ Invoke-Git -C $dependencyFullPath submodule update --init --recursive
 Invoke-Git -C $dependencyFullPath reset --hard
 Invoke-Git -C $dependencyFullPath clean -fdx
 Invoke-Git -C $dependencyFullPath apply --whitespace=nowarn $patchPath
+Invoke-Git -C (Join-Path $dependencyFullPath "RE-Engine-Lib") apply --whitespace=nowarn $reeLibPatchPath
 
 Write-Host "Prepared patched REE-Content-Editor dependency at: $dependencyFullPath"
 Write-Host "Pinned upstream commit: $Commit"
 Write-Host "Patch: $patchPath"
+Write-Host "REE-Lib patch: $reeLibPatchPath"
 Invoke-Git -C $dependencyFullPath status --short --branch

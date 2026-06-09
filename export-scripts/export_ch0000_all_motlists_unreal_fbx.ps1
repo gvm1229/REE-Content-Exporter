@@ -304,6 +304,7 @@ $Start = Get-Date
 
 & $Exporter `
   --mesh "$Root\character\ch\ch00\ch0000\00\ch0000_00_playergame.mesh.251121828" `
+  --streaming "$Root\streaming\character\ch\ch00\ch0000\00\ch0000_00_playergame.mesh.251121828" `
   --motlist-dir "$Root\character\animation\ch\ch00\ch0000\motlist" `
   --split-motlists `
   --no-placeholder-animation-bones `

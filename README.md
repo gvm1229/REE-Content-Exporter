@@ -75,7 +75,8 @@ Generated or local folders such as build output are intentionally not listed her
 
 - [DirectXTex texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv)
   - Why: REE-Content-Exporter first asks REE-Lib to convert RE Engine TEX data to DDS. When `--texture-format png` is used, `texconv` converts those DDS files to PNG.
-  - How: install `texconv.exe` and make it available on `PATH`, or install it through WinGet:
+  - Release builds: `texconv.exe` is bundled beside `REE-Content-Exporter.exe`, so users who download a release package do not need to install it separately.
+  - Source builds: install `texconv.exe` on the build machine or pass `-p:TexconvPath="<path>\texconv.exe"` when building/publishing. WinGet installs are auto-detected:
     ```powershell
     winget install --id Microsoft.DirectXTex.Texconv
     ```
@@ -128,6 +129,69 @@ This prevents GLB/FBX files, texture folders, and Markdown reports from overwrit
 
 ## Usage
 
+### Interactive wizard
+
+Run the executable with no arguments to launch the interactive Unreal-ready FBX wizard:
+
+```powershell
+.\bin\Release\net10.0\REE-Content-Exporter.exe
+```
+
+On first setup, the wizard asks for a language:
+
+```text
+1. English
+2. Korean
+```
+
+The selected language is saved in the wizard config and used for future interactive prompts and validation messages. Existing config files created before this setting will ask only for the language once on the next wizard launch, then keep that language until the config file is edited, reset, or deleted.
+
+The wizard saves its setup in:
+
+```text
+%LOCALAPPDATA%\REE-Content-Exporter\config.json
+```
+
+It accepts a game extract root, a folder inside the extract, or a full asset path such as:
+
+```text
+D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\character\ch\ch01\ch0100\00\ch0100_00.mesh.251121828
+```
+
+The resolver can also accept a bare filename such as `ch0100_00.mesh.251121828`. It uses `pragmata.list` as an index, then probes common extract layouts including `natives\stm\character\...`, direct `character\...`, and their matching `streaming\...` counterparts.
+
+After setup, wizard v0.2 asks whether to export one mesh or import a CSV for batch mesh export. If CSV batch mode is selected, the wizard then asks how skeletal meshes should be handled: either prompt for animations when each skeletal mesh is found, or auto-export skeletal meshes without prompting for animations. CSV batch files must contain exactly one column of primary mesh names or paths. A header row is optional when the first cell is `mesh`, `mesh_name`, or `name`; otherwise every non-empty row is treated as a mesh query. The wizard rejects blank rows, duplicate mesh entries, and files with extra columns before generating a script.
+
+In CSV batch mode, static meshes are queued without extra prompts. When the prompt-for-animations policy is selected, each skeletal mesh gets its own animation prompt and reuses the same MOTLIST folder/file selection flow as single-mesh mode. When the no-animation-prompt policy is selected, skeletal meshes are exported with their skeletons but without animation stacks. The generated batch script writes one top-level folder named like `wizard_batch_<timestamp>` under the selected export root, with each mesh placed under its own child folder and a `batch-summary.md` report listing exported, skipped, and failed rows.
+
+Generated Unreal-ready scripts write Blender re-export diagnostics next to the temporary status file in `%TEMP%` as `*.blender.log`. If Blender fails during the Python import/export phase, the script reports that log path in the error message. Pressing Enter at the Blender path prompt accepts the displayed default path.
+
+Useful wizard options:
+
+```powershell
+.\bin\Release\net10.0\REE-Content-Exporter.exe --wizard
+.\bin\Release\net10.0\REE-Content-Exporter.exe --reset-config
+.\bin\Release\net10.0\REE-Content-Exporter.exe --config "C:\path\to\config.json"
+```
+
+To publish a self-contained Windows package:
+
+```powershell
+dotnet publish -c Release -p:PublishProfile=win-x64-singlefile
+```
+
+Release and publish outputs include `texconv.exe` beside `REE-Content-Exporter.exe` so PNG texture export works from the downloaded package without a separate DirectXTex install. If the build machine cannot find `texconv.exe`, Release build/publish fails instead of producing an incomplete package. Pass an explicit converter path when needed:
+
+```powershell
+dotnet publish -c Release -p:PublishProfile=win-x64-singlefile -p:TexconvPath="C:\tools\texconv.exe"
+```
+
+The publish output is written under:
+
+```text
+bin\Release\net10.0\win-x64\publish\
+```
+
 Choose the output format with the extension in `--output`:
 
 - `.glb` exports GLB.
@@ -161,10 +225,11 @@ Options can be passed in any order. Options marked as repeatable can be supplied
 | --- | --- | --- | --- | --- |
 | `--additional-mesh` | Path to another `.mesh.*` file. Repeatable. | Adds extra mesh parts into the same export scene and armature. | Multi-part characters such as ch0100 can export body, gear, accessories, and additional parts together. | Repeat once per extra part: `--additional-mesh "<extract>\character\...\10\ch0100_10.mesh.251121828"`. |
 | `--streaming` | Path to a streaming `.mesh.*` buffer | Explicitly supplies streaming geometry for the primary mesh. | Required vertex/index data is loaded when the mesh needs a streaming buffer. | Use when auto-detection is not enough: `--streaming "<extract>\streaming\character\...\ch0100_00.mesh.251121828"`. |
+| `--additional-streaming` | `<additional-mesh-path>=<streaming-mesh-path>`. Repeatable. | Explicitly supplies streaming geometry for a matching `--additional-mesh` path. The key must exactly match one supplied additional mesh path. | Additional mesh parts with separate streaming buffers load deterministically instead of relying only on auto-detection. | Use for ch0100 part `40`: `--additional-streaming "<extract>\character\...\40\ch0100_40_neo.mesh.251121828=<extract>\streaming\character\...\40\ch0100_40_neo.mesh.251121828"`. |
 | `--allow-missing-streaming` | Flag | Allows export to continue if a required streaming buffer is missing. | Useful for diagnosis, but output may have incomplete geometry. | Add the flag only for troubleshooting: `--allow-missing-streaming`. |
 | `--mdf` | Path to an `.mdf2.*` file | Explicitly supplies material data for the primary mesh. | Material slots and texture references are taken from the specified MDF instead of auto-discovery. | Use when auto MDF lookup chooses the wrong file: `--mdf "<extract>\character\...\ch0100_00_mat.mdf2.51"`. |
 | `--no-textures` | Flag | Disables texture export and material texture file writing. | Faster export with no `textures\` folder. Material texture reconnection data may be absent. | Add for geometry/animation-only tests: `--no-textures`. |
-| `--texture-format` | `png` or `dds` | Selects exported texture file format. Default is `png`. | `png` is easier to inspect and use in DCC tools; `dds` avoids PNG conversion. | Use `--texture-format png` for normal workflows, or `--texture-format dds` when `texconv.exe` is unavailable. |
+| `--texture-format` | `png` or `dds` | Selects exported texture file format. Default is `png`. PNG conversion uses the bundled `texconv.exe` first. | `png` is easier to inspect and use in DCC tools; `dds` avoids PNG conversion. Texture export failures are fatal. | Use `--texture-format png` for normal workflows, or `--texture-format dds` only when DDS output is intentionally desired. |
 
 #### Animation source options
 
