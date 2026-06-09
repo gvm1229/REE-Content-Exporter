@@ -42,7 +42,7 @@ static void PrintUsage()
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
     Console.WriteLine("  REE-Content-Exporter [--wizard] [--reset-config] [--config <path>]");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--ignore-skeleton] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
 }
 
 static Dictionary<string, string> ParseAdditionalStreamingArgs(IEnumerable<string> values)
@@ -75,24 +75,38 @@ static Dictionary<string, string> ParseAdditionalStreamingArgs(IEnumerable<strin
 
 static void RunWizard(string? configPathOverride)
 {
-    Console.WriteLine("REE-Content-Exporter interactive wizard");
+    var language = PromptWizardLanguage();
+    Console.WriteLine(language == WizardLanguage.Korean ? "REE-Content-Exporter 대화형 마법사" : "REE-Content-Exporter interactive wizard");
     var configPath = ResolveWizardConfigPath(configPathOverride);
-    var config = LoadWizardConfig(configPath);
+    var config = LoadWizardConfig(configPath, language);
     var reason = "";
     if (config == null || !ValidateWizardConfig(config, out reason))
     {
-        if (!string.IsNullOrWhiteSpace(reason)) Console.WriteLine($"Config setup required: {reason}");
-        config = PromptForWizardConfig(config);
+        if (!string.IsNullOrWhiteSpace(reason)) Console.WriteLine(language == WizardLanguage.Korean ? $"설정이 필요합니다: {LocalizeConfigReason(reason, language)}" : $"Config setup required: {reason}");
+        config = PromptForWizardConfig(config, language);
         SaveWizardConfig(configPath, config);
-        Console.WriteLine($"Saved wizard config: {configPath}");
+        Console.WriteLine(language == WizardLanguage.Korean ? $"마법사 설정을 저장했습니다: {configPath}" : $"Saved wizard config: {configPath}");
     }
 
     var index = LoadPragmataIndex();
-    var mesh = PromptForAsset("Primary mesh", AssetKind.Mesh, config, index);
-    var additionalMeshes = new List<ResolvedAsset>();
-    while (PromptYesNo("Add another mesh part?", defaultValue: false))
+    var mode = PromptWizardMode(language);
+    if (mode == WizardMode.BatchCsv)
     {
-        additionalMeshes.Add(PromptForAsset("Additional mesh", AssetKind.Mesh, config, index));
+        var skeletalMode = PromptBatchSkeletalMode(language);
+        RunBatchCsvWizard(config, index, skeletalMode, language);
+        return;
+    }
+
+    RunSingleMeshWizard(config, index, language);
+}
+
+static void RunSingleMeshWizard(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
+{
+    var mesh = PromptForAsset(language == WizardLanguage.Korean ? "기본 메시" : "Primary mesh", AssetKind.Mesh, config, index, language);
+    var additionalMeshes = new List<ResolvedAsset>();
+    while (PromptYesNo(language == WizardLanguage.Korean ? "다른 메시 파트를 추가할까요?" : "Add another mesh part?", defaultValue: false, language))
+    {
+        additionalMeshes.Add(PromptForAsset(language == WizardLanguage.Korean ? "추가 메시" : "Additional mesh", AssetKind.Mesh, config, index, language));
     }
 
     var streaming = FindStreamingCandidate(mesh.Path);
@@ -103,25 +117,81 @@ static void RunWizard(string? configPathOverride)
 
     var inspected = InspectMeshForWizard(mesh.Path, streaming);
     var isSkeletal = inspected.BoneCount > 0;
-    Console.WriteLine($"Mesh type: {(isSkeletal ? "skeletal" : "static")} (bones={inspected.BoneCount}, materials={inspected.MaterialCount}, lods={inspected.LodCount}, requiresStreaming={inspected.RequiresStreaming})");
+    Console.WriteLine(FormatMeshInspection(inspected, language));
 
     var animation = WizardAnimationSelection.None;
-    if (isSkeletal && PromptYesNo("Include animations?", defaultValue: false))
+    if (isSkeletal && PromptYesNo(language == WizardLanguage.Korean ? "애니메이션을 포함할까요?" : "Include animations?", defaultValue: false, language))
     {
-        animation = PromptForAnimationSelection(config, index);
+        animation = PromptForAnimationSelection(config, index, language);
     }
 
-    var exportRoot = PromptExportRoot(config.DefaultExportRoot);
+    var exportRoot = PromptExportRoot(config.DefaultExportRoot, language);
     var scriptPath = GenerateWizardScript(config, exportRoot, mesh.Path, additionalMeshes.Select(m => m.Path).ToList(), streaming, additionalStreaming, animation, isSkeletal);
-    Console.WriteLine($"Generated script: {scriptPath}");
+    Console.WriteLine(language == WizardLanguage.Korean ? $"스크립트를 생성했습니다: {scriptPath}" : $"Generated script: {scriptPath}");
 
-    if (PromptYesNo("Run the generated script now?", defaultValue: false))
+    if (PromptYesNo(language == WizardLanguage.Korean ? "생성된 스크립트를 지금 실행할까요?" : "Run the generated script now?", defaultValue: false, language))
     {
-        RunGeneratedScript(scriptPath);
+        RunGeneratedScript(scriptPath, language);
     }
 }
 
-static WizardConfig? LoadWizardConfig(string path)
+static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardBatchSkeletalMode skeletalMode, WizardLanguage language)
+{
+    var csvPath = PromptFilePath(language == WizardLanguage.Korean ? "CSV 파일 경로" : "CSV file path", null, mustExist: true, language);
+    if (!csvPath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+        throw new ArgumentException(language == WizardLanguage.Korean ? "배치 가져오기는 .csv 파일이 필요합니다." : "Batch import requires a .csv file.");
+
+    var meshQueries = ReadWizardCsvMeshQueries(csvPath, language);
+    Console.WriteLine(language == WizardLanguage.Korean ? $"CSV에서 메시 행 {meshQueries.Count}개를 불러왔습니다." : $"Loaded {meshQueries.Count} mesh row(s) from CSV.");
+
+    var jobs = new List<WizardExportJob>();
+    var usedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var (rowNumber, query) in meshQueries)
+    {
+        var mesh = ResolveCsvMesh(rowNumber, query, config, index, language);
+        var streaming = FindStreamingCandidate(mesh.Path);
+        var inspected = InspectMeshForWizard(mesh.Path, streaming);
+        var isSkeletal = inspected.BoneCount > 0;
+        var assetName = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(mesh.Path).ToString());
+        var outputFolderName = MakeUniqueWizardFolderName(assetName, usedFolders);
+
+        Console.WriteLine(language == WizardLanguage.Korean ? $"CSV {rowNumber}행: {mesh.Path}" : $"CSV row {rowNumber}: {mesh.Path}");
+        Console.WriteLine(FormatMeshInspection(inspected, language));
+
+        var animation = WizardAnimationSelection.None;
+        var ignoreSkeleton = false;
+        if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.PromptForAnimations && PromptYesNo(language == WizardLanguage.Korean ? $"{assetName}의 애니메이션을 포함할까요?" : $"Include animations for {assetName}?", defaultValue: false, language))
+        {
+            animation = PromptForAnimationSelection(config, index, language);
+        }
+        else if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.IgnoreSkeleton)
+        {
+            ignoreSkeleton = true;
+            Console.WriteLine(language == WizardLanguage.Korean ? $"배치 스켈레탈 정책: {assetName}을(를) 정적 메시로 내보냅니다. 스켈레톤과 애니메이션은 무시됩니다." : $"Batch skeletal policy: exporting {assetName} as static mesh; skeleton and animations will be ignored.");
+        }
+
+        jobs.Add(new WizardExportJob(
+            RowNumber: rowNumber,
+            MeshQuery: query,
+            MeshPath: mesh.Path,
+            OutputFolderName: outputFolderName,
+            StreamingPath: streaming,
+            Inspection: inspected,
+            Animation: animation,
+            IgnoreSkeleton: ignoreSkeleton));
+    }
+
+    var exportRoot = PromptExportRoot(config.DefaultExportRoot, language);
+    var scriptPath = GenerateWizardBatchScript(config, exportRoot, jobs);
+    Console.WriteLine(language == WizardLanguage.Korean ? $"배치 스크립트를 생성했습니다: {scriptPath}" : $"Generated batch script: {scriptPath}");
+
+    if (PromptYesNo(language == WizardLanguage.Korean ? "생성된 배치 스크립트를 지금 실행할까요?" : "Run the generated batch script now?", defaultValue: false, language))
+    {
+        RunGeneratedScript(scriptPath, language);
+    }
+}
+
+static WizardConfig? LoadWizardConfig(string path, WizardLanguage language)
 {
     try
     {
@@ -130,7 +200,7 @@ static WizardConfig? LoadWizardConfig(string path)
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"WARNING: failed to read config {path}: {ex.Message}");
+        Console.WriteLine(language == WizardLanguage.Korean ? $"경고: 설정을 읽지 못했습니다 {path}: {ex.Message}" : $"WARNING: failed to read config {path}: {ex.Message}");
         return null;
     }
 }
@@ -169,11 +239,11 @@ static bool ValidateWizardConfig(WizardConfig config, out string reason)
     return true;
 }
 
-static WizardConfig PromptForWizardConfig(WizardConfig? existing)
+static WizardConfig PromptForWizardConfig(WizardConfig? existing, WizardLanguage language)
 {
-    var extractRoot = PromptExistingExtractRoot(existing?.ExtractRoot);
-    var defaultExportRoot = PromptDirectoryPath("Default export folder", existing?.DefaultExportRoot, mustExist: false);
-    var blenderPath = PromptFilePath("Blender 4.5.9 executable", existing?.BlenderPath ?? @"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe", mustExist: true);
+    var extractRoot = PromptExistingExtractRoot(existing?.ExtractRoot, language);
+    var defaultExportRoot = PromptDirectoryPath(language == WizardLanguage.Korean ? "기본 내보내기 폴더" : "Default export folder", existing?.DefaultExportRoot, mustExist: false, language);
+    var blenderPath = PromptFilePath(language == WizardLanguage.Korean ? "Blender 4.5.9 실행 파일" : "Blender 4.5.9 executable", existing?.BlenderPath ?? @"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe", mustExist: true, language);
     return new WizardConfig
     {
         ExtractRoot = extractRoot,
@@ -185,47 +255,47 @@ static WizardConfig PromptForWizardConfig(WizardConfig? existing)
     };
 }
 
-static string PromptExistingExtractRoot(string? defaultValue)
+static string PromptExistingExtractRoot(string? defaultValue, WizardLanguage language)
 {
     while (true)
     {
-        var input = PromptText("Game extract folder or any file/folder inside it", defaultValue);
+        var input = PromptText(language == WizardLanguage.Korean ? "게임 추출 폴더 또는 그 안의 파일/폴더" : "Game extract folder or any file/folder inside it", defaultValue);
         var inferred = InferExtractRoot(input);
         if (inferred != null && Directory.Exists(inferred) && HasLikelyExtractLayout(inferred))
             return inferred;
-        Console.WriteLine("Could not infer an existing extract root. Paste a folder such as re_chunk_000, natives\\stm, or a file inside the extract.");
+        Console.WriteLine(language == WizardLanguage.Korean ? "기존 추출 루트를 찾을 수 없습니다. re_chunk_000, natives\\stm 같은 폴더 또는 추출 폴더 안의 파일을 붙여넣어 주세요." : "Could not infer an existing extract root. Paste a folder such as re_chunk_000, natives\\stm, or a file inside the extract.");
     }
 }
 
-static string PromptDirectoryPath(string label, string? defaultValue, bool mustExist)
+static string PromptDirectoryPath(string label, string? defaultValue, bool mustExist, WizardLanguage language = WizardLanguage.English)
 {
     while (true)
     {
         var input = NormalizeUserPath(PromptText(label, defaultValue));
         if (string.IsNullOrWhiteSpace(input))
         {
-            Console.WriteLine("Path cannot be empty.");
+            Console.WriteLine(language == WizardLanguage.Korean ? "경로는 비워둘 수 없습니다." : "Path cannot be empty.");
             continue;
         }
         if (Directory.Exists(input) || !mustExist)
             return Path.GetFullPath(input);
-        Console.WriteLine("Folder does not exist.");
+        Console.WriteLine(language == WizardLanguage.Korean ? "폴더가 존재하지 않습니다." : "Folder does not exist.");
     }
 }
 
-static string PromptFilePath(string label, string? defaultValue, bool mustExist)
+static string PromptFilePath(string label, string? defaultValue, bool mustExist, WizardLanguage language = WizardLanguage.English)
 {
     while (true)
     {
         var input = NormalizeUserPath(PromptText(label, defaultValue));
         if (string.IsNullOrWhiteSpace(input))
         {
-            Console.WriteLine("Path cannot be empty.");
+            Console.WriteLine(language == WizardLanguage.Korean ? "경로는 비워둘 수 없습니다." : "Path cannot be empty.");
             continue;
         }
         if (File.Exists(input) || !mustExist)
             return Path.GetFullPath(input);
-        Console.WriteLine("File does not exist.");
+        Console.WriteLine(language == WizardLanguage.Korean ? "파일이 존재하지 않습니다." : "File does not exist.");
     }
 }
 
@@ -237,7 +307,7 @@ static string PromptText(string label, string? defaultValue = null)
     return input?.Trim() ?? "";
 }
 
-static bool PromptYesNo(string label, bool defaultValue)
+static bool PromptYesNo(string label, bool defaultValue, WizardLanguage language = WizardLanguage.English)
 {
     var suffix = defaultValue ? "Y/n" : "y/N";
     while (true)
@@ -247,59 +317,246 @@ static bool PromptYesNo(string label, bool defaultValue)
         if (string.IsNullOrWhiteSpace(input)) return defaultValue;
         if (input.Equals("y", StringComparison.OrdinalIgnoreCase) || input.Equals("yes", StringComparison.OrdinalIgnoreCase)) return true;
         if (input.Equals("n", StringComparison.OrdinalIgnoreCase) || input.Equals("no", StringComparison.OrdinalIgnoreCase)) return false;
-        Console.WriteLine("Enter yes or no.");
+        Console.WriteLine(language == WizardLanguage.Korean ? "yes 또는 no를 입력해 주세요." : "Enter yes or no.");
     }
 }
 
-static ResolvedAsset PromptForAsset(string label, AssetKind kind, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index)
+static WizardLanguage PromptWizardLanguage()
+{
+    Console.WriteLine("Language / 언어:");
+    Console.WriteLine("  1. English");
+    Console.WriteLine("  2. Korean");
+    while (true)
+    {
+        Console.Write("Choose 1-2 [1]: ");
+        var input = (Console.ReadLine() ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(input) || input == "1") return WizardLanguage.English;
+        if (input == "2") return WizardLanguage.Korean;
+        Console.WriteLine("Invalid selection. / 잘못된 선택입니다.");
+    }
+}
+
+static string LocalizeConfigReason(string reason, WizardLanguage language)
+{
+    if (language != WizardLanguage.Korean) return reason;
+    return reason switch
+    {
+        "game extract path is missing or does not exist" => "게임 추출 경로가 없거나 존재하지 않습니다",
+        "game extract path does not look like a PRAGMATA loose-file extract" => "게임 추출 경로가 PRAGMATA loose-file 추출 구조처럼 보이지 않습니다",
+        "default export path is missing" => "기본 내보내기 경로가 없습니다",
+        "Blender executable is missing or does not exist" => "Blender 실행 파일이 없거나 존재하지 않습니다",
+        _ => reason,
+    };
+}
+
+static string FormatMeshInspection(WizardMeshInspection inspected, WizardLanguage language)
+{
+    var isSkeletal = inspected.BoneCount > 0;
+    return language == WizardLanguage.Korean
+        ? $"메시 유형: {(isSkeletal ? "스켈레탈" : "정적")} (본={inspected.BoneCount}, 머티리얼={inspected.MaterialCount}, LOD={inspected.LodCount}, 스트리밍필요={inspected.RequiresStreaming})"
+        : $"Mesh type: {(isSkeletal ? "skeletal" : "static")} (bones={inspected.BoneCount}, materials={inspected.MaterialCount}, lods={inspected.LodCount}, requiresStreaming={inspected.RequiresStreaming})";
+}
+
+static WizardMode PromptWizardMode(WizardLanguage language)
+{
+    Console.WriteLine(language == WizardLanguage.Korean ? "마법사 내보내기 모드:" : "Wizard export mode:");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  1. 내보낼 메시 선택" : "  1. Select a mesh to export");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  2. 배치 메시 내보내기용 CSV 파일 선택" : "  2. Choose a CSV file for batch mesh export");
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
+        var input = (Console.ReadLine() ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(input) || input == "1") return WizardMode.SingleMesh;
+        if (input == "2") return WizardMode.BatchCsv;
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
+    }
+}
+
+static WizardBatchSkeletalMode PromptBatchSkeletalMode(WizardLanguage language)
+{
+    Console.WriteLine(language == WizardLanguage.Korean ? "배치 스켈레탈 메시 처리:" : "Batch skeletal mesh handling:");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  1. 스켈레탈 메시를 찾으면 애니메이션 지정 여부 묻기" : "  1. Prompt for animations when a skeletal mesh is found");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  2. 스켈레탈 메시를 정적 메시로 처리하고 스켈레톤 무시" : "  2. Treat skeletal meshes as static meshes and ignore skeletons");
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
+        var input = (Console.ReadLine() ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(input) || input == "1") return WizardBatchSkeletalMode.PromptForAnimations;
+        if (input == "2") return WizardBatchSkeletalMode.IgnoreSkeleton;
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
+    }
+}
+
+static IReadOnlyList<(int RowNumber, string Query)> ReadWizardCsvMeshQueries(string csvPath, WizardLanguage language)
+{
+    var rows = new List<(int RowNumber, string Query)>();
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var firstRow = true;
+    var lineNumber = 0;
+    foreach (var line in File.ReadLines(csvPath))
+    {
+        lineNumber++;
+        var cells = ParseCsvLine(line, lineNumber, language);
+        if (cells.Count != 1)
+            throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {lineNumber}행은 정확히 한 개의 열만 포함해야 하지만 {cells.Count}개를 찾았습니다." : $"CSV row {lineNumber} must contain exactly one column, but found {cells.Count}.");
+
+        var value = NormalizeCsvCell(cells[0]);
+        if (firstRow)
+        {
+            firstRow = false;
+            if (IsWizardCsvMeshHeader(value)) continue;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {lineNumber}행이 비어 있습니다. 배치 메시 CSV에서 빈 행을 제거해 주세요." : $"CSV row {lineNumber} is blank. Remove blank rows from the batch mesh CSV.");
+
+        var normalized = NormalizeIndexPath(value);
+        if (!seen.Add(normalized))
+            throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {lineNumber}행이 이전 메시 항목과 중복됩니다: {value}" : $"CSV row {lineNumber} duplicates an earlier mesh entry: {value}");
+
+        rows.Add((lineNumber, value));
+    }
+
+    if (rows.Count == 0)
+        throw new ArgumentException(language == WizardLanguage.Korean ? "CSV 가져오기에 메시 이름이 없습니다." : "CSV import did not contain any mesh names.");
+
+    return rows;
+}
+
+static IReadOnlyList<string> ParseCsvLine(string line, int lineNumber, WizardLanguage language = WizardLanguage.English)
+{
+    var cells = new List<string>();
+    var current = new StringBuilder();
+    var inQuotes = false;
+    for (var i = 0; i < line.Length; i++)
+    {
+        var c = line[i];
+        if (inQuotes)
+        {
+            if (c == '"')
+            {
+                if (i + 1 < line.Length && line[i + 1] == '"')
+                {
+                    current.Append('"');
+                    i++;
+                }
+                else
+                {
+                    inQuotes = false;
+                }
+            }
+            else
+            {
+                current.Append(c);
+            }
+            continue;
+        }
+
+        if (c == ',')
+        {
+            cells.Add(current.ToString());
+            current.Clear();
+            continue;
+        }
+
+        if (c == '"')
+        {
+            if (current.ToString().Trim().Length != 0)
+                throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {lineNumber}행의 따옴표 없는 필드 안에 예상치 못한 따옴표가 있습니다." : $"CSV row {lineNumber} has an unexpected quote inside an unquoted field.");
+            current.Clear();
+            inQuotes = true;
+            continue;
+        }
+
+        current.Append(c);
+    }
+
+    if (inQuotes)
+        throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {lineNumber}행에 닫히지 않은 따옴표 필드가 있습니다." : $"CSV row {lineNumber} has an unterminated quoted field.");
+
+    cells.Add(current.ToString());
+    return cells;
+}
+
+static string NormalizeCsvCell(string value) => value.Trim().Trim('\uFEFF');
+
+static bool IsWizardCsvMeshHeader(string value)
+    => value.Equals("mesh", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("mesh_name", StringComparison.OrdinalIgnoreCase)
+    || value.Equals("name", StringComparison.OrdinalIgnoreCase);
+
+static ResolvedAsset ResolveCsvMesh(int rowNumber, string query, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
+{
+    var matches = ResolveAssetQuery(query, AssetKind.Mesh, config, index);
+    if (matches.Count == 0)
+        throw new ArgumentException(language == WizardLanguage.Korean ? $"CSV {rowNumber}행이 기존 non-streaming 메시로 해석되지 않았습니다: {query}" : $"CSV row {rowNumber} did not resolve to an existing non-streaming mesh: {query}");
+    if (matches.Count == 1) return matches[0];
+    Console.WriteLine(language == WizardLanguage.Korean ? $"CSV {rowNumber}행이 여러 메시와 일치합니다: {query}" : $"CSV row {rowNumber} matched multiple meshes for: {query}");
+    return ChooseAsset(language == WizardLanguage.Korean ? $"CSV {rowNumber}행 메시" : $"CSV row {rowNumber} mesh", matches, language);
+}
+
+static string MakeUniqueWizardFolderName(string baseName, ISet<string> usedFolders)
+{
+    var safe = string.IsNullOrWhiteSpace(baseName) ? "mesh" : SanitizeFileName(baseName);
+    var candidate = safe;
+    var index = 2;
+    while (!usedFolders.Add(candidate))
+    {
+        candidate = $"{safe}_{index}";
+        index++;
+    }
+    return candidate;
+}
+
+static ResolvedAsset PromptForAsset(string label, AssetKind kind, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
 {
     while (true)
     {
-        var query = PromptText($"{label} filename/path");
+        var query = PromptText(language == WizardLanguage.Korean ? $"{label} 파일 이름/경로" : $"{label} filename/path");
         if (string.IsNullOrWhiteSpace(query)) continue;
         var matches = ResolveAssetQuery(query, kind, config, index);
         if (matches.Count == 0)
         {
-            Console.WriteLine("No matching existing file was found. You can paste a full file path or a filename from the extract.");
+            Console.WriteLine(language == WizardLanguage.Korean ? "일치하는 기존 파일을 찾지 못했습니다. 전체 파일 경로나 추출 파일의 파일 이름을 붙여넣을 수 있습니다." : "No matching existing file was found. You can paste a full file path or a filename from the extract.");
             continue;
         }
         if (matches.Count == 1) return matches[0];
-        return ChooseAsset(label, matches);
+        return ChooseAsset(label, matches, language);
     }
 }
 
-static ResolvedAsset ChooseAsset(string label, IReadOnlyList<ResolvedAsset> matches)
+static ResolvedAsset ChooseAsset(string label, IReadOnlyList<ResolvedAsset> matches, WizardLanguage language)
 {
     var limit = Math.Min(matches.Count, 25);
-    Console.WriteLine($"{label} matches:");
+    Console.WriteLine(language == WizardLanguage.Korean ? $"{label} 일치 항목:" : $"{label} matches:");
     for (var i = 0; i < limit; i++)
     {
         Console.WriteLine($"  {i + 1}. {matches[i].Path}");
     }
-    if (matches.Count > limit) Console.WriteLine($"  ... {matches.Count - limit} more matches hidden. Type a more specific query to narrow them.");
+    if (matches.Count > limit) Console.WriteLine(language == WizardLanguage.Korean ? $"  ... {matches.Count - limit}개의 추가 일치 항목은 숨겨졌습니다. 더 구체적인 검색어로 좁혀 주세요." : $"  ... {matches.Count - limit} more matches hidden. Type a more specific query to narrow them.");
     while (true)
     {
-        Console.Write($"Choose 1-{limit}: ");
+        Console.Write(language == WizardLanguage.Korean ? $"1-{limit} 중 선택: " : $"Choose 1-{limit}: ");
         if (int.TryParse(Console.ReadLine(), out var selected) && selected >= 1 && selected <= limit)
             return matches[selected - 1];
-        Console.WriteLine("Invalid selection.");
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
     }
 }
 
-static WizardAnimationSelection PromptForAnimationSelection(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index)
+static WizardAnimationSelection PromptForAnimationSelection(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
 {
-    if (PromptYesNo("Use a MOTLIST folder instead of selecting MOTLIST files one by one?", defaultValue: true))
+    if (PromptYesNo(language == WizardLanguage.Korean ? "MOTLIST 파일을 하나씩 선택하는 대신 MOTLIST 폴더를 사용할까요?" : "Use a MOTLIST folder instead of selecting MOTLIST files one by one?", defaultValue: true, language))
     {
         while (true)
         {
-            var query = PromptText("MOTLIST folder path or search term");
+            var query = PromptText(language == WizardLanguage.Korean ? "MOTLIST 폴더 경로 또는 검색어" : "MOTLIST folder path or search term");
             var matches = ResolveMotlistDirectoryQuery(query, config, index);
             if (matches.Count == 0)
             {
-                Console.WriteLine("No matching MOTLIST folder was found.");
+                Console.WriteLine(language == WizardLanguage.Korean ? "일치하는 MOTLIST 폴더를 찾지 못했습니다." : "No matching MOTLIST folder was found.");
                 continue;
             }
-            var folder = matches.Count == 1 ? matches[0] : ChoosePath("MOTLIST folder", matches);
+            var folder = matches.Count == 1 ? matches[0] : ChoosePath(language == WizardLanguage.Korean ? "MOTLIST 폴더" : "MOTLIST folder", matches, language);
             return WizardAnimationSelection.FromMotlistDirectory(folder);
         }
     }
@@ -307,40 +564,42 @@ static WizardAnimationSelection PromptForAnimationSelection(WizardConfig config,
     var motlists = new List<string>();
     while (true)
     {
-        var query = PromptText(motlists.Count == 0 ? "MOTLIST filename/path" : "Next MOTLIST filename/path, or done");
+        var query = PromptText(motlists.Count == 0
+            ? (language == WizardLanguage.Korean ? "MOTLIST 파일 이름/경로" : "MOTLIST filename/path")
+            : (language == WizardLanguage.Korean ? "다음 MOTLIST 파일 이름/경로, 또는 done" : "Next MOTLIST filename/path, or done"));
         if (IsDoneInput(query))
         {
             if (motlists.Count > 0) break;
-            Console.WriteLine("Select at least one MOTLIST, or restart and choose no animations.");
+            Console.WriteLine(language == WizardLanguage.Korean ? "MOTLIST를 하나 이상 선택하거나, 다시 시작해서 애니메이션 없음을 선택해 주세요." : "Select at least one MOTLIST, or restart and choose no animations.");
             continue;
         }
         var matches = ResolveAssetQuery(query, AssetKind.Motlist, config, index);
         if (matches.Count == 0)
         {
-            Console.WriteLine("No matching MOTLIST was found.");
+            Console.WriteLine(language == WizardLanguage.Korean ? "일치하는 MOTLIST를 찾지 못했습니다." : "No matching MOTLIST was found.");
             continue;
         }
-        var selected = matches.Count == 1 ? matches[0] : ChooseAsset("MOTLIST", matches);
+        var selected = matches.Count == 1 ? matches[0] : ChooseAsset("MOTLIST", matches, language);
         if (!motlists.Contains(selected.Path, StringComparer.OrdinalIgnoreCase)) motlists.Add(selected.Path);
     }
     return WizardAnimationSelection.FromMotlists(motlists);
 }
 
-static string ChoosePath(string label, IReadOnlyList<string> paths)
+static string ChoosePath(string label, IReadOnlyList<string> paths, WizardLanguage language)
 {
     var limit = Math.Min(paths.Count, 25);
-    Console.WriteLine($"{label} matches:");
+    Console.WriteLine(language == WizardLanguage.Korean ? $"{label} 일치 항목:" : $"{label} matches:");
     for (var i = 0; i < limit; i++)
     {
         Console.WriteLine($"  {i + 1}. {paths[i]}");
     }
-    if (paths.Count > limit) Console.WriteLine($"  ... {paths.Count - limit} more matches hidden. Type a more specific query to narrow them.");
+    if (paths.Count > limit) Console.WriteLine(language == WizardLanguage.Korean ? $"  ... {paths.Count - limit}개의 추가 일치 항목은 숨겨졌습니다. 더 구체적인 검색어로 좁혀 주세요." : $"  ... {paths.Count - limit} more matches hidden. Type a more specific query to narrow them.");
     while (true)
     {
-        Console.Write($"Choose 1-{limit}: ");
+        Console.Write(language == WizardLanguage.Korean ? $"1-{limit} 중 선택: " : $"Choose 1-{limit}: ");
         if (int.TryParse(Console.ReadLine(), out var selected) && selected >= 1 && selected <= limit)
             return paths[selected - 1];
-        Console.WriteLine("Invalid selection.");
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
     }
 }
 
@@ -354,11 +613,11 @@ static bool IsDoneInput(string value)
         || normalized.Equals("thats all", StringComparison.OrdinalIgnoreCase);
 }
 
-static string PromptExportRoot(string defaultExportRoot)
+static string PromptExportRoot(string defaultExportRoot, WizardLanguage language)
 {
-    if (PromptYesNo($"Use default export folder ({defaultExportRoot})?", defaultValue: true))
+    if (PromptYesNo(language == WizardLanguage.Korean ? $"기본 내보내기 폴더를 사용할까요? ({defaultExportRoot})" : $"Use default export folder ({defaultExportRoot})?", defaultValue: true, language))
         return defaultExportRoot;
-    return PromptDirectoryPath("Custom export folder", null, mustExist: false);
+    return PromptDirectoryPath(language == WizardLanguage.Korean ? "사용자 지정 내보내기 폴더" : "Custom export folder", null, mustExist: false, language);
 }
 
 static WizardMeshInspection InspectMeshForWizard(string meshPath, string? streamingPath)
@@ -672,6 +931,145 @@ static string GenerateWizardScript(
     return scriptPath;
 }
 
+static string GenerateWizardBatchScript(WizardConfig config, string exportRoot, IReadOnlyList<WizardExportJob> jobs)
+{
+    Directory.CreateDirectory(exportRoot);
+    var scriptDir = Path.Combine(exportRoot, "generated-scripts");
+    Directory.CreateDirectory(scriptDir);
+    var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+    var batchRoot = Path.Combine(exportRoot, $"wizard_batch_{timestamp}");
+    var scriptPath = Path.Combine(scriptDir, $"wizard_batch_unreal_export_{timestamp}.ps1");
+    var exporterPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter.exe");
+    var script = BuildWizardBatchPowerShell(config, exporterPath, batchRoot, jobs);
+    File.WriteAllText(scriptPath, script, Encoding.UTF8);
+    return scriptPath;
+}
+
+static string BuildWizardBatchPowerShell(WizardConfig config, string exporterPath, string batchRoot, IReadOnlyList<WizardExportJob> jobs)
+{
+    var emptyAdditionalStreaming = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    var jobBlocks = new List<string>();
+    foreach (var job in jobs)
+    {
+        var jobRoot = Path.Combine(batchRoot, job.OutputFolderName);
+        var jobScript = BuildWizardPowerShell(config, exporterPath, jobRoot, job.MeshPath, [], job.StreamingPath, emptyAdditionalStreaming, job.Animation, job.IsSkeletal, job.IgnoreSkeleton);
+        var jobScriptBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(jobScript));
+        jobBlocks.Add($$"""
+    [pscustomobject]@{
+        Row = {{job.RowNumber.ToString(CultureInfo.InvariantCulture)}}
+        Query = {{PsQuote(job.MeshQuery)}}
+        Mesh = {{PsQuote(job.MeshPath)}}
+        Folder = {{PsQuote(job.OutputFolderName)}}
+        IsSkeletal = {{PsBool(job.IsSkeletal)}}
+        HasAnimations = {{PsBool(job.Animation.Mode != WizardAnimationMode.None)}}
+        ScriptBase64 = {{PsQuote(jobScriptBase64)}}
+    }
+""");
+    }
+
+    return $$"""
+param(
+    [switch]$KeepSourceFbx
+)
+
+$ErrorActionPreference = "Stop"
+$BatchRoot = {{PsQuote(batchRoot)}}
+$RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$Jobs = @(
+{{string.Join(",\n", jobBlocks)}}
+)
+$Results = New-Object System.Collections.Generic.List[object]
+
+function Format-MarkdownCell {
+    param([object]$Value)
+    if ($null -eq $Value) { return "" }
+    return ($Value.ToString() -replace '\|', '\|' -replace "(`r`n|`n|`r)", " ")
+}
+
+function Get-PrefixedValue {
+    param(
+        [string[]]$Lines,
+        [string]$Prefix
+    )
+    $match = $Lines | Where-Object { $_.StartsWith($Prefix, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -Last 1
+    if (!$match) { return "" }
+    return $match.Substring($Prefix.Length)
+}
+
+New-Item -ItemType Directory -Force -Path $BatchRoot | Out-Null
+Write-Host "BATCH_EXPORT_ROOT=$BatchRoot"
+Write-Host "BATCH_JOB_COUNT=$($Jobs.Count)"
+
+foreach ($Job in $Jobs) {
+    Write-Host "BATCH_JOB_START row=$($Job.Row) mesh=$($Job.Mesh)"
+    $TempScript = Join-Path $env:TEMP ("ree_wizard_batch_{0}_row{1}.ps1" -f $RunStamp, $Job.Row)
+    $ScriptText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Job.ScriptBase64))
+    $ScriptText | Set-Content -LiteralPath $TempScript -Encoding UTF8
+
+    $Arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $TempScript)
+    if ($KeepSourceFbx) { $Arguments += "-KeepSourceFbx" }
+    $JobOutput = @(powershell @Arguments 2>&1)
+    $ExitCode = $LASTEXITCODE
+    $TextOutput = @($JobOutput | ForEach-Object { $_.ToString() })
+    foreach ($Line in $TextOutput) { Write-Host $Line }
+
+    $ExportDir = Get-PrefixedValue -Lines $TextOutput -Prefix "EXPORT_DIR="
+    $Failure = Get-PrefixedValue -Lines $TextOutput -Prefix "EXPORT_FAILED="
+    $SkippedCount = @($TextOutput | Where-Object { $_.StartsWith("BLENDER_SKIPPED_SOURCE=", [System.StringComparison]::OrdinalIgnoreCase) }).Count
+    $Status = if ($ExitCode -eq 0) {
+        if ($SkippedCount -gt 0) { "Exported with skips" } else { "Exported" }
+    } else {
+        "Failed"
+    }
+    $Details = if ($ExitCode -ne 0) {
+        if ([string]::IsNullOrWhiteSpace($Failure)) { "Child export failed with exit code $ExitCode" } else { $Failure }
+    } elseif ($SkippedCount -gt 0) {
+        "$SkippedCount Blender MOTLIST source(s) skipped"
+    } else {
+        "Resolved and exported"
+    }
+
+    $Results.Add([pscustomobject]@{
+        Row = $Job.Row
+        Query = $Job.Query
+        Mesh = $Job.Mesh
+        Status = $Status
+        Output = $ExportDir
+        Details = $Details
+    }) | Out-Null
+
+    Remove-Item -LiteralPath $TempScript -Force -ErrorAction SilentlyContinue
+    Write-Host "BATCH_JOB_DONE row=$($Job.Row) status=$Status"
+}
+
+$SummaryPath = Join-Path $BatchRoot "batch-summary.md"
+$Lines = New-Object System.Collections.Generic.List[string]
+$Lines.Add("# Wizard Batch Export Summary")
+$Lines.Add("")
+$Lines.Add("Batch root: ``$BatchRoot``")
+$Lines.Add("")
+$Lines.Add("| Row | Status | Mesh | Output | Details |")
+$Lines.Add("| --- | --- | --- | --- | --- |")
+foreach ($Result in $Results) {
+    $Lines.Add("| $($Result.Row) | $(Format-MarkdownCell $Result.Status) | $(Format-MarkdownCell $Result.Mesh) | $(Format-MarkdownCell $Result.Output) | $(Format-MarkdownCell $Result.Details) |")
+}
+$Lines.Add("")
+$Lines.Add("Resolved rows: $($Results.Count)")
+$Lines.Add("Exported rows: $(($Results | Where-Object { $_.Status -like 'Exported*' }).Count)")
+$Lines.Add("Failed rows: $(($Results | Where-Object { $_.Status -eq 'Failed' }).Count)")
+$Lines | Set-Content -LiteralPath $SummaryPath -Encoding UTF8
+Write-Host "BATCH_SUMMARY=$SummaryPath"
+
+$FailedCount = ($Results | Where-Object { $_.Status -eq "Failed" }).Count
+if ($FailedCount -gt 0) {
+    Write-Host "BATCH_COMPLETED_WITH_FAILURES=$FailedCount"
+    exit 1
+}
+
+Write-Host "BATCH_COMPLETED_SUCCESSFULLY"
+""";
+}
+
 static string BuildWizardPowerShell(
     WizardConfig config,
     string exporterPath,
@@ -681,7 +1079,8 @@ static string BuildWizardPowerShell(
     string? streamingPath,
     IReadOnlyDictionary<string, string> additionalStreaming,
     WizardAnimationSelection animation,
-    bool isSkeletal)
+    bool isSkeletal,
+    bool ignoreSkeleton = false)
 {
     var sourceName = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString()) + "_source.fbx";
     var args = new List<string>
@@ -692,6 +1091,7 @@ static string BuildWizardPowerShell(
         "--output", "$OutputRequest",
     };
     if (!string.IsNullOrWhiteSpace(streamingPath)) args.InsertRange(0, ["--streaming", streamingPath]);
+    if (ignoreSkeleton) args.Add("--ignore-skeleton");
     foreach (var additional in additionalMeshes)
     {
         args.Add("--additional-mesh");
@@ -1049,8 +1449,9 @@ try {
 }
 
 static string PsQuote(string value) => "'" + value.Replace("'", "''") + "'";
+static string PsBool(bool value) => value ? "$true" : "$false";
 
-static void RunGeneratedScript(string scriptPath)
+static void RunGeneratedScript(string scriptPath, WizardLanguage language = WizardLanguage.English)
 {
     var psi = new ProcessStartInfo
     {
@@ -1071,11 +1472,11 @@ static void RunGeneratedScript(string scriptPath)
     proc.WaitForExit();
     if (proc.ExitCode == 0)
     {
-        Console.WriteLine("Script completed successfully.");
+        Console.WriteLine(language == WizardLanguage.Korean ? "스크립트가 성공적으로 완료되었습니다." : "Script completed successfully.");
     }
     else
     {
-        Console.WriteLine($"Script failed with exit code {proc.ExitCode}.");
+        Console.WriteLine(language == WizardLanguage.Korean ? $"스크립트가 종료 코드 {proc.ExitCode}(으)로 실패했습니다." : $"Script failed with exit code {proc.ExitCode}.");
     }
 }
 
@@ -1117,7 +1518,8 @@ motlistPaths = motlistPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var motPaths = GetArgs(args, "--mot").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var outputPath = GetArg(args, "--output") ?? throw new ArgumentException("Missing --output");
 var animationFilter = GetArg(args, "--animation-name");
-var includeAnimations = !HasFlag(args, "--no-animations");
+var ignoreSkeleton = HasFlag(args, "--ignore-skeleton");
+var includeAnimations = !HasFlag(args, "--no-animations") && !ignoreSkeleton;
 var includeTextures = !HasFlag(args, "--no-textures");
 var textureFormat = (GetArg(args, "--texture-format") ?? "png").ToLowerInvariant();
 if (textureFormat is not ("png" or "dds")) throw new ArgumentException("--texture-format must be png or dds");
@@ -1141,6 +1543,7 @@ Console.WriteLine($"Additional streaming: {(additionalStreamingByMesh.Count == 0
 Console.WriteLine($"MDF: {mdfPath ?? "auto"}");
 Console.WriteLine($"Motlists: {(motlistPaths.Count == 0 ? "-" : string.Join("; ", motlistPaths))}");
 Console.WriteLine($"Mots: {(motPaths.Count == 0 ? "-" : string.Join("; ", motPaths))}");
+Console.WriteLine($"Ignore skeleton: {ignoreSkeleton}");
 Console.WriteLine($"Output: {outputPath}");
 
 var unknownAdditionalStreamingKeys = additionalStreamingByMesh.Keys
@@ -1152,6 +1555,10 @@ if (unknownAdditionalStreamingKeys.Count != 0)
 }
 
 var mesh = LoadMesh(meshPath, streamingPath, allowMissingStreaming);
+if (ignoreSkeleton)
+{
+    ClearMeshSkeleton(mesh, meshPath);
+}
 
 var motions = new List<(string Source, MotFileBase Motion)>();
 var motlistGroups = new List<(string SourceName, string MotlistPath, List<MotFileBase> Motions)>();
@@ -1212,7 +1619,7 @@ foreach (var additionalMeshPath in additionalMeshPaths)
     var additionalName = PathUtils.GetFilenameWithoutExtensionOrVersion(additionalMeshPath).ToString();
     additionalResources.Add(new CommonMeshResource(additionalName, null!)
     {
-        NativeMesh = LoadMesh(additionalMeshPath, additionalStreamingByMesh.TryGetValue(additionalMeshPath, out var additionalStreamingPath) ? additionalStreamingPath : null, allowMissingStreaming),
+        NativeMesh = PrepareAdditionalMeshForExport(additionalMeshPath, additionalStreamingByMesh.TryGetValue(additionalMeshPath, out var additionalStreamingPath) ? additionalStreamingPath : null, allowMissingStreaming, ignoreSkeleton),
         GameVersion = GameName.pragmata,
         ExportTextureFormat = textureFormat,
         ExportRootNodeName = "Armature",
@@ -1827,6 +2234,25 @@ static string? ResolveWinGetTool(string exe)
     return Directory.GetFiles(packagesDir, fileName, SearchOption.AllDirectories).FirstOrDefault();
 }
 
+static MeshFile PrepareAdditionalMeshForExport(string meshPath, string? explicitStreamingPath, bool allowMissingStreaming, bool ignoreSkeleton)
+{
+    var mesh = LoadMesh(meshPath, explicitStreamingPath, allowMissingStreaming);
+    if (ignoreSkeleton)
+    {
+        ClearMeshSkeleton(mesh, meshPath);
+    }
+    return mesh;
+}
+
+static void ClearMeshSkeleton(MeshFile mesh, string meshPath)
+{
+    if (mesh.BoneData?.Bones.Count > 0)
+    {
+        Console.WriteLine($"Ignoring skeleton for static export: {meshPath}");
+    }
+    mesh.BoneData = null;
+}
+
 static MeshFile LoadMesh(string meshPath, string? explicitStreamingPath, bool allowMissingStreaming)
 {
     using var meshHandler = new FileHandler(meshPath);
@@ -2117,6 +2543,37 @@ sealed record PragmataIndexEntry(string RelativePath)
 sealed record ResolvedAsset(string Path, string? IndexedRelativePath);
 
 sealed record WizardMeshInspection(int BoneCount, int MaterialCount, int LodCount, bool RequiresStreaming);
+
+sealed record WizardExportJob(
+    int RowNumber,
+    string MeshQuery,
+    string MeshPath,
+    string OutputFolderName,
+    string? StreamingPath,
+    WizardMeshInspection Inspection,
+    WizardAnimationSelection Animation,
+    bool IgnoreSkeleton)
+{
+    public bool IsSkeletal => Inspection.BoneCount > 0;
+}
+
+enum WizardLanguage
+{
+    English,
+    Korean,
+}
+
+enum WizardMode
+{
+    SingleMesh,
+    BatchCsv,
+}
+
+enum WizardBatchSkeletalMode
+{
+    PromptForAnimations,
+    IgnoreSkeleton,
+}
 
 enum AssetKind
 {
