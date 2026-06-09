@@ -19,6 +19,9 @@
 - CSV batch preflight now skips and reports rows that fail resolution or inspection instead of terminating the entire wizard before script generation.
 - Wizard path prompts now accept pasted paths with surrounding double quotes, including quoted relative CSV paths such as `"./all_meshes.csv"`.
 - Wizard prompts now print a separator after accepted answers so the next prompt is easier to spot during longer interactive setup and batch sessions.
+- PNG texture conversion now tries texconv's default DDS-to-PNG conversion first, then retries only the failed texture with `R8G8B8A8_UNORM` output. This preserves default output for normal textures while allowing BC5/two-channel maps such as `sm28_010_A_HGAL_HeightMap` to be written as PNG instead of failing batch exports.
+- Added `docs/png_texture_conversion_fallback.md` with the BC5/R8G8 failure analysis, RGBA fallback rationale, and focused `sm20_007_00` plus `sm21_007_00` batch verification results.
+- Wizard-generated scripts now allow mesh exports that legitimately produce no material texture folder, while still validating non-empty texture output when a texture manifest is produced.
 
 ## 0.7.0 - Unreal-ready FBX pipeline, scripting hardening, and interactive export workflow
 

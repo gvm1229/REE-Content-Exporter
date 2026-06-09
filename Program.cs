@@ -1506,9 +1506,16 @@ try {
 {{sourceDiscovery}}
 
     $TextureDir = Join-Path $OutDir "textures"
-    if (!(Test-Path $TextureDir)) { throw "Texture folder missing after export: $TextureDir" }
-    $TextureCount = (Get-ChildItem $TextureDir -File -ErrorAction Stop | Measure-Object).Count
-    if ($TextureCount -le 0) { throw "Texture folder exists but is empty: $TextureDir" }
+    $TextureManifest = Join-Path $TextureDir "materials.textures.json"
+    if (Test-Path $TextureManifest) {
+        $TextureCount = (Get-ChildItem $TextureDir -File -ErrorAction Stop | Where-Object { $_.Name -ne "materials.textures.json" } | Measure-Object).Count
+        if ($TextureCount -le 0) { throw "Texture manifest exists but no texture files were exported: $TextureDir" }
+    } elseif (Test-Path $TextureDir) {
+        $TextureCount = (Get-ChildItem $TextureDir -File -ErrorAction Stop | Measure-Object).Count
+        if ($TextureCount -le 0) { throw "Texture folder exists but is empty: $TextureDir" }
+    } else {
+        Write-Host "TEXTURE_EXPORT_SKIPPED=No texture folder was produced for this mesh."
+    }
 
     for ($i = 0; $i -lt $Sources.Count; $i++) {
         $Source = $Sources[$i]
@@ -2275,32 +2282,62 @@ static void ConvertDdsToPng(string ddsPath, string pngPath)
         ?? ResolveWinGetTool("texconv")
         ?? throw new FileNotFoundException("texconv.exe not found. Released builds must include texconv.exe beside REE-Content-Exporter.exe. Source builds can install Microsoft.DirectXTex.Texconv or pass -p:TexconvPath=<path> during build.");
     var outDir = Path.GetDirectoryName(pngPath) ?? ".";
-    var psi = new ProcessStartInfo
+
+    if (TryRunTexconv(null, out var defaultError)) return;
+
+    Console.WriteLine("WARNING: texconv DDS->PNG default conversion failed; retrying with R8G8B8A8_UNORM PNG-compatible output.");
+    if (TryRunTexconv("R8G8B8A8_UNORM", out var rgbaError)) return;
+
+    throw new Exception($"texconv DDS->PNG failed. Default conversion: {defaultError}RGBA fallback: {rgbaError}");
+
+    bool TryRunTexconv(string? outputFormat, out string error)
     {
-        FileName = texconv,
-        UseShellExecute = false,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-    };
-    psi.ArgumentList.Add("-ft");
-    psi.ArgumentList.Add("png");
-    psi.ArgumentList.Add("-y");
-    psi.ArgumentList.Add("-o");
-    psi.ArgumentList.Add(outDir);
-    psi.ArgumentList.Add(ddsPath);
-    using var proc = Process.Start(psi) ?? throw new Exception("Failed to start texconv");
-    proc.WaitForExit();
-    if (proc.ExitCode != 0)
-    {
+        var produced = Path.Combine(outDir, Path.GetFileNameWithoutExtension(ddsPath) + ".png");
+        DeleteIfExists(produced);
+        if (!string.Equals(Path.GetFullPath(produced), Path.GetFullPath(pngPath), StringComparison.OrdinalIgnoreCase))
+        {
+            DeleteIfExists(pngPath);
+        }
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = texconv,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        if (!string.IsNullOrWhiteSpace(outputFormat))
+        {
+            psi.ArgumentList.Add("-f");
+            psi.ArgumentList.Add(outputFormat);
+        }
+        psi.ArgumentList.Add("-ft");
+        psi.ArgumentList.Add("png");
+        psi.ArgumentList.Add("-y");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add(outDir);
+        psi.ArgumentList.Add(ddsPath);
+        using var proc = Process.Start(psi) ?? throw new Exception("Failed to start texconv");
+        proc.WaitForExit();
         var err = proc.StandardError.ReadToEnd();
         var output = proc.StandardOutput.ReadToEnd();
-        throw new Exception($"texconv DDS->PNG failed: {err}{output}");
+        error = err + output;
+        if (proc.ExitCode != 0) return false;
+        if (!File.Exists(produced))
+        {
+            error = $"texconv did not produce expected PNG: {produced}{Environment.NewLine}{error}";
+            return false;
+        }
+        if (!string.Equals(Path.GetFullPath(produced), Path.GetFullPath(pngPath), StringComparison.OrdinalIgnoreCase))
+        {
+            File.Move(produced, pngPath, overwrite: true);
+        }
+        return true;
     }
-    var produced = Path.Combine(outDir, Path.GetFileNameWithoutExtension(ddsPath) + ".png");
-    if (!File.Exists(produced)) throw new FileNotFoundException("texconv did not produce expected PNG", produced);
-    if (!string.Equals(Path.GetFullPath(produced), Path.GetFullPath(pngPath), StringComparison.OrdinalIgnoreCase))
+
+    static void DeleteIfExists(string path)
     {
-        File.Move(produced, pngPath, overwrite: true);
+        if (File.Exists(path)) File.Delete(path);
     }
 }
 
