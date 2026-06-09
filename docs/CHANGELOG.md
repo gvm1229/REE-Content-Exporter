@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## Unreleased - self-contained PNG texture export hardening
+
+### Changed
+
+- Release build and publish outputs now include `texconv.exe` beside `REE-Content-Exporter.exe` so downloaded packages can export PNG textures without a separate DirectXTex install.
+- Release build/publish now fails if `texconv.exe` cannot be found on the build machine or supplied with `-p:TexconvPath="<path>\texconv.exe"`.
+- Runtime PNG conversion now prefers the bundled `texconv.exe` before checking `PATH` or the developer WinGet package cache.
+- Texture export failures now fail the exporter instead of producing a misleading success log with only `materials.textures.json` or leftover temporary DDS files.
+- Temporary DDS files used during PNG conversion are removed even when PNG conversion fails.
+
 ## 0.7.0 - Unreal-ready FBX pipeline, scripting hardening, and interactive export workflow
 
 Completed: 2026-06-07

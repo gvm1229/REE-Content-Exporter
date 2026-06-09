@@ -75,7 +75,8 @@ Generated or local folders such as build output are intentionally not listed her
 
 - [DirectXTex texconv](https://github.com/microsoft/DirectXTex/wiki/Texconv)
   - Why: REE-Content-Exporter first asks REE-Lib to convert RE Engine TEX data to DDS. When `--texture-format png` is used, `texconv` converts those DDS files to PNG.
-  - How: install `texconv.exe` and make it available on `PATH`, or install it through WinGet:
+  - Release builds: `texconv.exe` is bundled beside `REE-Content-Exporter.exe`, so users who download a release package do not need to install it separately.
+  - Source builds: install `texconv.exe` on the build machine or pass `-p:TexconvPath="<path>\texconv.exe"` when building/publishing. WinGet installs are auto-detected:
     ```powershell
     winget install --id Microsoft.DirectXTex.Texconv
     ```
@@ -166,6 +167,12 @@ To publish a self-contained Windows package:
 dotnet publish -c Release -p:PublishProfile=win-x64-singlefile
 ```
 
+Release and publish outputs include `texconv.exe` beside `REE-Content-Exporter.exe` so PNG texture export works from the downloaded package without a separate DirectXTex install. If the build machine cannot find `texconv.exe`, Release build/publish fails instead of producing an incomplete package. Pass an explicit converter path when needed:
+
+```powershell
+dotnet publish -c Release -p:PublishProfile=win-x64-singlefile -p:TexconvPath="C:\tools\texconv.exe"
+```
+
 The publish output is written under:
 
 ```text
@@ -209,7 +216,7 @@ Options can be passed in any order. Options marked as repeatable can be supplied
 | `--allow-missing-streaming` | Flag | Allows export to continue if a required streaming buffer is missing. | Useful for diagnosis, but output may have incomplete geometry. | Add the flag only for troubleshooting: `--allow-missing-streaming`. |
 | `--mdf` | Path to an `.mdf2.*` file | Explicitly supplies material data for the primary mesh. | Material slots and texture references are taken from the specified MDF instead of auto-discovery. | Use when auto MDF lookup chooses the wrong file: `--mdf "<extract>\character\...\ch0100_00_mat.mdf2.51"`. |
 | `--no-textures` | Flag | Disables texture export and material texture file writing. | Faster export with no `textures\` folder. Material texture reconnection data may be absent. | Add for geometry/animation-only tests: `--no-textures`. |
-| `--texture-format` | `png` or `dds` | Selects exported texture file format. Default is `png`. | `png` is easier to inspect and use in DCC tools; `dds` avoids PNG conversion. | Use `--texture-format png` for normal workflows, or `--texture-format dds` when `texconv.exe` is unavailable. |
+| `--texture-format` | `png` or `dds` | Selects exported texture file format. Default is `png`. PNG conversion uses the bundled `texconv.exe` first. | `png` is easier to inspect and use in DCC tools; `dds` avoids PNG conversion. Texture export failures are fatal. | Use `--texture-format png` for normal workflows, or `--texture-format dds` only when DDS output is intentionally desired. |
 
 #### Animation source options
 

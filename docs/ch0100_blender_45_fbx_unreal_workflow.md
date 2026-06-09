@@ -23,7 +23,7 @@ This document describes the currently validated FBX workflow for using PRAGMATA 
 
 - .NET SDK
 - Loose RE Engine files extracted with RETool
-- `texconv.exe` or a DirectXTex installation capable of PNG conversion
+- `texconv.exe` on the build machine for PNG conversion; release packages bundle it beside `REE-Content-Exporter.exe`
 - Patched `REE-Content-Editor` sibling checkout
 - Blender `4.5.9 LTS`
 
@@ -147,7 +147,7 @@ D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\...
 D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\streaming\character\...
 ```
 
-The sample execution scripts verify immediately after source export that `textures\` exists and contains at least one file. If the texture folder is missing or empty, the script fails.
+The exporter treats missing texture sources or failed PNG conversion as fatal texture export failures. Release packages must include `texconv.exe` beside `REE-Content-Exporter.exe`; source builds copy it from WinGet or from `-p:TexconvPath="<path>\texconv.exe"`. The sample execution scripts also verify immediately after source export that `textures\` exists and contains at least one file. If the texture folder is missing or empty, the script fails.
 
 ## Blender stage
 
@@ -355,5 +355,5 @@ Keep these settings for many-animation export:
 - Animation is correct in Blender but wobbles in Unreal: Blender re-bake/re-export is needed or the Blender export settings are wrong.
 - Model lies down in Unreal: axis settings are wrong, or skeleton and animation bases are mismatched.
 - Model is too small in Unreal: check Blender scene units and export scale. Current recommendation is `scale_length=0.01`, `global_scale=1.0`.
-- Texture folder is missing: source path layout fallback or texture export failed. Current scripts fail if the texture folder is missing or empty.
+- Texture folder is missing or contains no PNG files: source path layout fallback or PNG conversion failed. Current exports fail on texture-source and PNG-conversion errors instead of leaving only `materials.textures.json` or temporary DDS files.
 - Only root Roll 90 remains: this is a known limitation. Validate actual root motion behavior in Unreal instead of treating the displayed value alone as a failure.
