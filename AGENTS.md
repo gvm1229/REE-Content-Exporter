@@ -33,6 +33,15 @@ Minimum expectations:
   ```
 - Unreal-ready FBX export currently depends on Blender, not just the C# exporter.
 
+## Release artifact dependency rules
+
+Released builds must be functional immediately after download/extraction.
+
+- Do not require users to install helper executables, native DLLs, converters, or other redistributable runtime tools separately.
+- If the exporter or scripts need a redistributable runtime file, include it in the build/publish/release artifact and make build or publish fail when it cannot be included.
+- The only dependency burden users should face is selecting or configuring paths to large external applications or user-owned assets that cannot reasonably be bundled, such as Blender or extracted game files.
+- When adding a new runtime dependency, verify the published output or release archive contains it before calling the build usable.
+
 ## Do not treat streaming meshes as replacements for normal meshes
 
 A normal `.mesh.*` file and its streaming `.mesh.*` file are complementary, not interchangeable.
@@ -215,6 +224,7 @@ Rules:
 
 - Always verify that the generated export folder contains a non-empty `textures/` folder unless the script intentionally uses `--no-textures`.
 - Do not silently accept a missing or empty texture folder in production scripts.
+- Do not release a build that depends on users installing texture helper tools separately. PNG export requires `texconv.exe`; release artifacts must bundle it beside `REE-Content-Exporter.exe`, and build/publish should fail if the converter cannot be included.
 - Keep the dynamic path fallback behavior for old/new `natives\STM` and `re_chunk_000\streaming` style paths.
 - If adding a new asset script, confirm its material/MDF lookup still resolves textures from the correct source mesh.
 
