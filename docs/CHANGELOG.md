@@ -15,6 +15,8 @@
 - CSV batch mode now asks whether skeletal meshes should prompt for animations or auto-export without animation prompts; the automatic path preserves skeleton export and omits only animation stacks.
 - The interactive wizard now starts with a numbered language selector for English or Korean and localizes wizard prompts and validation messages.
 - Wizard language is now saved in `config.json`; existing configs without a language setting prompt only once for language on the next launch.
+- Mesh loading now supports MPLY-backed `.mesh.*` files by routing them through `MplyMeshFile` and converting them into the normal export path before wizard inspection or FBX generation.
+- CSV batch preflight now skips and reports rows that fail resolution or inspection instead of terminating the entire wizard before script generation.
 
 ## 0.7.0 - Unreal-ready FBX pipeline, scripting hardening, and interactive export workflow
 

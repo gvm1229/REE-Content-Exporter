@@ -154,41 +154,50 @@ static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<PragmataIndexEn
     Console.WriteLine(language == WizardLanguage.Korean ? $"CSV에서 메시 행 {meshQueries.Count}개를 불러왔습니다." : $"Loaded {meshQueries.Count} mesh row(s) from CSV.");
 
     var jobs = new List<WizardExportJob>();
+    var skippedRows = new List<WizardBatchSkippedRow>();
     var usedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var (rowNumber, query) in meshQueries)
     {
-        var mesh = ResolveCsvMesh(rowNumber, query, config, index, language);
-        var streaming = FindStreamingCandidate(mesh.Path);
-        var inspected = InspectMeshForWizard(mesh.Path, streaming);
-        var isSkeletal = inspected.BoneCount > 0;
-        var assetName = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(mesh.Path).ToString());
-        var outputFolderName = MakeUniqueWizardFolderName(assetName, usedFolders);
-
-        Console.WriteLine(language == WizardLanguage.Korean ? $"CSV {rowNumber}행: {mesh.Path}" : $"CSV row {rowNumber}: {mesh.Path}");
-        Console.WriteLine(FormatMeshInspection(inspected, language));
-
-        var animation = WizardAnimationSelection.None;
-        if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.PromptForAnimations && PromptYesNo(language == WizardLanguage.Korean ? $"{assetName}의 애니메이션을 포함할까요?" : $"Include animations for {assetName}?", defaultValue: false, language))
+        try
         {
-            animation = PromptForAnimationSelection(config, index, language);
-        }
-        else if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.SkipAnimationPrompts)
-        {
-            Console.WriteLine(language == WizardLanguage.Korean ? $"배치 스켈레탈 정책: {assetName}은(는) 스켈레톤을 포함하되 애니메이션 없이 자동으로 내보냅니다." : $"Batch skeletal policy: exporting {assetName} with its skeleton, but without animations.");
-        }
+            var mesh = ResolveCsvMesh(rowNumber, query, config, index, language);
+            var streaming = FindStreamingCandidate(mesh.Path);
+            var inspected = InspectMeshForWizard(mesh.Path, streaming);
+            var isSkeletal = inspected.BoneCount > 0;
+            var assetName = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(mesh.Path).ToString());
+            var outputFolderName = MakeUniqueWizardFolderName(assetName, usedFolders);
 
-        jobs.Add(new WizardExportJob(
-            RowNumber: rowNumber,
-            MeshQuery: query,
-            MeshPath: mesh.Path,
-            OutputFolderName: outputFolderName,
-            StreamingPath: streaming,
-            Inspection: inspected,
-            Animation: animation));
+            Console.WriteLine(language == WizardLanguage.Korean ? $"CSV {rowNumber}행: {mesh.Path}" : $"CSV row {rowNumber}: {mesh.Path}");
+            Console.WriteLine(FormatMeshInspection(inspected, language));
+
+            var animation = WizardAnimationSelection.None;
+            if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.PromptForAnimations && PromptYesNo(language == WizardLanguage.Korean ? $"{assetName}의 애니메이션을 포함할까요?" : $"Include animations for {assetName}?", defaultValue: false, language))
+            {
+                animation = PromptForAnimationSelection(config, index, language);
+            }
+            else if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.SkipAnimationPrompts)
+            {
+                Console.WriteLine(language == WizardLanguage.Korean ? $"배치 스켈레탈 정책: {assetName}은(는) 스켈레톤을 포함하되 애니메이션 없이 자동으로 내보냅니다." : $"Batch skeletal policy: exporting {assetName} with its skeleton, but without animations.");
+            }
+
+            jobs.Add(new WizardExportJob(
+                RowNumber: rowNumber,
+                MeshQuery: query,
+                MeshPath: mesh.Path,
+                OutputFolderName: outputFolderName,
+                StreamingPath: streaming,
+                Inspection: inspected,
+                Animation: animation));
+        }
+        catch (Exception ex)
+        {
+            skippedRows.Add(new WizardBatchSkippedRow(rowNumber, query, ex.Message));
+            Console.WriteLine(language == WizardLanguage.Korean ? $"CSV {rowNumber}행을 건너뜁니다: {ex.Message}" : $"Skipping CSV row {rowNumber}: {ex.Message}");
+        }
     }
 
     var exportRoot = PromptExportRoot(config.DefaultExportRoot, language);
-    var scriptPath = GenerateWizardBatchScript(config, exportRoot, jobs);
+    var scriptPath = GenerateWizardBatchScript(config, exportRoot, jobs, skippedRows);
     Console.WriteLine(language == WizardLanguage.Korean ? $"배치 스크립트를 생성했습니다: {scriptPath}" : $"Generated batch script: {scriptPath}");
 
     if (PromptYesNo(language == WizardLanguage.Korean ? "생성된 배치 스크립트를 지금 실행할까요?" : "Run the generated batch script now?", defaultValue: false, language))
@@ -966,7 +975,7 @@ static string GenerateWizardScript(
     return scriptPath;
 }
 
-static string GenerateWizardBatchScript(WizardConfig config, string exportRoot, IReadOnlyList<WizardExportJob> jobs)
+static string GenerateWizardBatchScript(WizardConfig config, string exportRoot, IReadOnlyList<WizardExportJob> jobs, IReadOnlyList<WizardBatchSkippedRow> skippedRows)
 {
     Directory.CreateDirectory(exportRoot);
     var scriptDir = Path.Combine(exportRoot, "generated-scripts");
@@ -975,12 +984,12 @@ static string GenerateWizardBatchScript(WizardConfig config, string exportRoot, 
     var batchRoot = Path.Combine(exportRoot, $"wizard_batch_{timestamp}");
     var scriptPath = Path.Combine(scriptDir, $"wizard_batch_unreal_export_{timestamp}.ps1");
     var exporterPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter.exe");
-    var script = BuildWizardBatchPowerShell(config, exporterPath, batchRoot, jobs);
+    var script = BuildWizardBatchPowerShell(config, exporterPath, batchRoot, jobs, skippedRows);
     File.WriteAllText(scriptPath, script, Encoding.UTF8);
     return scriptPath;
 }
 
-static string BuildWizardBatchPowerShell(WizardConfig config, string exporterPath, string batchRoot, IReadOnlyList<WizardExportJob> jobs)
+static string BuildWizardBatchPowerShell(WizardConfig config, string exporterPath, string batchRoot, IReadOnlyList<WizardExportJob> jobs, IReadOnlyList<WizardBatchSkippedRow> skippedRows)
 {
     var emptyAdditionalStreaming = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     var jobBlocks = new List<string>();
@@ -1002,6 +1011,21 @@ static string BuildWizardBatchPowerShell(WizardConfig config, string exporterPat
 """);
     }
 
+    var skippedBlocks = new List<string>();
+    foreach (var skipped in skippedRows)
+    {
+        skippedBlocks.Add($$"""
+    [pscustomobject]@{
+        Row = {{skipped.RowNumber.ToString(CultureInfo.InvariantCulture)}}
+        Query = {{PsQuote(skipped.MeshQuery)}}
+        Mesh = ""
+        Status = "Skipped"
+        Output = ""
+        Details = {{PsQuote(skipped.Reason)}}
+    }
+""");
+    }
+
     return $$"""
 param(
     [switch]$KeepSourceFbx
@@ -1012,6 +1036,9 @@ $BatchRoot = {{PsQuote(batchRoot)}}
 $RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $Jobs = @(
 {{string.Join(",\n", jobBlocks)}}
+)
+$PreflightSkipped = @(
+{{string.Join(",\n", skippedBlocks)}}
 )
 $Results = New-Object System.Collections.Generic.List[object]
 
@@ -1034,6 +1061,12 @@ function Get-PrefixedValue {
 New-Item -ItemType Directory -Force -Path $BatchRoot | Out-Null
 Write-Host "BATCH_EXPORT_ROOT=$BatchRoot"
 Write-Host "BATCH_JOB_COUNT=$($Jobs.Count)"
+Write-Host "BATCH_PREFLIGHT_SKIPPED_COUNT=$($PreflightSkipped.Count)"
+
+foreach ($Skipped in $PreflightSkipped) {
+    $Results.Add($Skipped) | Out-Null
+    Write-Host "BATCH_JOB_SKIPPED row=$($Skipped.Row) reason=$($Skipped.Details)"
+}
 
 foreach ($Job in $Jobs) {
     Write-Host "BATCH_JOB_START row=$($Job.Row) mesh=$($Job.Mesh)"
@@ -1089,13 +1122,14 @@ foreach ($Result in $Results) {
     $Lines.Add("| $($Result.Row) | $(Format-MarkdownCell $Result.Status) | $(Format-MarkdownCell $Result.Mesh) | $(Format-MarkdownCell $Result.Output) | $(Format-MarkdownCell $Result.Details) |")
 }
 $Lines.Add("")
-$Lines.Add("Resolved rows: $($Results.Count)")
-$Lines.Add("Exported rows: $(($Results | Where-Object { $_.Status -like 'Exported*' }).Count)")
-$Lines.Add("Failed rows: $(($Results | Where-Object { $_.Status -eq 'Failed' }).Count)")
+$Lines.Add("Resolved rows: $($Jobs.Count)")
+$Lines.Add("Exported rows: $(@($Results | Where-Object { $_.Status -like 'Exported*' }).Count)")
+$Lines.Add("Skipped rows: $(@($Results | Where-Object { $_.Status -eq 'Skipped' }).Count)")
+$Lines.Add("Failed rows: $(@($Results | Where-Object { $_.Status -eq 'Failed' }).Count)")
 $Lines | Set-Content -LiteralPath $SummaryPath -Encoding UTF8
 Write-Host "BATCH_SUMMARY=$SummaryPath"
 
-$FailedCount = ($Results | Where-Object { $_.Status -eq "Failed" }).Count
+$FailedCount = @($Results | Where-Object { $_.Status -eq "Failed" }).Count
 if ($FailedCount -gt 0) {
     Write-Host "BATCH_COMPLETED_WITH_FAILURES=$FailedCount"
     exit 1
@@ -2264,6 +2298,31 @@ static string? ResolveWinGetTool(string exe)
 static MeshFile LoadMesh(string meshPath, string? explicitStreamingPath, bool allowMissingStreaming)
 {
     using var meshHandler = new FileHandler(meshPath);
+    var magic = meshHandler.Read<uint>(0);
+    meshHandler.Seek(0);
+
+    if (magic == MplyMeshFile.Magic)
+    {
+        var mply = new MplyMeshFile(meshHandler);
+        if (!mply.Read()) throw new Exception($"REE-Lib failed to read MPLY mesh: {meshPath}");
+
+        var converted = mply.ConvertToMergedClassicMesh();
+        converted.FileHandler = mply.FileHandler;
+        Console.WriteLine($"Loaded MPLY mesh {meshPath} version={converted.Header.version} convertedToClassic=True materials={converted.MaterialNames.Count} bones={converted.BoneData?.Bones.Count ?? 0} lods={converted.MeshData?.LODs.Count ?? 0}");
+
+        if (!string.IsNullOrWhiteSpace(explicitStreamingPath))
+        {
+            Console.WriteLine($"MPLY streaming sibling found but not loaded as a classic streaming buffer: {explicitStreamingPath}");
+        }
+
+        return converted;
+    }
+
+    if (magic != MeshFile.Magic)
+    {
+        throw new NotSupportedException($"Unknown mesh type 0x{magic:X8}: {meshPath}");
+    }
+
     var mesh = new MeshFile(meshHandler);
     if (!mesh.Read()) throw new Exception($"REE-Lib failed to read mesh: {meshPath}");
     Console.WriteLine($"Loaded mesh {meshPath} version={mesh.Header.version} requiresStreaming={mesh.RequiresStreamingData} materials={mesh.MaterialNames.Count} bones={mesh.BoneData?.Bones.Count ?? 0} lods={mesh.MeshData?.LODs.Count ?? 0}");
@@ -2564,6 +2623,8 @@ sealed record WizardExportJob(
 {
     public bool IsSkeletal => Inspection.BoneCount > 0;
 }
+
+sealed record WizardBatchSkippedRow(int RowNumber, string MeshQuery, string Reason);
 
 enum WizardLanguage
 {
