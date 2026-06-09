@@ -14,6 +14,15 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <Target Name="CopyTexconvToBuildOutput" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <TexconvCandidate Include="$(TexconvPath)" Condition="'$(TexconvPath)' != '' and Exists('$(TexconvPath)')" />
+      <TexconvCandidate Include="$(LOCALAPPDATA)\Microsoft\WinGet\Packages\**\texconv.exe" Condition="'@(TexconvCandidate)' == '' and '$(LOCALAPPDATA)' != '' and Exists('$(LOCALAPPDATA)\Microsoft\WinGet\Packages')" />
+    </ItemGroup>
+    <Error Condition="'@(TexconvCandidate)' == ''" Text="texconv.exe is required for self-contained PNG texture export. Install Microsoft.DirectXTex.Texconv for the build machine or pass -p:TexconvPath=&quot;C:\path\to\texconv.exe&quot;." />
+    <Copy SourceFiles="@(TexconvCandidate)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
+
   <Target Name="CopyNativeDependenciesToPublish" AfterTargets="Publish">
     <ItemGroup>
       <AssimpNative Include="$(OutputPath)assimp.dll" Condition="Exists('$(OutputPath)assimp.dll')" />
@@ -22,10 +31,13 @@
       <GDeflateNative Include="$(OutputPath)runtimes\win-x64\native\libGDeflate.dll" Condition="'@(GDeflateNative)' == '' and Exists('$(OutputPath)runtimes\win-x64\native\libGDeflate.dll')" />
       <DirectXTexNative Include="$(OutputPath)DirectXTex.dll" Condition="Exists('$(OutputPath)DirectXTex.dll')" />
       <DirectXTexNative Include="$(OutputPath)runtimes\win-x64\native\DirectXTex.dll" Condition="'@(DirectXTexNative)' == '' and Exists('$(OutputPath)runtimes\win-x64\native\DirectXTex.dll')" />
+      <TexconvNative Include="$(OutputPath)texconv.exe" Condition="Exists('$(OutputPath)texconv.exe')" />
     </ItemGroup>
     <Copy SourceFiles="@(AssimpNative)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(GDeflateNative)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(DirectXTexNative)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <Error Condition="'@(TexconvNative)' == ''" Text="Publish output is missing texconv.exe. Build/publish with Microsoft.DirectXTex.Texconv installed or pass -p:TexconvPath=&quot;C:\path\to\texconv.exe&quot;." />
+    <Copy SourceFiles="@(TexconvNative)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

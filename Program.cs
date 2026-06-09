@@ -1620,6 +1620,7 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
 {
     Directory.CreateDirectory(outputDir);
     var exported = new Dictionary<string, object>();
+    var failures = new List<string>();
     var textureCount = materialGroups.Sum(group => group.Materials.Materials.Sum(mat => mat.Textures.Count(tex => !string.IsNullOrWhiteSpace(tex.texPath) && !tex.texPath.Contains("/null", StringComparison.OrdinalIgnoreCase))));
     var textureIndex = 0;
     progress.Start($"Exporting textures 0/{textureCount}");
@@ -1634,7 +1635,13 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
                 textureIndex++;
                 progress.Update($"Exporting texture {textureIndex}/{textureCount}: {PathUtils.GetFilenameWithoutExtensionOrVersion(tex.texPath)}");
                 var source = ResolveLooseGameFile(meshPath, tex.texPath, "tex");
-                if (source == null) continue;
+                if (source == null)
+                {
+                    var message = $"texture source not found {tex.texPath}";
+                    failures.Add(message);
+                    progress.WriteLine($"WARNING: {message}");
+                    continue;
+                }
                 FileHandler? texHandler = null;
                 FileHandler? streamHandler = null;
                 try
@@ -1666,19 +1673,30 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
                     else
                     {
                         var tempDds = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(outName) + ".dds");
-                        texFile.SaveAsDDS(tempDds);
-                        ConvertDdsToPng(tempDds, outPath);
-                        try { File.Delete(tempDds); }
-                        catch (Exception cleanupError)
+                        try
                         {
-                            Console.WriteLine($"WARNING: temporary DDS cleanup failed {tempDds}: {cleanupError.Message}");
+                            texFile.SaveAsDDS(tempDds);
+                            ConvertDdsToPng(tempDds, outPath);
+                        }
+                        finally
+                        {
+                            try
+                            {
+                                if (File.Exists(tempDds)) File.Delete(tempDds);
+                            }
+                            catch (Exception cleanupError)
+                            {
+                                Console.WriteLine($"WARNING: temporary DDS cleanup failed {tempDds}: {cleanupError.Message}");
+                            }
                         }
                     }
                     matEntries.Add(new { type = tex.texType, gamePath = tex.texPath, source, output = outPath });
                 }
                 catch (Exception ex)
                 {
-                    progress.WriteLine($"WARNING: texture export failed {tex.texPath}: {ex.Message}");
+                    var message = $"texture export failed {tex.texPath}: {ex.Message}";
+                    failures.Add(message);
+                    progress.WriteLine($"WARNING: {message}");
                 }
                 finally
                 {
@@ -1693,6 +1711,10 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
     File.WriteAllText(manifest, JsonSerializer.Serialize(exported, new JsonSerializerOptions { WriteIndented = true }));
     progress.WriteLine($"Exported material texture manifest: {manifest}");
     progress.Stop();
+    if (failures.Count > 0)
+    {
+        throw new Exception($"Texture export failed for {failures.Count} texture(s). See warnings above.");
+    }
 }
 
 static void DecompressTextureIfNeeded(TexFile tex)
@@ -1723,8 +1745,8 @@ static string TextureOutputName(MaterialGroupWrapper.MaterialLookupData mat, Tex
 static void ConvertDdsToPng(string ddsPath, string pngPath)
 {
     var texconv = ResolveTool("texconv")
-        ?? Directory.GetFiles(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WinGet", "Packages"), "texconv.exe", SearchOption.AllDirectories).FirstOrDefault()
-        ?? throw new FileNotFoundException("texconv.exe not found. Install Microsoft.DirectXTex.Texconv or use --texture-format dds.");
+        ?? ResolveWinGetTool("texconv")
+        ?? throw new FileNotFoundException("texconv.exe not found. Released builds must include texconv.exe beside REE-Content-Exporter.exe. Source builds can install Microsoft.DirectXTex.Texconv or pass -p:TexconvPath=<path> during build.");
     var outDir = Path.GetDirectoryName(pngPath) ?? ".";
     var psi = new ProcessStartInfo
     {
@@ -1757,14 +1779,52 @@ static void ConvertDdsToPng(string ddsPath, string pngPath)
 
 static string? ResolveTool(string exe)
 {
+    var fileName = exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exe : exe + ".exe";
+    foreach (var dir in GetBundledToolDirectories())
+    {
+        var candidate = Path.Combine(dir, fileName);
+        if (File.Exists(candidate)) return candidate;
+    }
+
     var path = Environment.GetEnvironmentVariable("PATH") ?? "";
     foreach (var dir in path.Split(Path.PathSeparator))
     {
         if (string.IsNullOrWhiteSpace(dir)) continue;
-        var candidate = Path.Combine(dir.Trim(), exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exe : exe + ".exe");
+        var candidate = Path.Combine(dir.Trim(), fileName);
         if (File.Exists(candidate)) return candidate;
     }
     return null;
+}
+
+static IEnumerable<string> GetBundledToolDirectories()
+{
+    var dirs = new List<string>();
+
+    AddUniqueToolDir(AppContext.BaseDirectory);
+    if (Environment.ProcessPath is { } processPath)
+    {
+        var processDir = Path.GetDirectoryName(processPath);
+        if (!string.IsNullOrWhiteSpace(processDir)) AddUniqueToolDir(processDir);
+    }
+
+    return dirs;
+
+    void AddUniqueToolDir(string? dir)
+    {
+        if (string.IsNullOrWhiteSpace(dir)) return;
+        var full = Path.GetFullPath(dir);
+        if (!dirs.Contains(full, StringComparer.OrdinalIgnoreCase))
+            dirs.Add(full);
+    }
+}
+
+static string? ResolveWinGetTool(string exe)
+{
+    var packagesDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WinGet", "Packages");
+    if (!Directory.Exists(packagesDir)) return null;
+
+    var fileName = exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exe : exe + ".exe";
+    return Directory.GetFiles(packagesDir, fileName, SearchOption.AllDirectories).FirstOrDefault();
 }
 
 static MeshFile LoadMesh(string meshPath, string? explicitStreamingPath, bool allowMissingStreaming)
