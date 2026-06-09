@@ -17,6 +17,7 @@
 - Wizard language is now saved in `config.json`; existing configs without a language setting prompt only once for language on the next launch.
 - Mesh loading now supports MPLY-backed `.mesh.*` files by routing them through `MplyMeshFile` and converting them into the normal export path before wizard inspection or FBX generation.
 - CSV batch preflight now skips and reports rows that fail resolution or inspection instead of terminating the entire wizard before script generation.
+- Wizard path prompts now accept pasted paths with surrounding double quotes, including quoted relative CSV paths such as `"./all_meshes.csv"`.
 
 ## 0.7.0 - Unreal-ready FBX pipeline, scripting hardening, and interactive export workflow
 

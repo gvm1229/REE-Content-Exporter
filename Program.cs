@@ -804,8 +804,17 @@ static string NormalizeIndexPath(string value) => NormalizeUserPath(value).Repla
 
 static string NormalizeUserPath(string value)
 {
-    value = value.Trim().Trim('"').Trim('\'');
+    value = StripSurroundingPathQuotes(value.Trim());
     return Environment.ExpandEnvironmentVariables(value);
+}
+
+static string StripSurroundingPathQuotes(string value)
+{
+    while (value.Length >= 2 && value[0] == '"' && value[^1] == '"')
+    {
+        value = value[1..^1].Trim();
+    }
+    return value;
 }
 
 static string? InferExtractRoot(string input)
