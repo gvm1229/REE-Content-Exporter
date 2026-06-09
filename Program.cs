@@ -42,7 +42,7 @@ static void PrintUsage()
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
     Console.WriteLine("  REE-Content-Exporter [--wizard] [--reset-config] [--config <path>]");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--ignore-skeleton] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
 }
 
 static Dictionary<string, string> ParseAdditionalStreamingArgs(IEnumerable<string> values)
@@ -168,15 +168,13 @@ static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<PragmataIndexEn
         Console.WriteLine(FormatMeshInspection(inspected, language));
 
         var animation = WizardAnimationSelection.None;
-        var ignoreSkeleton = false;
         if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.PromptForAnimations && PromptYesNo(language == WizardLanguage.Korean ? $"{assetName}의 애니메이션을 포함할까요?" : $"Include animations for {assetName}?", defaultValue: false, language))
         {
             animation = PromptForAnimationSelection(config, index, language);
         }
-        else if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.IgnoreSkeleton)
+        else if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.SkipAnimationPrompts)
         {
-            ignoreSkeleton = true;
-            Console.WriteLine(language == WizardLanguage.Korean ? $"배치 스켈레탈 정책: {assetName}을(를) 정적 메시로 내보냅니다. 스켈레톤과 애니메이션은 무시됩니다." : $"Batch skeletal policy: exporting {assetName} as static mesh; skeleton and animations will be ignored.");
+            Console.WriteLine(language == WizardLanguage.Korean ? $"배치 스켈레탈 정책: {assetName}은(는) 스켈레톤을 포함하되 애니메이션 없이 자동으로 내보냅니다." : $"Batch skeletal policy: exporting {assetName} with its skeleton, but without animations.");
         }
 
         jobs.Add(new WizardExportJob(
@@ -186,8 +184,7 @@ static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<PragmataIndexEn
             OutputFolderName: outputFolderName,
             StreamingPath: streaming,
             Inspection: inspected,
-            Animation: animation,
-            IgnoreSkeleton: ignoreSkeleton));
+            Animation: animation));
     }
 
     var exportRoot = PromptExportRoot(config.DefaultExportRoot, language);
@@ -414,13 +411,13 @@ static WizardBatchSkeletalMode PromptBatchSkeletalMode(WizardLanguage language)
 {
     Console.WriteLine(language == WizardLanguage.Korean ? "배치 스켈레탈 메시 처리:" : "Batch skeletal mesh handling:");
     Console.WriteLine(language == WizardLanguage.Korean ? "  1. 스켈레탈 메시를 찾으면 애니메이션 지정 여부 묻기" : "  1. Prompt for animations when a skeletal mesh is found");
-    Console.WriteLine(language == WizardLanguage.Korean ? "  2. 스켈레탈 메시를 정적 메시로 처리하고 스켈레톤 무시" : "  2. Treat skeletal meshes as static meshes and ignore skeletons");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  2. 스켈레탈 메시도 애니메이션 질문 없이 자동 처리" : "  2. Auto-export skeletal meshes without prompting for animations");
     while (true)
     {
         Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
         var input = (Console.ReadLine() ?? "").Trim();
         if (string.IsNullOrWhiteSpace(input) || input == "1") return WizardBatchSkeletalMode.PromptForAnimations;
-        if (input == "2") return WizardBatchSkeletalMode.IgnoreSkeleton;
+        if (input == "2") return WizardBatchSkeletalMode.SkipAnimationPrompts;
         Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
     }
 }
@@ -990,7 +987,7 @@ static string BuildWizardBatchPowerShell(WizardConfig config, string exporterPat
     foreach (var job in jobs)
     {
         var jobRoot = Path.Combine(batchRoot, job.OutputFolderName);
-        var jobScript = BuildWizardPowerShell(config, exporterPath, jobRoot, job.MeshPath, [], job.StreamingPath, emptyAdditionalStreaming, job.Animation, job.IsSkeletal, job.IgnoreSkeleton);
+        var jobScript = BuildWizardPowerShell(config, exporterPath, jobRoot, job.MeshPath, [], job.StreamingPath, emptyAdditionalStreaming, job.Animation, job.IsSkeletal);
         var jobScriptBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(jobScript));
         jobBlocks.Add($$"""
     [pscustomobject]@{
@@ -1117,8 +1114,7 @@ static string BuildWizardPowerShell(
     string? streamingPath,
     IReadOnlyDictionary<string, string> additionalStreaming,
     WizardAnimationSelection animation,
-    bool isSkeletal,
-    bool ignoreSkeleton = false)
+    bool isSkeletal)
 {
     var sourceName = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString()) + "_source.fbx";
     var args = new List<string>
@@ -1129,7 +1125,6 @@ static string BuildWizardPowerShell(
         "--output", "$OutputRequest",
     };
     if (!string.IsNullOrWhiteSpace(streamingPath)) args.InsertRange(0, ["--streaming", streamingPath]);
-    if (ignoreSkeleton) args.Add("--ignore-skeleton");
     foreach (var additional in additionalMeshes)
     {
         args.Add("--additional-mesh");
@@ -1556,8 +1551,7 @@ motlistPaths = motlistPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var motPaths = GetArgs(args, "--mot").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var outputPath = GetArg(args, "--output") ?? throw new ArgumentException("Missing --output");
 var animationFilter = GetArg(args, "--animation-name");
-var ignoreSkeleton = HasFlag(args, "--ignore-skeleton");
-var includeAnimations = !HasFlag(args, "--no-animations") && !ignoreSkeleton;
+var includeAnimations = !HasFlag(args, "--no-animations");
 var includeTextures = !HasFlag(args, "--no-textures");
 var textureFormat = (GetArg(args, "--texture-format") ?? "png").ToLowerInvariant();
 if (textureFormat is not ("png" or "dds")) throw new ArgumentException("--texture-format must be png or dds");
@@ -1581,7 +1575,6 @@ Console.WriteLine($"Additional streaming: {(additionalStreamingByMesh.Count == 0
 Console.WriteLine($"MDF: {mdfPath ?? "auto"}");
 Console.WriteLine($"Motlists: {(motlistPaths.Count == 0 ? "-" : string.Join("; ", motlistPaths))}");
 Console.WriteLine($"Mots: {(motPaths.Count == 0 ? "-" : string.Join("; ", motPaths))}");
-Console.WriteLine($"Ignore skeleton: {ignoreSkeleton}");
 Console.WriteLine($"Output: {outputPath}");
 
 var unknownAdditionalStreamingKeys = additionalStreamingByMesh.Keys
@@ -1593,10 +1586,6 @@ if (unknownAdditionalStreamingKeys.Count != 0)
 }
 
 var mesh = LoadMesh(meshPath, streamingPath, allowMissingStreaming);
-if (ignoreSkeleton)
-{
-    ClearMeshSkeleton(mesh, meshPath);
-}
 
 var motions = new List<(string Source, MotFileBase Motion)>();
 var motlistGroups = new List<(string SourceName, string MotlistPath, List<MotFileBase> Motions)>();
@@ -1657,7 +1646,7 @@ foreach (var additionalMeshPath in additionalMeshPaths)
     var additionalName = PathUtils.GetFilenameWithoutExtensionOrVersion(additionalMeshPath).ToString();
     additionalResources.Add(new CommonMeshResource(additionalName, null!)
     {
-        NativeMesh = PrepareAdditionalMeshForExport(additionalMeshPath, additionalStreamingByMesh.TryGetValue(additionalMeshPath, out var additionalStreamingPath) ? additionalStreamingPath : null, allowMissingStreaming, ignoreSkeleton),
+        NativeMesh = LoadMesh(additionalMeshPath, additionalStreamingByMesh.TryGetValue(additionalMeshPath, out var additionalStreamingPath) ? additionalStreamingPath : null, allowMissingStreaming),
         GameVersion = GameName.pragmata,
         ExportTextureFormat = textureFormat,
         ExportRootNodeName = "Armature",
@@ -2272,25 +2261,6 @@ static string? ResolveWinGetTool(string exe)
     return Directory.GetFiles(packagesDir, fileName, SearchOption.AllDirectories).FirstOrDefault();
 }
 
-static MeshFile PrepareAdditionalMeshForExport(string meshPath, string? explicitStreamingPath, bool allowMissingStreaming, bool ignoreSkeleton)
-{
-    var mesh = LoadMesh(meshPath, explicitStreamingPath, allowMissingStreaming);
-    if (ignoreSkeleton)
-    {
-        ClearMeshSkeleton(mesh, meshPath);
-    }
-    return mesh;
-}
-
-static void ClearMeshSkeleton(MeshFile mesh, string meshPath)
-{
-    if (mesh.BoneData?.Bones.Count > 0)
-    {
-        Console.WriteLine($"Ignoring skeleton for static export: {meshPath}");
-    }
-    mesh.BoneData = null;
-}
-
 static MeshFile LoadMesh(string meshPath, string? explicitStreamingPath, bool allowMissingStreaming)
 {
     using var meshHandler = new FileHandler(meshPath);
@@ -2590,8 +2560,7 @@ sealed record WizardExportJob(
     string OutputFolderName,
     string? StreamingPath,
     WizardMeshInspection Inspection,
-    WizardAnimationSelection Animation,
-    bool IgnoreSkeleton)
+    WizardAnimationSelection Animation)
 {
     public bool IsSkeletal => Inspection.BoneCount > 0;
 }
@@ -2611,7 +2580,7 @@ enum WizardMode
 enum WizardBatchSkeletalMode
 {
     PromptForAnimations,
-    IgnoreSkeleton,
+    SkipAnimationPrompts,
 }
 
 enum AssetKind
