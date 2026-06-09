@@ -137,14 +137,14 @@ Run the executable with no arguments to launch the interactive Unreal-ready FBX 
 .\bin\Release\net10.0\REE-Content-Exporter.exe
 ```
 
-The wizard first asks for a language:
+On first setup, the wizard asks for a language:
 
 ```text
 1. English
 2. Korean
 ```
 
-The selected language is used for the wizard's interactive prompts and validation messages.
+The selected language is saved in the wizard config and used for future interactive prompts and validation messages. Existing config files created before this setting will ask only for the language once on the next wizard launch, then keep that language until the config file is edited, reset, or deleted.
 
 The wizard saves its setup in:
 

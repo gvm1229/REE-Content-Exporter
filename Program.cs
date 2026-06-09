@@ -75,15 +75,24 @@ static Dictionary<string, string> ParseAdditionalStreamingArgs(IEnumerable<strin
 
 static void RunWizard(string? configPathOverride)
 {
-    var language = PromptWizardLanguage();
-    Console.WriteLine(language == WizardLanguage.Korean ? "REE-Content-Exporter 대화형 마법사" : "REE-Content-Exporter interactive wizard");
     var configPath = ResolveWizardConfigPath(configPathOverride);
-    var config = LoadWizardConfig(configPath, language);
+    var config = LoadWizardConfig(configPath);
+    var language = ResolveWizardLanguage(config);
+    Console.WriteLine(language == WizardLanguage.Korean ? "REE-Content-Exporter 대화형 마법사" : "REE-Content-Exporter interactive wizard");
+
+    if (config != null && string.IsNullOrWhiteSpace(config.Language))
+    {
+        config.Language = SerializeWizardLanguage(language);
+        SaveWizardConfig(configPath, config);
+        Console.WriteLine(language == WizardLanguage.Korean ? $"마법사 언어 설정을 저장했습니다: {configPath}" : $"Saved wizard language setting: {configPath}");
+    }
+
     var reason = "";
     if (config == null || !ValidateWizardConfig(config, out reason))
     {
         if (!string.IsNullOrWhiteSpace(reason)) Console.WriteLine(language == WizardLanguage.Korean ? $"설정이 필요합니다: {LocalizeConfigReason(reason, language)}" : $"Config setup required: {reason}");
         config = PromptForWizardConfig(config, language);
+        config.Language = SerializeWizardLanguage(language);
         SaveWizardConfig(configPath, config);
         Console.WriteLine(language == WizardLanguage.Korean ? $"마법사 설정을 저장했습니다: {configPath}" : $"Saved wizard config: {configPath}");
     }
@@ -191,7 +200,7 @@ static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<PragmataIndexEn
     }
 }
 
-static WizardConfig? LoadWizardConfig(string path, WizardLanguage language)
+static WizardConfig? LoadWizardConfig(string path)
 {
     try
     {
@@ -200,10 +209,39 @@ static WizardConfig? LoadWizardConfig(string path, WizardLanguage language)
     }
     catch (Exception ex)
     {
-        Console.WriteLine(language == WizardLanguage.Korean ? $"경고: 설정을 읽지 못했습니다 {path}: {ex.Message}" : $"WARNING: failed to read config {path}: {ex.Message}");
+        Console.WriteLine($"WARNING: failed to read config {path}: {ex.Message}");
         return null;
     }
 }
+
+static WizardLanguage ResolveWizardLanguage(WizardConfig? config)
+{
+    if (TryParseWizardLanguage(config?.Language, out var language))
+        return language;
+    return PromptWizardLanguage();
+}
+
+static bool TryParseWizardLanguage(string? value, out WizardLanguage language)
+{
+    if (value != null)
+    {
+        if (value.Equals("en", StringComparison.OrdinalIgnoreCase) || value.Equals("english", StringComparison.OrdinalIgnoreCase))
+        {
+            language = WizardLanguage.English;
+            return true;
+        }
+        if (value.Equals("ko", StringComparison.OrdinalIgnoreCase) || value.Equals("kr", StringComparison.OrdinalIgnoreCase) || value.Equals("korean", StringComparison.OrdinalIgnoreCase))
+        {
+            language = WizardLanguage.Korean;
+            return true;
+        }
+    }
+
+    language = WizardLanguage.English;
+    return false;
+}
+
+static string SerializeWizardLanguage(WizardLanguage language) => language == WizardLanguage.Korean ? "ko" : "en";
 
 static void SaveWizardConfig(string path, WizardConfig config)
 {
@@ -2526,6 +2564,7 @@ sealed class ProgressStatus : IDisposable
 
 sealed class WizardConfig
 {
+    public string Language { get; set; } = "";
     public string ExtractRoot { get; set; } = "";
     public string DefaultExportRoot { get; set; } = "";
     public string BlenderPath { get; set; } = "";

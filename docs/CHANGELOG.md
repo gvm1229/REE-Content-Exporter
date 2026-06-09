@@ -14,6 +14,7 @@
 - Batch wizard scripts place all jobs under one `wizard_batch_<timestamp>` folder, separate each mesh into its own child folder, ask about animations per skeletal mesh only, continue after per-mesh runtime failures, and write `batch-summary.md`.
 - CSV batch mode now asks whether skeletal meshes should prompt for animations or be treated as static meshes; the static path uses new `--ignore-skeleton` export behavior to omit armatures, vertex weights, and animations.
 - The interactive wizard now starts with a numbered language selector for English or Korean and localizes wizard prompts and validation messages.
+- Wizard language is now saved in `config.json`; existing configs without a language setting prompt only once for language on the next launch.
 
 ## 0.7.0 - Unreal-ready FBX pipeline, scripting hardening, and interactive export workflow
 
