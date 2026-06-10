@@ -20,6 +20,7 @@
 - CSV batch preflight now skips and reports rows that fail resolution or inspection instead of terminating the entire wizard before script generation.
 - Wizard path prompts now accept pasted paths with surrounding double quotes, including quoted relative CSV paths such as `"./all_meshes.csv"`.
 - Wizard prompts now print a separator after accepted answers so the next prompt is easier to spot during longer interactive setup and batch sessions.
+- Wizard choice prompts now require explicit input; pressing Enter is rejected for yes/no and numbered choices instead of selecting a default.
 - Batch wizard scripts now let users either auto-scan sibling `wizard_batch_*` folders in the export root or designate a specific folder to scan for previous successful exports.
 - Designated existing-export scan paths use the same quote-cleaning path normalization as other wizard paths and scan only the chosen folder plus its immediate `wizard_batch_*` children.
 - Batch wizard scripts now write one log per row under `batch-job-logs`, including preflight skips, existing-success skips, successful exports, and failures.

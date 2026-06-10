@@ -233,6 +233,7 @@ Rules:
 
 - Do not run long export scripts unless the user explicitly asks.
 - If the user asks to run scripts, prefer checking logs after completion rather than live tracking every line, unless live monitoring is specifically requested.
+- Wizard choice prompts must require explicit input. Do not treat Enter as a default answer for yes/no or numbered choices; only path/text prompts with an intentional displayed default may accept Enter.
 - For script-only edits, validate with:
   ```powershell
   [scriptblock]::Create((Get-Content -LiteralPath "<script.ps1>" -Raw))

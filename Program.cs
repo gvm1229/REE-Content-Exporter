@@ -355,15 +355,14 @@ static string PromptText(string label, string? defaultValue = null)
 
 static bool PromptYesNo(string label, bool defaultValue, WizardLanguage language = WizardLanguage.English)
 {
-    var suffix = defaultValue ? "Y/n" : "y/N";
     while (true)
     {
-        Console.Write($"{label} [{suffix}]: ");
+        Console.Write($"{label} [y/n]: ");
         var input = (Console.ReadLine() ?? "").Trim();
         if (string.IsNullOrWhiteSpace(input))
         {
-            PrintWizardPromptSeparator();
-            return defaultValue;
+            Console.WriteLine(language == WizardLanguage.Korean ? "y 또는 n을 입력해 주세요." : "Enter y or n.");
+            continue;
         }
         if (input.Equals("y", StringComparison.OrdinalIgnoreCase) || input.Equals("yes", StringComparison.OrdinalIgnoreCase))
         {
@@ -393,9 +392,9 @@ static WizardLanguage PromptWizardLanguage()
     Console.WriteLine("  2. Korean");
     while (true)
     {
-        Console.Write("Choose 1-2 [1]: ");
+        Console.Write("Choose 1-2: ");
         var input = (Console.ReadLine() ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(input) || input == "1")
+        if (input == "1")
         {
             PrintWizardPromptSeparator();
             return WizardLanguage.English;
@@ -437,9 +436,9 @@ static WizardMode PromptWizardMode(WizardLanguage language)
     Console.WriteLine(language == WizardLanguage.Korean ? "  2. 배치 메시 내보내기용 CSV 파일 선택" : "  2. Choose a CSV file for batch mesh export");
     while (true)
     {
-        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
+        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택: " : "Choose 1-2: ");
         var input = (Console.ReadLine() ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(input) || input == "1")
+        if (input == "1")
         {
             PrintWizardPromptSeparator();
             return WizardMode.SingleMesh;
@@ -460,9 +459,9 @@ static WizardBatchSkeletalMode PromptBatchSkeletalMode(WizardLanguage language)
     Console.WriteLine(language == WizardLanguage.Korean ? "  2. 스켈레탈 메시도 애니메이션 질문 없이 자동 처리" : "  2. Auto-export skeletal meshes without prompting for animations");
     while (true)
     {
-        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
+        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택: " : "Choose 1-2: ");
         var input = (Console.ReadLine() ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(input) || input == "1")
+        if (input == "1")
         {
             PrintWizardPromptSeparator();
             return WizardBatchSkeletalMode.PromptForAnimations;
@@ -483,9 +482,9 @@ static WizardBatchExistingExportScan PromptBatchExistingExportScan(WizardLanguag
     Console.WriteLine(language == WizardLanguage.Korean ? "  2. 내보내기가 들어 있는 폴더 지정" : "  2. Designate a folder that houses the exports");
     while (true)
     {
-        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
+        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택: " : "Choose 1-2: ");
         var input = (Console.ReadLine() ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(input) || input == "1")
+        if (input == "1")
         {
             PrintWizardPromptSeparator();
             return WizardBatchExistingExportScan.Auto;
