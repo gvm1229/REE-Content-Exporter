@@ -2355,8 +2355,7 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
                 if (source == null)
                 {
                     var message = $"texture source not found {tex.texPath}";
-                    if (!IsNonFatalTextureExportWarning(tex.texPath))
-                        failures.Add(message);
+                    failures.Add(message);
                     progress.WriteLine($"WARNING: {message}");
                     continue;
                 }
@@ -2413,7 +2412,7 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
                 catch (Exception ex)
                 {
                     var message = $"texture export failed {tex.texPath}: {ex.Message}";
-                    if (!IsNonFatalTextureExportWarning(tex.texPath))
+                    if (!IsNonFatalTextureExportWarning(ex))
                         failures.Add(message);
                     progress.WriteLine($"WARNING: {message}");
                 }
@@ -2436,18 +2435,10 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
     }
 }
 
-static bool IsNonFatalTextureExportWarning(string texturePath)
+static bool IsNonFatalTextureExportWarning(Exception ex)
 {
-    return IsTexturePathStem(texturePath, "Noise3D_00_MSK1");
-}
-
-static bool IsTexturePathStem(string texturePath, string expectedStem)
-{
-    var normalized = texturePath.Replace('\\', '/').Trim();
-    var fileName = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? normalized;
-    fileName = fileName.Trim().TrimEnd('\0');
-    var stem = PathUtils.GetFilenameWithoutExtensionOrVersion(fileName).ToString();
-    return string.Equals(stem, expectedStem, StringComparison.OrdinalIgnoreCase);
+    return ex is NotSupportedException
+        && ex.Message.Contains("Depth > 1 textures not supported", StringComparison.OrdinalIgnoreCase);
 }
 
 static void DecompressTextureIfNeeded(TexFile tex)
