@@ -19,7 +19,8 @@
 - CSV batch preflight now skips and reports rows that fail resolution or inspection instead of terminating the entire wizard before script generation.
 - Wizard path prompts now accept pasted paths with surrounding double quotes, including quoted relative CSV paths such as `"./all_meshes.csv"`.
 - Wizard prompts now print a separator after accepted answers so the next prompt is easier to spot during longer interactive setup and batch sessions.
-- Batch wizard scripts now scan sibling `wizard_batch_*` folders in the export root and skip rows that already have a previous successful export log plus a non-empty Unreal FBX.
+- Batch wizard scripts now let users either auto-scan sibling `wizard_batch_*` folders in the export root or designate a specific folder to scan for previous successful exports.
+- Designated existing-export scan paths use the same quote-cleaning path normalization as other wizard paths and scan only the chosen folder plus its immediate `wizard_batch_*` children.
 - Batch wizard scripts now write one log per row under `batch-job-logs`, including preflight skips, existing-success skips, successful exports, and failures.
 - Batch wizard failures now keep the script/wizard visible with failed row details and log paths after writing `batch-summary.md`, instead of closing immediately after the failure output.
 - PNG texture conversion now tries texconv's default DDS-to-PNG conversion first, then retries only the failed texture with `R8G8B8A8_UNORM` output. This preserves default output for normal textures while allowing BC5/two-channel maps such as `sm28_010_A_HGAL_HeightMap` to be written as PNG instead of failing batch exports.

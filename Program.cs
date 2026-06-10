@@ -102,7 +102,8 @@ static void RunWizard(string? configPathOverride)
     if (mode == WizardMode.BatchCsv)
     {
         var skeletalMode = PromptBatchSkeletalMode(language);
-        RunBatchCsvWizard(config, index, skeletalMode, language);
+        var existingExportScan = PromptBatchExistingExportScan(language);
+        RunBatchCsvWizard(config, index, skeletalMode, existingExportScan, language);
         return;
     }
 
@@ -144,7 +145,7 @@ static void RunSingleMeshWizard(WizardConfig config, IReadOnlyList<PragmataIndex
     }
 }
 
-static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardBatchSkeletalMode skeletalMode, WizardLanguage language)
+static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardBatchSkeletalMode skeletalMode, WizardBatchExistingExportScan existingExportScan, WizardLanguage language)
 {
     var csvPath = PromptFilePath(language == WizardLanguage.Korean ? "CSV 파일 경로" : "CSV file path", null, mustExist: true, language);
     if (!csvPath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
@@ -197,7 +198,7 @@ static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<PragmataIndexEn
     }
 
     var exportRoot = PromptExportRoot(config.DefaultExportRoot, language);
-    var scriptPath = GenerateWizardBatchScript(config, exportRoot, jobs, skippedRows);
+    var scriptPath = GenerateWizardBatchScript(config, exportRoot, jobs, skippedRows, existingExportScan);
     Console.WriteLine(language == WizardLanguage.Korean ? $"배치 스크립트를 생성했습니다: {scriptPath}" : $"Generated batch script: {scriptPath}");
 
     if (PromptYesNo(language == WizardLanguage.Korean ? "생성된 배치 스크립트를 지금 실행할까요?" : "Run the generated batch script now?", defaultValue: false, language))
@@ -470,6 +471,30 @@ static WizardBatchSkeletalMode PromptBatchSkeletalMode(WizardLanguage language)
         {
             PrintWizardPromptSeparator();
             return WizardBatchSkeletalMode.SkipAnimationPrompts;
+        }
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
+    }
+}
+
+static WizardBatchExistingExportScan PromptBatchExistingExportScan(WizardLanguage language)
+{
+    Console.WriteLine(language == WizardLanguage.Korean ? "기존 배치 내보내기 검색:" : "Existing batch export scan:");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  1. 기존 배치 내보내기 자동 검색" : "  1. Auto-scan the existing batch exports");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  2. 내보내기가 들어 있는 폴더 지정" : "  2. Designate a folder that houses the exports");
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? "1-2 중 선택 [1]: " : "Choose 1-2 [1]: ");
+        var input = (Console.ReadLine() ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(input) || input == "1")
+        {
+            PrintWizardPromptSeparator();
+            return WizardBatchExistingExportScan.Auto;
+        }
+        if (input == "2")
+        {
+            PrintWizardPromptSeparator();
+            var path = PromptDirectoryPath(language == WizardLanguage.Korean ? "기존 내보내기가 들어 있는 폴더" : "Folder containing existing exports", null, mustExist: true, language);
+            return WizardBatchExistingExportScan.Designated(path);
         }
         Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
     }
@@ -1034,7 +1059,7 @@ static string GenerateWizardScript(
     return scriptPath;
 }
 
-static string GenerateWizardBatchScript(WizardConfig config, string exportRoot, IReadOnlyList<WizardExportJob> jobs, IReadOnlyList<WizardBatchSkippedRow> skippedRows)
+static string GenerateWizardBatchScript(WizardConfig config, string exportRoot, IReadOnlyList<WizardExportJob> jobs, IReadOnlyList<WizardBatchSkippedRow> skippedRows, WizardBatchExistingExportScan existingExportScan)
 {
     Directory.CreateDirectory(exportRoot);
     var scriptDir = Path.Combine(exportRoot, "generated-scripts");
@@ -1043,14 +1068,18 @@ static string GenerateWizardBatchScript(WizardConfig config, string exportRoot, 
     var batchRoot = Path.Combine(exportRoot, $"wizard_batch_{timestamp}");
     var scriptPath = Path.Combine(scriptDir, $"wizard_batch_unreal_export_{timestamp}.ps1");
     var exporterPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter.exe");
-    var script = BuildWizardBatchPowerShell(config, exporterPath, batchRoot, jobs, skippedRows);
+    var script = BuildWizardBatchPowerShell(config, exporterPath, batchRoot, jobs, skippedRows, existingExportScan);
     File.WriteAllText(scriptPath, script, Encoding.UTF8);
     return scriptPath;
 }
 
-static string BuildWizardBatchPowerShell(WizardConfig config, string exporterPath, string batchRoot, IReadOnlyList<WizardExportJob> jobs, IReadOnlyList<WizardBatchSkippedRow> skippedRows)
+static string BuildWizardBatchPowerShell(WizardConfig config, string exporterPath, string batchRoot, IReadOnlyList<WizardExportJob> jobs, IReadOnlyList<WizardBatchSkippedRow> skippedRows, WizardBatchExistingExportScan existingExportScan)
 {
     var emptyAdditionalStreaming = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    var existingScanMode = existingExportScan.Mode.ToString();
+    var existingScanRoot = existingExportScan.Mode == WizardBatchExistingExportScanMode.Designated
+        ? existingExportScan.DirectoryPath!
+        : Path.GetDirectoryName(batchRoot) ?? ".";
     var jobBlocks = new List<string>();
     foreach (var job in jobs)
     {
@@ -1093,7 +1122,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $BatchRoot = {{PsQuote(batchRoot)}}
-$BatchParent = Split-Path $BatchRoot -Parent
+$ExistingScanMode = {{PsQuote(existingScanMode)}}
+$ExistingScanRoot = {{PsQuote(existingScanRoot)}}
 $BatchLogDir = Join-Path $BatchRoot "batch-job-logs"
 $RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $Jobs = @(
@@ -1143,8 +1173,25 @@ function Write-BatchJobLog {
 function Find-ExistingSuccessfulBatchExport {
     param([object]$Job)
 
-    if (!(Test-Path $BatchParent)) { return $null }
-    $batchFolders = Get-ChildItem -LiteralPath $BatchParent -Directory -Filter "wizard_batch_*" -ErrorAction SilentlyContinue |
+    if (!(Test-Path $ExistingScanRoot)) { return $null }
+    $scanRootItem = Get-Item -LiteralPath $ExistingScanRoot -ErrorAction SilentlyContinue
+    if (!$scanRootItem -or !$scanRootItem.PSIsContainer) { return $null }
+
+    $candidateFolders = New-Object System.Collections.Generic.List[object]
+    if ($ExistingScanMode -eq "Designated") {
+        if ($scanRootItem.Name -like "wizard_batch_*") {
+            $candidateFolders.Add($scanRootItem) | Out-Null
+        }
+        $candidateFolders.Add($scanRootItem) | Out-Null
+        Get-ChildItem -LiteralPath $scanRootItem.FullName -Directory -Filter "wizard_batch_*" -ErrorAction SilentlyContinue |
+            ForEach-Object { $candidateFolders.Add($_) | Out-Null }
+    } else {
+        Get-ChildItem -LiteralPath $scanRootItem.FullName -Directory -Filter "wizard_batch_*" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -ne $BatchRoot } |
+            ForEach-Object { $candidateFolders.Add($_) | Out-Null }
+    }
+
+    $batchFolders = $candidateFolders |
         Where-Object { $_.FullName -ne $BatchRoot } |
         Sort-Object LastWriteTime -Descending
 
@@ -1178,6 +1225,8 @@ function Find-ExistingSuccessfulBatchExport {
 New-Item -ItemType Directory -Force -Path $BatchRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $BatchLogDir | Out-Null
 Write-Host "BATCH_EXPORT_ROOT=$BatchRoot"
+Write-Host "BATCH_EXISTING_SCAN_MODE=$ExistingScanMode"
+Write-Host "BATCH_EXISTING_SCAN_ROOT=$ExistingScanRoot"
 Write-Host "BATCH_JOB_LOG_DIR=$BatchLogDir"
 Write-Host "BATCH_JOB_COUNT=$($Jobs.Count)"
 Write-Host "BATCH_PREFLIGHT_SKIPPED_COUNT=$($PreflightSkipped.Count)"
@@ -2872,6 +2921,18 @@ enum WizardBatchSkeletalMode
 {
     PromptForAnimations,
     SkipAnimationPrompts,
+}
+
+enum WizardBatchExistingExportScanMode
+{
+    Auto,
+    Designated,
+}
+
+sealed record WizardBatchExistingExportScan(WizardBatchExistingExportScanMode Mode, string? DirectoryPath)
+{
+    public static WizardBatchExistingExportScan Auto { get; } = new(WizardBatchExistingExportScanMode.Auto, null);
+    public static WizardBatchExistingExportScan Designated(string directoryPath) => new(WizardBatchExistingExportScanMode.Designated, directoryPath);
 }
 
 enum AssetKind
