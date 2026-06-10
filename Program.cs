@@ -2438,14 +2438,16 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
 
 static bool IsNonFatalTextureExportWarning(string texturePath)
 {
-    return IsTexturePathFileName(texturePath, "Noise3D_00_MSK1.tex");
+    return IsTexturePathStem(texturePath, "Noise3D_00_MSK1");
 }
 
-static bool IsTexturePathFileName(string texturePath, string expectedFileName)
+static bool IsTexturePathStem(string texturePath, string expectedStem)
 {
-    var normalized = texturePath.Replace('\\', '/');
+    var normalized = texturePath.Replace('\\', '/').Trim();
     var fileName = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? normalized;
-    return string.Equals(fileName, expectedFileName, StringComparison.OrdinalIgnoreCase);
+    fileName = fileName.Trim().TrimEnd('\0');
+    var stem = PathUtils.GetFilenameWithoutExtensionOrVersion(fileName).ToString();
+    return string.Equals(stem, expectedStem, StringComparison.OrdinalIgnoreCase);
 }
 
 static void DecompressTextureIfNeeded(TexFile tex)
