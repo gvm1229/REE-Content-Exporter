@@ -1081,6 +1081,7 @@ static string BuildWizardBatchPowerShell(WizardConfig config, string exporterPat
         Status = "Skipped"
         Output = ""
         Details = {{PsQuote(skipped.Reason)}}
+        Log = ""
     }
 """);
     }
@@ -1092,6 +1093,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $BatchRoot = {{PsQuote(batchRoot)}}
+$BatchParent = Split-Path $BatchRoot -Parent
+$BatchLogDir = Join-Path $BatchRoot "batch-job-logs"
 $RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $Jobs = @(
 {{string.Join(",\n", jobBlocks)}}
@@ -1117,30 +1120,132 @@ function Get-PrefixedValue {
     return $match.Substring($Prefix.Length)
 }
 
+function New-BatchJobLogPath {
+    param(
+        [int]$Row,
+        [string]$Folder
+    )
+    $safeFolder = if ([string]::IsNullOrWhiteSpace($Folder)) { "preflight" } else { $Folder -replace '[\\/:*?"<>|]', '_' }
+    return Join-Path $BatchLogDir ("row{0:000}_{1}.log" -f $Row, $safeFolder)
+}
+
+function Write-BatchJobLog {
+    param(
+        [string]$Path,
+        [string[]]$Lines
+    )
+    $parent = Split-Path $Path -Parent
+    if (!(Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    $Lines | Set-Content -LiteralPath $Path -Encoding UTF8
+    Write-Host "BATCH_JOB_LOG=$Path"
+}
+
+function Find-ExistingSuccessfulBatchExport {
+    param([object]$Job)
+
+    if (!(Test-Path $BatchParent)) { return $null }
+    $batchFolders = Get-ChildItem -LiteralPath $BatchParent -Directory -Filter "wizard_batch_*" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -ne $BatchRoot } |
+        Sort-Object LastWriteTime -Descending
+
+    foreach ($batchFolder in $batchFolders) {
+        $meshFolder = Join-Path $batchFolder.FullName $Job.Folder
+        if (!(Test-Path $meshFolder)) { continue }
+
+        $successLog = Get-ChildItem -LiteralPath $meshFolder -Recurse -File -Filter "ree_export_wizard-SUCCESS.log" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if (!$successLog) { continue }
+
+        $outputDir = Split-Path $successLog.FullName -Parent
+        $fbx = Get-ChildItem -LiteralPath $outputDir -File -Filter "*_unreal.fbx" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Length -gt 0 } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if (!$fbx) { continue }
+
+        return [pscustomobject]@{
+            BatchRoot = $batchFolder.FullName
+            Output = $outputDir
+            SuccessLog = $successLog.FullName
+            Fbx = $fbx.FullName
+        }
+    }
+
+    return $null
+}
+
 New-Item -ItemType Directory -Force -Path $BatchRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $BatchLogDir | Out-Null
 Write-Host "BATCH_EXPORT_ROOT=$BatchRoot"
+Write-Host "BATCH_JOB_LOG_DIR=$BatchLogDir"
 Write-Host "BATCH_JOB_COUNT=$($Jobs.Count)"
 Write-Host "BATCH_PREFLIGHT_SKIPPED_COUNT=$($PreflightSkipped.Count)"
 
 foreach ($Skipped in $PreflightSkipped) {
+    $Skipped.Log = New-BatchJobLogPath -Row $Skipped.Row -Folder "preflight"
+    Write-BatchJobLog -Path $Skipped.Log -Lines @(
+        "STATUS=Skipped",
+        "ROW=$($Skipped.Row)",
+        "QUERY=$($Skipped.Query)",
+        "DETAILS=$($Skipped.Details)"
+    )
     $Results.Add($Skipped) | Out-Null
     Write-Host "BATCH_JOB_SKIPPED row=$($Skipped.Row) reason=$($Skipped.Details)"
 }
 
 foreach ($Job in $Jobs) {
     Write-Host "BATCH_JOB_START row=$($Job.Row) mesh=$($Job.Mesh)"
-    $TempScript = Join-Path $env:TEMP ("ree_wizard_batch_{0}_row{1}.ps1" -f $RunStamp, $Job.Row)
-    $ScriptText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Job.ScriptBase64))
-    $ScriptText | Set-Content -LiteralPath $TempScript -Encoding UTF8
+    $JobLogPath = New-BatchJobLogPath -Row $Job.Row -Folder $Job.Folder
+    $Existing = Find-ExistingSuccessfulBatchExport -Job $Job
+    if ($Existing) {
+        Write-BatchJobLog -Path $JobLogPath -Lines @(
+            "STATUS=Skipped existing success",
+            "ROW=$($Job.Row)",
+            "QUERY=$($Job.Query)",
+            "MESH=$($Job.Mesh)",
+            "EXISTING_BATCH_ROOT=$($Existing.BatchRoot)",
+            "EXISTING_OUTPUT=$($Existing.Output)",
+            "EXISTING_SUCCESS_LOG=$($Existing.SuccessLog)",
+            "EXISTING_FBX=$($Existing.Fbx)"
+        )
+        $Results.Add([pscustomobject]@{
+            Row = $Job.Row
+            Query = $Job.Query
+            Mesh = $Job.Mesh
+            Status = "Skipped existing success"
+            Output = $Existing.Output
+            Details = "Existing successful export found in $($Existing.BatchRoot)"
+            Log = $JobLogPath
+        }) | Out-Null
+        Write-Host "BATCH_JOB_SKIPPED_EXISTING row=$($Job.Row) output=$($Existing.Output)"
+        Write-Host "BATCH_JOB_DONE row=$($Job.Row) status=Skipped existing success"
+        continue
+    }
 
-    $Arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $TempScript)
-    if ($KeepSourceFbx) { $Arguments += "-KeepSourceFbx" }
-    $JobOutput = @(powershell @Arguments 2>&1)
-    $ExitCode = $LASTEXITCODE
-    $TextOutput = @($JobOutput | ForEach-Object { $_.ToString() })
+    $TempScript = Join-Path $env:TEMP ("ree_wizard_batch_{0}_row{1}.ps1" -f $RunStamp, $Job.Row)
+    $TextOutput = @()
+    $ExitCode = 1
+    try {
+        $ScriptText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Job.ScriptBase64))
+        $ScriptText | Set-Content -LiteralPath $TempScript -Encoding UTF8
+
+        $Arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $TempScript)
+        if ($KeepSourceFbx) { $Arguments += "-KeepSourceFbx" }
+        $JobOutput = @(powershell @Arguments 2>&1)
+        $ExitCode = $LASTEXITCODE
+        $TextOutput = @($JobOutput | ForEach-Object { $_.ToString() })
+    } catch {
+        $TextOutput = @("BATCH_JOB_WRAPPER_FAILED=$($_.Exception.Message)")
+        $ExitCode = 1
+    }
     foreach ($Line in $TextOutput) { Write-Host $Line }
 
     $ExportDir = Get-PrefixedValue -Lines $TextOutput -Prefix "EXPORT_DIR="
+    $ExportLog = Get-PrefixedValue -Lines $TextOutput -Prefix "EXPORT_LOG="
+    if ([string]::IsNullOrWhiteSpace($ExportLog)) {
+        $ExportLog = Get-PrefixedValue -Lines $TextOutput -Prefix "EXPORT_LOG_TEMP="
+    }
     $Failure = Get-PrefixedValue -Lines $TextOutput -Prefix "EXPORT_FAILED="
     $SkippedCount = @($TextOutput | Where-Object { $_.StartsWith("BLENDER_SKIPPED_SOURCE=", [System.StringComparison]::OrdinalIgnoreCase) }).Count
     $Status = if ($ExitCode -eq 0) {
@@ -1155,6 +1260,19 @@ foreach ($Job in $Jobs) {
     } else {
         "Resolved and exported"
     }
+    $LogLines = New-Object System.Collections.Generic.List[string]
+    $LogLines.Add("STATUS=$Status")
+    $LogLines.Add("ROW=$($Job.Row)")
+    $LogLines.Add("QUERY=$($Job.Query)")
+    $LogLines.Add("MESH=$($Job.Mesh)")
+    $LogLines.Add("EXIT_CODE=$ExitCode")
+    $LogLines.Add("OUTPUT=$ExportDir")
+    $LogLines.Add("EXPORT_LOG=$ExportLog")
+    $LogLines.Add("DETAILS=$Details")
+    $LogLines.Add("")
+    $LogLines.Add("---- child output ----")
+    foreach ($Line in $TextOutput) { $LogLines.Add($Line) }
+    Write-BatchJobLog -Path $JobLogPath -Lines $LogLines
 
     $Results.Add([pscustomobject]@{
         Row = $Job.Row
@@ -1163,6 +1281,7 @@ foreach ($Job in $Jobs) {
         Status = $Status
         Output = $ExportDir
         Details = $Details
+        Log = $JobLogPath
     }) | Out-Null
 
     Remove-Item -LiteralPath $TempScript -Force -ErrorAction SilentlyContinue
@@ -1175,15 +1294,15 @@ $Lines.Add("# Wizard Batch Export Summary")
 $Lines.Add("")
 $Lines.Add("Batch root: ``$BatchRoot``")
 $Lines.Add("")
-$Lines.Add("| Row | Status | Mesh | Output | Details |")
-$Lines.Add("| --- | --- | --- | --- | --- |")
+$Lines.Add("| Row | Status | Mesh | Output | Log | Details |")
+$Lines.Add("| --- | --- | --- | --- | --- | --- |")
 foreach ($Result in $Results) {
-    $Lines.Add("| $($Result.Row) | $(Format-MarkdownCell $Result.Status) | $(Format-MarkdownCell $Result.Mesh) | $(Format-MarkdownCell $Result.Output) | $(Format-MarkdownCell $Result.Details) |")
+    $Lines.Add("| $($Result.Row) | $(Format-MarkdownCell $Result.Status) | $(Format-MarkdownCell $Result.Mesh) | $(Format-MarkdownCell $Result.Output) | $(Format-MarkdownCell $Result.Log) | $(Format-MarkdownCell $Result.Details) |")
 }
 $Lines.Add("")
 $Lines.Add("Resolved rows: $($Jobs.Count)")
 $Lines.Add("Exported rows: $(@($Results | Where-Object { $_.Status -like 'Exported*' }).Count)")
-$Lines.Add("Skipped rows: $(@($Results | Where-Object { $_.Status -eq 'Skipped' }).Count)")
+$Lines.Add("Skipped rows: $(@($Results | Where-Object { $_.Status -like 'Skipped*' }).Count)")
 $Lines.Add("Failed rows: $(@($Results | Where-Object { $_.Status -eq 'Failed' }).Count)")
 $Lines | Set-Content -LiteralPath $SummaryPath -Encoding UTF8
 Write-Host "BATCH_SUMMARY=$SummaryPath"
@@ -1191,6 +1310,19 @@ Write-Host "BATCH_SUMMARY=$SummaryPath"
 $FailedCount = @($Results | Where-Object { $_.Status -eq "Failed" }).Count
 if ($FailedCount -gt 0) {
     Write-Host "BATCH_COMPLETED_WITH_FAILURES=$FailedCount"
+    Write-Host "BATCH_FAILURE_DETAILS_BEGIN"
+    foreach ($Failure in @($Results | Where-Object { $_.Status -eq "Failed" })) {
+        Write-Host ("FAILED_ROW={0} MESH={1}" -f $Failure.Row, $Failure.Mesh)
+        Write-Host ("FAILED_DETAILS={0}" -f $Failure.Details)
+        Write-Host ("FAILED_LOG={0}" -f $Failure.Log)
+        if (![string]::IsNullOrWhiteSpace($Failure.Output)) { Write-Host ("FAILED_OUTPUT={0}" -f $Failure.Output) }
+    }
+    Write-Host "BATCH_FAILURE_DETAILS_END"
+    try {
+        Read-Host "Batch export completed with failures. Review the summary/log paths above, then press Enter to close"
+    } catch {
+        Write-Host "BATCH_FAILURE_PAUSE_SKIPPED=$($_.Exception.Message)"
+    }
     exit 1
 }
 
@@ -1610,6 +1742,8 @@ static void RunGeneratedScript(string scriptPath, WizardLanguage language = Wiza
     else
     {
         Console.WriteLine(language == WizardLanguage.Korean ? $"스크립트가 종료 코드 {proc.ExitCode}(으)로 실패했습니다." : $"Script failed with exit code {proc.ExitCode}.");
+        Console.WriteLine(language == WizardLanguage.Korean ? "위의 요약과 로그 경로를 확인한 뒤 Enter 키를 눌러 닫으세요." : "Review the summary and log paths above, then press Enter to close.");
+        try { Console.ReadLine(); } catch { }
     }
 }
 
