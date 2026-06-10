@@ -245,6 +245,38 @@ Rules:
 - Do not commit unless the user explicitly asks for a commit.
 - If there are pre-existing uncommitted changes, preserve them and report them clearly.
 
+## Repo-local `ship` workflow
+
+When the user prompt is exactly `ship`, treat it as a repo-exclusive release workflow trigger.
+
+Required behavior:
+
+1. Inspect `git status --short --branch` and the current diff before doing anything else.
+2. Run smoke tests before committing:
+   - always run `dotnet build -c Release`
+   - if tracked PowerShell scripts changed, validate each changed script with:
+     ```powershell
+     [scriptblock]::Create((Get-Content -LiteralPath "<script.ps1>" -Raw))
+     ```
+   - do not run long asset export scripts unless the user explicitly asks
+3. If smoke tests pass and there are changes, commit logical changes separately where practical, then push the current branch.
+4. Do not silently stage ambiguous untracked artifacts such as logs, `dist/`, or local verification CSVs unless the ship request explicitly includes them.
+5. After pushing, inspect GitHub releases with `gh release list` and `gh release view` to identify the latest release.
+6. Ask the user whether to update the existing latest release or version up. If versioning up, ask for or infer the next patch version only after showing the latest version found.
+7. After the user chooses the release target, rebuild the release zip, replace or upload the target release asset, and update that release description.
+
+Release packaging defaults:
+
+- Use the existing `win-x64-singlefile` publish profile.
+- Verify the release archive contains:
+  ```text
+  REE-Content-Exporter.exe
+  texconv.exe
+  DirectXTex.dll
+  libGDeflate.dll
+  assimp.dll
+  ```
+
 ## Current known-good script patterns
 
 Use these existing scripts as reference patterns when adding a new asset:
