@@ -226,6 +226,7 @@ Rules:
 - Do not silently accept a missing or empty texture folder in production scripts.
 - Do not release a build that depends on users installing texture helper tools separately. PNG export requires `texconv.exe`; release artifacts must bundle it beside `REE-Content-Exporter.exe`, and build/publish should fail if the converter cannot be included.
 - Keep the dynamic path fallback behavior for old/new `natives\STM` and `re_chunk_000\streaming` style paths.
+- Treat `Noise3D_00_MSK1.tex` texture export errors as warnings only; this known 3D noise texture is unsupported by the TEX reader. Do not broaden this exception: every other texture source, read, DDS, or PNG conversion error must remain fatal.
 - If adding a new asset script, confirm its material/MDF lookup still resolves textures from the correct source mesh.
 
 ## Script execution rules for AI agents

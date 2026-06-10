@@ -2355,7 +2355,8 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
                 if (source == null)
                 {
                     var message = $"texture source not found {tex.texPath}";
-                    failures.Add(message);
+                    if (!IsNonFatalTextureExportWarning(tex.texPath))
+                        failures.Add(message);
                     progress.WriteLine($"WARNING: {message}");
                     continue;
                 }
@@ -2412,7 +2413,8 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
                 catch (Exception ex)
                 {
                     var message = $"texture export failed {tex.texPath}: {ex.Message}";
-                    failures.Add(message);
+                    if (!IsNonFatalTextureExportWarning(tex.texPath))
+                        failures.Add(message);
                     progress.WriteLine($"WARNING: {message}");
                 }
                 finally
@@ -2432,6 +2434,18 @@ static void ExportMaterialTextures(IReadOnlyList<(MaterialGroupWrapper Materials
     {
         throw new Exception($"Texture export failed for {failures.Count} texture(s). See warnings above.");
     }
+}
+
+static bool IsNonFatalTextureExportWarning(string texturePath)
+{
+    return IsTexturePathFileName(texturePath, "Noise3D_00_MSK1.tex");
+}
+
+static bool IsTexturePathFileName(string texturePath, string expectedFileName)
+{
+    var normalized = texturePath.Replace('\\', '/');
+    var fileName = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? normalized;
+    return string.Equals(fileName, expectedFileName, StringComparison.OrdinalIgnoreCase);
 }
 
 static void DecompressTextureIfNeeded(TexFile tex)

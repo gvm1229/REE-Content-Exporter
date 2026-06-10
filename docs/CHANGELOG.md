@@ -8,6 +8,7 @@
 - Release build/publish now fails if `texconv.exe` cannot be found on the build machine or supplied with `-p:TexconvPath="<path>\texconv.exe"`.
 - Runtime PNG conversion now prefers the bundled `texconv.exe` before checking `PATH` or the developer WinGet package cache.
 - Texture export failures now fail the exporter instead of producing a misleading success log with only `materials.textures.json` or leftover temporary DDS files.
+- `Noise3D_00_MSK1.tex` texture export errors remain warnings because this known 3D noise texture is not supported by the TEX reader, while all other texture export errors still fail the exporter.
 - Temporary DDS files used during PNG conversion are removed even when PNG conversion fails.
 - Wizard v0.2 now offers single-mesh export or one-column CSV batch mesh export after setup.
 - CSV batch import accepts optional `mesh`, `mesh_name`, or `name` headers, rejects blank/duplicate/extra-column rows, and resolves each row through the existing mesh filename/path resolver.
