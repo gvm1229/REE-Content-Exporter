@@ -3247,6 +3247,22 @@ sealed class WizardConfig
     public string DefaultExportRoot { get; set; } = "";
     public string BlenderPath { get; set; } = "";
     public string TextureFormat { get; set; } = "png";
+    [JsonPropertyName("guiExportOptionsMode")]
+    public string GuiExportOptionsMode { get; set; } = "";
+    [JsonPropertyName("guiSplitMotlists")]
+    public bool GuiSplitMotlists { get; set; }
+    [JsonPropertyName("guiSplitAnimations")]
+    public bool GuiSplitAnimations { get; set; }
+    [JsonPropertyName("guiNoTextures")]
+    public bool GuiNoTextures { get; set; }
+    [JsonPropertyName("guiIncludeLods")]
+    public bool GuiIncludeLods { get; set; }
+    [JsonPropertyName("guiIncludeOcclusion")]
+    public bool GuiIncludeOcclusion { get; set; }
+    [JsonPropertyName("guiNoPlaceholderBones")]
+    public bool GuiNoPlaceholderBones { get; set; }
+    [JsonPropertyName("guiAllowMissingStreaming")]
+    public bool GuiAllowMissingStreaming { get; set; }
     public DateTimeOffset CreatedUtc { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; }
 }

@@ -59,6 +59,8 @@ internal sealed class GuiWizardForm : Form
     private readonly ComboBox outputFormatCombo = new();
     private readonly ComboBox textureFormatCombo = new();
     private readonly NumericUpDown fbxScaleInput = new();
+    private readonly ComboBox exportOptionsModeCombo = new();
+    private readonly ComboBox languageCombo = new();
     private readonly CheckBox splitMotlistsCheck = new() { Text = "Split by MOTLIST" };
     private readonly CheckBox splitAnimationsCheck = new() { Text = "Split animations" };
     private readonly CheckBox noTexturesCheck = new() { Text = "No textures" };
@@ -71,12 +73,19 @@ internal sealed class GuiWizardForm : Form
     private readonly TextBox logText = new();
     private readonly ProgressBar progressBar = new();
     private readonly Label progressPercentLabel = new() { Text = "0%", TextAlign = ContentAlignment.MiddleRight };
-    private readonly Button runButton = new() { Text = "Run Export" };
-    private readonly Button cancelButton = new() { Text = "Cancel", Enabled = false };
+    private readonly ToolTip tooltips = new();
+    private readonly Button runButton = new FooterActionButton() { Text = "Run Export" };
+    private readonly Button cancelButton = new FooterActionButton() { Text = "Cancel", Enabled = false };
+    private Button? savePathsButton;
+    private Button? copyCommandButton;
     private Button? saveGameButton;
     private Button? changeGameButton;
+    private FlowLayoutPanel? exportOptionChecksPanel;
     private Control? motlistDirRow;
     private Control? animationFileRow;
+    private bool suppressExportOptionPersistence;
+    private bool suppressLanguagePersistence;
+    private bool initializing = true;
 
     public GuiWizardForm(string? configPathOverride)
     {
@@ -85,8 +94,8 @@ internal sealed class GuiWizardForm : Form
 
         Text = "REE-Content-Exporter Wizard";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1120, 780);
-        Size = new Size(1280, 900);
+        MinimumSize = new Size(1180, 820);
+        Size = new Size(1280, 920);
         BackColor = DarkBack;
         ForeColor = DarkText;
         Font = new Font("Segoe UI", 9F);
@@ -94,8 +103,11 @@ internal sealed class GuiWizardForm : Form
         BuildLayout();
         LoadConfigIntoControls();
         UpdateGameUi();
+        ApplyLocalization();
+        ApplyTooltips();
         UpdateCommandPreview();
         ApplyDarkTheme(this);
+        initializing = false;
     }
 
     private void BuildLayout()
@@ -109,7 +121,7 @@ internal sealed class GuiWizardForm : Form
             BackColor = DarkBack,
         };
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
         Controls.Add(root);
 
         var tabs = new TabControl
@@ -182,7 +194,7 @@ internal sealed class GuiWizardForm : Form
     {
         var panel = CreateGroup("Game configuration");
         var grid = CreateGrid(2);
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 82));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
@@ -294,14 +306,7 @@ internal sealed class GuiWizardForm : Form
         fbxScaleInput.Value = 100M;
         grid.Controls.Add(CreateFormatRow(), 0, 5);
 
-        var checksRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = DarkPanel };
-        checksRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-        checksRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        checksRow.Controls.Add(CreateRowLabel("Export options"), 0, 0);
-        var checks = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = false, WrapContents = true, BackColor = DarkPanel };
-        checks.Controls.AddRange([splitMotlistsCheck, splitAnimationsCheck, noTexturesCheck, includeLodsCheck, includeOcclusionCheck, noPlaceholderBonesCheck, allowMissingStreamingCheck]);
-        checksRow.Controls.Add(checks, 1, 0);
-        grid.Controls.Add(checksRow, 0, 6);
+        grid.Controls.Add(CreateExportOptionsRow(), 0, 6);
 
         grid.Controls.Add(CreatePathRow("Output path", outputPathText, () => BrowseSaveOutput()), 0, 7);
 
@@ -336,7 +341,7 @@ internal sealed class GuiWizardForm : Form
         TableLayoutPanel CreatePathRow(string label, TextBox textBox, Action browse, params Button[] extraButtons)
         {
             var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3 + extraButtons.Length, RowCount = 1, BackColor = DarkPanel };
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 54));
             foreach (var _ in extraButtons) row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
@@ -362,7 +367,7 @@ internal sealed class GuiWizardForm : Form
         TableLayoutPanel CreateListRow(string label, ListBox listBox, params Button[] buttons)
         {
             var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = DarkPanel };
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Math.Max(150, buttons.Length * 80)));
             row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -380,8 +385,8 @@ internal sealed class GuiWizardForm : Form
         TableLayoutPanel CreateAnimationSourceRow()
         {
             var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = DarkPanel };
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -399,14 +404,18 @@ internal sealed class GuiWizardForm : Form
         TableLayoutPanel CreateFormatRow()
         {
             var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = DarkPanel };
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             row.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
             row.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
 
             animationFilterText.Dock = DockStyle.Fill;
             animationFilterText.Margin = new Padding(0, 5, 0, 5);
-            row.Controls.Add(CreateRowLabel("Animation filter"), 0, 0);
+            var animationNameFilterLabel = CreateRowLabel("Animation name filter");
+            animationNameFilterLabel.AutoSize = false;
+            animationNameFilterLabel.Dock = DockStyle.Fill;
+            animationNameFilterLabel.TextAlign = ContentAlignment.MiddleLeft;
+            row.Controls.Add(animationNameFilterLabel, 0, 0);
             row.Controls.Add(animationFilterText, 1, 0);
 
             var optionFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = false, WrapContents = false, BackColor = DarkPanel };
@@ -425,13 +434,41 @@ internal sealed class GuiWizardForm : Form
             row.Controls.Add(optionFlow, 1, 1);
             return row;
         }
+
+        TableLayoutPanel CreateExportOptionsRow()
+        {
+            var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = DarkPanel };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            row.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            exportOptionsModeCombo.DropDownStyle = ComboBoxStyle.DropDownList;
+            exportOptionsModeCombo.Items.AddRange(["Default", "Custom"]);
+            exportOptionsModeCombo.Dock = DockStyle.Fill;
+            exportOptionsModeCombo.Margin = new Padding(0, 5, 0, 5);
+            exportOptionsModeCombo.SelectedIndexChanged += (_, _) => OnExportOptionsModeChanged();
+
+            exportOptionChecksPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = false, WrapContents = true, BackColor = DarkPanel };
+            exportOptionChecksPanel.Controls.AddRange([splitMotlistsCheck, splitAnimationsCheck, noTexturesCheck, includeLodsCheck, includeOcclusionCheck, noPlaceholderBonesCheck, allowMissingStreamingCheck]);
+            foreach (var checkBox in GetExportOptionCheckBoxes())
+            {
+                checkBox.CheckedChanged += (_, _) => OnExportOptionCheckChanged(checkBox);
+            }
+
+            row.Controls.Add(CreateRowLabel("Export options"), 0, 0);
+            row.Controls.Add(exportOptionsModeCombo, 1, 0);
+            row.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = DarkPanel }, 0, 1);
+            row.Controls.Add(exportOptionChecksPanel, 1, 1);
+            return row;
+        }
     }
 
     private Control BuildLogPanel()
     {
         var panel = CreateGroup("Progress and command");
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         panel.Controls.Add(grid);
@@ -443,7 +480,10 @@ internal sealed class GuiWizardForm : Form
         progressBar.Style = ProgressBarStyle.Blocks;
         progressBar.Minimum = 0;
         progressBar.Maximum = 100;
+        progressBar.Margin = new Padding(0, 7, 6, 7);
         progressPercentLabel.Dock = DockStyle.Fill;
+        progressPercentLabel.AutoSize = false;
+        progressPercentLabel.Margin = new Padding(0);
         progressRow.Controls.Add(progressBar, 0, 0);
         progressRow.Controls.Add(progressPercentLabel, 1, 0);
         commandPreviewText.Dock = DockStyle.Fill;
@@ -464,23 +504,78 @@ internal sealed class GuiWizardForm : Form
 
     private Control BuildActionPanel()
     {
-        var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
-        runButton.Text = "Run";
-        runButton.Width = 64;
-        runButton.Height = 34;
-        cancelButton.Width = 72;
-        cancelButton.Height = 34;
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkBack };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 900));
+
+        var languagePanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = DarkBack };
+        var languageLabel = new Label { Text = "Language", AutoSize = true, Anchor = AnchorStyles.Left, Padding = new Padding(0, 9, 6, 0) };
+        languageCombo.DropDownStyle = ComboBoxStyle.DropDownList;
+        languageCombo.Width = 150;
+        languageCombo.Height = 34;
+        languageCombo.Items.AddRange(["English", "Korean"]);
+        languageCombo.SelectedIndexChanged += (_, _) => OnLanguageChanged();
+        languagePanel.Controls.Add(languageLabel);
+        languagePanel.Controls.Add(languageCombo);
+
+        var actions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1, BackColor = DarkBack };
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220));
+        actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        runButton.Text = "Run Export";
+        ConfigureActionButton(runButton, leftMargin: 6);
+        ConfigureActionButton(cancelButton, leftMargin: 6);
         runButton.Click += async (_, _) => await RunExportAsync();
         cancelButton.Click += (_, _) => CancelExport();
-        var saveConfigButton = new Button { Text = "Save", Width = 64, Height = 34 };
-        saveConfigButton.Click += (_, _) => SavePathConfig();
-        var copyCommandButton = new Button { Text = "Copy", Width = 64, Height = 34 };
+        savePathsButton = new FooterActionButton { Text = "Save Paths" };
+        ConfigureActionButton(savePathsButton, leftMargin: 0);
+        savePathsButton.Click += (_, _) => SavePathConfig();
+        copyCommandButton = new FooterActionButton { Text = "Copy Command" };
+        ConfigureActionButton(copyCommandButton, leftMargin: 6);
         copyCommandButton.Click += (_, _) => Clipboard.SetText(commandPreviewText.Text);
-        panel.Controls.Add(runButton);
-        panel.Controls.Add(cancelButton);
-        panel.Controls.Add(copyCommandButton);
-        panel.Controls.Add(saveConfigButton);
+        actions.Controls.Add(savePathsButton, 1, 0);
+        actions.Controls.Add(copyCommandButton, 2, 0);
+        actions.Controls.Add(cancelButton, 3, 0);
+        actions.Controls.Add(runButton, 4, 0);
+
+        panel.Controls.Add(languagePanel, 0, 0);
+        panel.Controls.Add(actions, 1, 0);
         return panel;
+
+        static void ConfigureActionButton(Button button, int leftMargin)
+        {
+            button.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            button.Height = 36;
+            button.Margin = new Padding(leftMargin, 8, 0, 0);
+        }
+    }
+
+    private sealed class FooterActionButton : Button
+    {
+        public FooterActionButton()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var back = Enabled ? BackColor : Color.FromArgb(42, 47, 57);
+            using var fill = new SolidBrush(back);
+            e.Graphics.FillRectangle(fill, ClientRectangle);
+            using var border = new Pen(Accent);
+            e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+            var textColor = Enabled ? ForeColor : MutedText;
+            TextRenderer.DrawText(
+                e.Graphics,
+                Text,
+                Font,
+                ClientRectangle,
+                textColor,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
     }
 
     private static GroupBox CreateGroup(string title)
@@ -525,7 +620,7 @@ internal sealed class GuiWizardForm : Form
                 button.FlatStyle = FlatStyle.Flat;
                 button.FlatAppearance.BorderColor = Accent;
                 button.FlatAppearance.MouseOverBackColor = Color.FromArgb(54, 65, 82);
-                button.UseCompatibleTextRendering = true;
+                button.UseCompatibleTextRendering = false;
                 button.TextAlign = ContentAlignment.MiddleCenter;
                 button.MinimumSize = new Size(0, 32);
                 break;
@@ -580,10 +675,18 @@ internal sealed class GuiWizardForm : Form
 
     private void LoadConfigIntoControls()
     {
+        suppressLanguagePersistence = true;
+        languageCombo.SelectedIndex = IsKorean() ? 1 : 0;
+        suppressLanguagePersistence = false;
+
         extractRootText.Text = config.ExtractRoot;
         exportRootText.Text = config.DefaultExportRoot;
         blenderPathText.Text = config.BlenderPath;
         textureFormatCombo.SelectedItem = string.IsNullOrWhiteSpace(config.TextureFormat) ? "png" : config.TextureFormat;
+        suppressExportOptionPersistence = true;
+        exportOptionsModeCombo.SelectedIndex = IsCustomExportOptionsMode() ? 1 : 0;
+        LoadCustomExportOptionsIntoChecks();
+        suppressExportOptionPersistence = false;
         TrySelectConfiguredGame();
     }
 
@@ -605,21 +708,25 @@ internal sealed class GuiWizardForm : Form
     {
         if (TryGetConfiguredGame(out var game))
         {
-            currentGameLabel.Text = $"{game.DisplayName} ({game.Id}). Delete the config.json game line or click Edit to change.";
+            currentGameLabel.Text = IsKorean()
+                ? $"{game.DisplayName} ({game.Id}). 변경하려면 config.json의 game 줄을 삭제하거나 편집을 누르세요."
+                : $"{game.DisplayName} ({game.Id}). Delete the config.json game line or click Edit to change.";
             gameCombo.Enabled = false;
             if (saveGameButton != null) saveGameButton.Enabled = false;
             if (changeGameButton != null) changeGameButton.Enabled = true;
         }
         else if (!string.IsNullOrWhiteSpace(config.Game))
         {
-            currentGameLabel.Text = $"Unsupported saved game: {config.Game}. Click Edit or delete the config.json game line.";
+            currentGameLabel.Text = IsKorean()
+                ? $"지원하지 않는 저장 게임: {config.Game}. 편집을 누르거나 config.json의 game 줄을 삭제하세요."
+                : $"Unsupported saved game: {config.Game}. Click Edit or delete the config.json game line.";
             gameCombo.Enabled = false;
             if (saveGameButton != null) saveGameButton.Enabled = false;
             if (changeGameButton != null) changeGameButton.Enabled = true;
         }
         else
         {
-            currentGameLabel.Text = "No game saved. Select a game, then click Set.";
+            currentGameLabel.Text = L("No game saved. Select a game, then click Set.");
             gameCombo.Enabled = true;
             if (saveGameButton != null) saveGameButton.Enabled = true;
             if (changeGameButton != null) changeGameButton.Enabled = false;
@@ -668,11 +775,11 @@ internal sealed class GuiWizardForm : Form
             SaveConfig();
             UpdateGameUi();
             UpdateCommandPreview();
-            AppendLog($"Saved game configuration: {game.DisplayName}");
+            AppendLog(IsKorean() ? $"게임 구성을 저장했습니다: {game.DisplayName}" : $"Saved game configuration: {game.DisplayName}");
         }
         catch (Exception ex)
         {
-            AppendLog("Game configuration failed: " + ex.Message);
+            AppendLog(L("Game configuration failed: ") + ex.Message);
             MessageBox.Show(ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -686,7 +793,7 @@ internal sealed class GuiWizardForm : Form
         SaveConfig();
         UpdateGameUi();
         UpdateCommandPreview();
-        AppendLog("Cleared game configuration. Select a game and click Set.");
+        AppendLog(L("Cleared game configuration. Select a game and click Set."));
     }
 
     private void SavePathConfig()
@@ -696,12 +803,239 @@ internal sealed class GuiWizardForm : Form
         config.BlenderPath = blenderPathText.Text.Trim();
         config.TextureFormat = (textureFormatCombo.SelectedItem?.ToString() ?? "png").ToLowerInvariant();
         SaveConfig();
-        AppendLog("Saved path and texture settings.");
+        AppendLog(L("Saved path and texture settings."));
     }
+
+    private bool IsKorean()
+        => string.Equals(config.Language, "ko", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(config.Language, "korean", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsCustomExportOptionsMode()
+        => string.Equals(config.GuiExportOptionsMode, "custom", StringComparison.OrdinalIgnoreCase);
+
+    private void LoadCustomExportOptionsIntoChecks()
+    {
+        suppressExportOptionPersistence = true;
+        splitMotlistsCheck.Checked = config.GuiSplitMotlists;
+        splitAnimationsCheck.Checked = config.GuiSplitAnimations;
+        noTexturesCheck.Checked = config.GuiNoTextures;
+        includeLodsCheck.Checked = config.GuiIncludeLods;
+        includeOcclusionCheck.Checked = config.GuiIncludeOcclusion;
+        noPlaceholderBonesCheck.Checked = config.GuiNoPlaceholderBones;
+        allowMissingStreamingCheck.Checked = config.GuiAllowMissingStreaming;
+        suppressExportOptionPersistence = false;
+    }
+
+    private void ApplyDefaultExportOptions()
+    {
+        var animations = includeAnimationsCheck.Checked;
+        var mode = GetAnimationSourceMode();
+        suppressExportOptionPersistence = true;
+        splitMotlistsCheck.Checked = animations && mode is GuiAnimationSourceMode.MotlistDirectory or GuiAnimationSourceMode.MotlistFiles;
+        splitAnimationsCheck.Checked = false;
+        noTexturesCheck.Checked = false;
+        includeLodsCheck.Checked = false;
+        includeOcclusionCheck.Checked = false;
+        noPlaceholderBonesCheck.Checked = animations;
+        allowMissingStreamingCheck.Checked = false;
+        suppressExportOptionPersistence = false;
+    }
+
+    private void SaveCustomExportOptions()
+    {
+        if (initializing) return;
+        config.GuiExportOptionsMode = "custom";
+        config.GuiSplitMotlists = splitMotlistsCheck.Checked;
+        config.GuiSplitAnimations = splitAnimationsCheck.Checked;
+        config.GuiNoTextures = noTexturesCheck.Checked;
+        config.GuiIncludeLods = includeLodsCheck.Checked;
+        config.GuiIncludeOcclusion = includeOcclusionCheck.Checked;
+        config.GuiNoPlaceholderBones = noPlaceholderBonesCheck.Checked;
+        config.GuiAllowMissingStreaming = allowMissingStreamingCheck.Checked;
+        SaveConfig();
+    }
+
+    private void OnExportOptionsModeChanged()
+    {
+        if (suppressExportOptionPersistence) return;
+        config.GuiExportOptionsMode = exportOptionsModeCombo.SelectedIndex == 1 ? "custom" : "";
+        if (initializing)
+        {
+            UpdateAnimationSourceUi();
+            UpdateCommandPreview();
+            return;
+        }
+        if (IsCustomExportOptionsMode())
+        {
+            SaveCustomExportOptions();
+        }
+        else
+        {
+            SaveConfig();
+        }
+        UpdateAnimationSourceUi();
+        UpdateCommandPreview();
+    }
+
+    private void OnExportOptionCheckChanged(CheckBox checkBox)
+    {
+        if (suppressExportOptionPersistence) return;
+        if (checkBox == splitMotlistsCheck && splitMotlistsCheck.Checked && splitAnimationsCheck.Checked)
+        {
+            suppressExportOptionPersistence = true;
+            splitAnimationsCheck.Checked = false;
+            suppressExportOptionPersistence = false;
+        }
+        if (checkBox == splitAnimationsCheck && splitAnimationsCheck.Checked && splitMotlistsCheck.Checked)
+        {
+            suppressExportOptionPersistence = true;
+            splitMotlistsCheck.Checked = false;
+            suppressExportOptionPersistence = false;
+        }
+        if (IsCustomExportOptionsMode() && !initializing) SaveCustomExportOptions();
+    }
+
+    private void OnLanguageChanged()
+    {
+        if (suppressLanguagePersistence) return;
+        config.Language = languageCombo.SelectedIndex == 1 ? "ko" : "en";
+        if (!initializing) SaveConfig();
+        ApplyLocalization();
+        ApplyTooltips();
+        UpdateGameUi();
+        UpdateCommandPreview();
+    }
+
+    private void ApplyLocalization()
+    {
+        Text = L("REE-Content-Exporter Wizard");
+        LocalizeControlTree(this);
+        var previousExportSuppress = suppressExportOptionPersistence;
+        suppressExportOptionPersistence = true;
+        UpdateComboItems(exportOptionsModeCombo, ["Default", "Custom"], [L("Default"), L("Custom")]);
+        var previousLanguageSuppress = suppressLanguagePersistence;
+        suppressLanguagePersistence = true;
+        UpdateComboItems(animationSourceCombo, ["MOTLIST folder", "MOTLIST files", "MOT files"], [L("MOTLIST folder"), L("MOTLIST files"), L("MOT files")]);
+        suppressLanguagePersistence = previousLanguageSuppress;
+        suppressExportOptionPersistence = previousExportSuppress;
+    }
+
+    private void LocalizeControlTree(Control root)
+    {
+        if (root is not ComboBox && !string.IsNullOrWhiteSpace(root.Text))
+        {
+            root.Text = L(root.Text);
+        }
+        foreach (Control child in root.Controls) LocalizeControlTree(child);
+    }
+
+    private static void UpdateComboItems(ComboBox comboBox, string[] englishItems, string[] localizedItems)
+    {
+        var selected = Math.Max(0, comboBox.SelectedIndex);
+        comboBox.BeginUpdate();
+        comboBox.Items.Clear();
+        comboBox.Items.AddRange(localizedItems.Cast<object>().ToArray());
+        comboBox.SelectedIndex = Math.Min(selected, comboBox.Items.Count - 1);
+        comboBox.EndUpdate();
+    }
+
+    private void ApplyTooltips()
+    {
+        tooltips.SetToolTip(languageCombo, L("Choose the GUI language. The setting is saved immediately."));
+        tooltips.SetToolTip(exportOptionsModeCombo, L("Default uses the legacy CLI wizard preferences. Custom enables and saves these checkboxes."));
+        tooltips.SetToolTip(animationFilterText, L("Optional. Maps to --animation-name <contains> and filters exported animation names after sources are selected."));
+        if (savePathsButton != null) tooltips.SetToolTip(savePathsButton, L("Save extract, export, Blender, texture, language, and GUI option settings."));
+        if (copyCommandButton != null) tooltips.SetToolTip(copyCommandButton, L("Copy the generated CLI command preview to the clipboard."));
+        tooltips.SetToolTip(cancelButton, L("Cancel the running export process."));
+        tooltips.SetToolTip(runButton, L("Run the export with the current GUI settings."));
+    }
+
+    private string L(string text)
+    {
+        if (!IsKorean())
+        {
+            return KoToEn.TryGetValue(text, out var english) ? english : text;
+        }
+        if (KoToEn.ContainsKey(text)) return text;
+        return EnToKo.TryGetValue(text, out var korean) ? korean : text;
+    }
+
+    private static readonly Dictionary<string, string> EnToKo = new(StringComparer.Ordinal)
+    {
+        ["REE-Content-Exporter Wizard"] = "REE-Content-Exporter 마법사",
+        ["Setup"] = "설정",
+        ["Export"] = "내보내기",
+        ["Progress"] = "진행",
+        ["Game configuration"] = "게임 구성",
+        ["Current"] = "현재",
+        ["Select game"] = "게임 선택",
+        ["Set"] = "설정",
+        ["Edit"] = "편집",
+        ["Paths"] = "경로",
+        ["Extract root"] = "추출 루트",
+        ["Export folder"] = "내보내기 폴더",
+        ["Blender 4.5.9"] = "Blender 4.5.9",
+        ["Export setup"] = "내보내기 설정",
+        ["Primary mesh"] = "기본 메시",
+        ["Additional meshes"] = "추가 메시",
+        ["Animations"] = "애니메이션",
+        ["Include animations"] = "애니메이션 포함",
+        ["Source"] = "소스",
+        ["MOTLIST folder"] = "MOTLIST 폴더",
+        ["MOTLIST files"] = "MOTLIST 파일",
+        ["MOT files"] = "MOT 파일",
+        ["Animation files"] = "애니메이션 파일",
+        ["Animation name filter"] = "애니메이션 이름 필터",
+        ["Output"] = "출력",
+        ["Textures"] = "텍스처",
+        ["FBX scale"] = "FBX 스케일",
+        ["Export options"] = "내보내기 옵션",
+        ["Default"] = "기본값",
+        ["Custom"] = "사용자 지정",
+        ["Split by MOTLIST"] = "MOTLIST별 분할",
+        ["Split animations"] = "애니메이션 분할",
+        ["No textures"] = "텍스처 없음",
+        ["Include LODs"] = "LOD 포함",
+        ["Include occlusion"] = "Occlusion 포함",
+        ["Skip missing bone channels"] = "없는 본 채널 건너뛰기",
+        ["Allow missing streaming buffers"] = "누락된 스트리밍 버퍼 허용",
+        ["Output path"] = "출력 경로",
+        ["Progress and command"] = "진행 및 명령",
+        ["Language"] = "언어",
+        ["Save Paths"] = "경로 저장",
+        ["Copy Command"] = "명령 복사",
+        ["Cancel"] = "취소",
+        ["Run Export"] = "내보내기 실행",
+        ["Find"] = "찾기",
+        ["Choose"] = "선택",
+        ["Type part of a filename or path"] = "파일 이름 또는 경로 일부 입력",
+        ["No game saved. Select a game, then click Set."] = "저장된 게임이 없습니다. 게임을 선택한 뒤 설정을 누르세요.",
+        ["Cleared game configuration. Select a game and click Set."] = "게임 구성을 지웠습니다. 게임을 선택한 뒤 설정을 누르세요.",
+        ["Saved path and texture settings."] = "경로 및 텍스처 설정을 저장했습니다.",
+        ["Game configuration failed: "] = "게임 구성 실패: ",
+        ["Choose the GUI language. The setting is saved immediately."] = "GUI 언어를 선택합니다. 설정은 즉시 저장됩니다.",
+        ["Default uses the legacy CLI wizard preferences. Custom enables and saves these checkboxes."] = "기본값은 기존 CLI 마법사 선호 설정을 사용합니다. 사용자 지정은 체크박스를 활성화하고 저장합니다.",
+        ["Optional. Maps to --animation-name <contains> and filters exported animation names after sources are selected."] = "선택 사항입니다. --animation-name <contains>에 대응하며 소스 선택 후 내보낼 애니메이션 이름을 필터링합니다.",
+        ["Save extract, export, Blender, texture, language, and GUI option settings."] = "추출, 내보내기, Blender, 텍스처, 언어, GUI 옵션 설정을 저장합니다.",
+        ["Copy the generated CLI command preview to the clipboard."] = "생성된 CLI 명령 미리보기를 클립보드에 복사합니다.",
+        ["Cancel the running export process."] = "실행 중인 내보내기 프로세스를 취소합니다.",
+        ["Run the export with the current GUI settings."] = "현재 GUI 설정으로 내보내기를 실행합니다.",
+        ["Save a game first so its REE.PAK.Tool list can be downloaded."] = "REE.PAK.Tool 목록을 다운로드할 수 있도록 먼저 게임을 저장하세요.",
+        ["Starting export"] = "내보내기를 시작합니다",
+        ["Export completed."] = "내보내기가 완료되었습니다.",
+        ["ERROR: "] = "오류: ",
+        ["Export cancelled."] = "내보내기를 취소했습니다.",
+        ["Cancel failed: "] = "취소 실패: ",
+    };
+
+    private static readonly Dictionary<string, string> KoToEn = EnToKo
+        .GroupBy(pair => pair.Value, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.First().Key, StringComparer.Ordinal);
 
     private void SaveConfig()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(configPath) ?? ".");
+        if (string.IsNullOrWhiteSpace(config.Language)) config.Language = "en";
         config.UpdatedUtc = DateTimeOffset.UtcNow;
         if (config.CreatedUtc == default) config.CreatedUtc = config.UpdatedUtc;
         File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
@@ -739,10 +1073,10 @@ internal sealed class GuiWizardForm : Form
         var entries = LoadConfiguredListLines();
         if (entries.Count == 0)
         {
-            MessageBox.Show("Save a game first so its REE.PAK.Tool list can be downloaded.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(L("Save a game first so its REE.PAK.Tool list can be downloaded."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        using var picker = new AssetPickerForm(entries, extractRootText.Text.Trim(), kind);
+        using var picker = new AssetPickerForm(entries, extractRootText.Text.Trim(), kind, IsKorean());
         if (picker.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(picker.SelectedPath))
         {
             target.Text = picker.SelectedPath;
@@ -787,12 +1121,12 @@ internal sealed class GuiWizardForm : Form
         var entries = LoadConfiguredListLines();
         if (entries.Count == 0)
         {
-            MessageBox.Show("Save a game first so its REE.PAK.Tool list can be downloaded.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(L("Save a game first so its REE.PAK.Tool list can be downloaded."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
         var pickerKind = mode == GuiAnimationSourceMode.MotFiles ? AssetPickerKind.MotFile : AssetPickerKind.MotlistFile;
-        using var picker = new AssetPickerForm(entries, extractRootText.Text.Trim(), pickerKind);
+        using var picker = new AssetPickerForm(entries, extractRootText.Text.Trim(), pickerKind, IsKorean());
         if (picker.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(picker.SelectedPath) && !animationFileList.Items.Contains(picker.SelectedPath))
         {
             animationFileList.Items.Add(picker.SelectedPath);
@@ -882,6 +1216,7 @@ internal sealed class GuiWizardForm : Form
                     break;
                 case GuiAnimationSourceMode.MotlistFiles:
                     AddAnimationFileArgs(args, "--motlist");
+                    if (splitMotlistsCheck.Checked) args.Add("--split-motlists");
                     if (splitAnimationsCheck.Checked) args.Add("--split-animations");
                     break;
                 case GuiAnimationSourceMode.MotFiles:
@@ -898,7 +1233,7 @@ internal sealed class GuiWizardForm : Form
         if (noTexturesCheck.Checked) args.Add("--no-textures");
         if (includeLodsCheck.Checked) args.Add("--include-lods");
         if (includeOcclusionCheck.Checked) args.Add("--include-occlusion");
-        if (noPlaceholderBonesCheck.Checked) args.Add("--no-placeholder-animation-bones");
+        if (includeAnimationsCheck.Checked && noPlaceholderBonesCheck.Checked) args.Add("--no-placeholder-animation-bones");
         if (allowMissingStreamingCheck.Checked) args.Add("--allow-missing-streaming");
         return args;
     }
@@ -930,17 +1265,58 @@ internal sealed class GuiWizardForm : Form
     {
         var enabled = includeAnimationsCheck.Checked;
         var mode = GetAnimationSourceMode();
+        var customOptions = IsCustomExportOptionsMode();
         var motlistDirEnabled = enabled && mode == GuiAnimationSourceMode.MotlistDirectory;
         var animationFilesEnabled = enabled && mode != GuiAnimationSourceMode.MotlistDirectory;
         animationSourceCombo.Enabled = enabled;
         animationFilterText.Enabled = enabled;
         SetControlTreeEnabled(motlistDirRow, motlistDirEnabled);
         SetControlTreeEnabled(animationFileRow, animationFilesEnabled);
-        splitMotlistsCheck.Enabled = enabled && mode == GuiAnimationSourceMode.MotlistDirectory;
-        splitAnimationsCheck.Enabled = enabled && mode != GuiAnimationSourceMode.MotlistDirectory;
-        if (mode != GuiAnimationSourceMode.MotlistDirectory) splitMotlistsCheck.Checked = false;
-        if (mode == GuiAnimationSourceMode.MotlistDirectory) splitAnimationsCheck.Checked = false;
+        if (!customOptions)
+        {
+            ApplyDefaultExportOptions();
+        }
+        exportOptionsModeCombo.Enabled = true;
+        SetCheckEnabled(splitMotlistsCheck, customOptions && enabled && mode != GuiAnimationSourceMode.MotFiles);
+        SetCheckEnabled(splitAnimationsCheck, customOptions && enabled && mode != GuiAnimationSourceMode.MotlistDirectory && !splitMotlistsCheck.Checked);
+        SetCheckEnabled(noTexturesCheck, customOptions);
+        SetCheckEnabled(includeLodsCheck, customOptions);
+        SetCheckEnabled(includeOcclusionCheck, customOptions);
+        SetCheckEnabled(noPlaceholderBonesCheck, customOptions && enabled);
+        SetCheckEnabled(allowMissingStreamingCheck, customOptions);
+        if (mode == GuiAnimationSourceMode.MotFiles && splitMotlistsCheck.Checked)
+        {
+            suppressExportOptionPersistence = true;
+            splitMotlistsCheck.Checked = false;
+            suppressExportOptionPersistence = false;
+        }
+        if ((mode == GuiAnimationSourceMode.MotlistDirectory || splitMotlistsCheck.Checked) && splitAnimationsCheck.Checked)
+        {
+            suppressExportOptionPersistence = true;
+            splitAnimationsCheck.Checked = false;
+            suppressExportOptionPersistence = false;
+        }
+        if (customOptions && !suppressExportOptionPersistence && !initializing) SaveCustomExportOptions();
         UpdateCommandPreview();
+    }
+
+    private IEnumerable<CheckBox> GetExportOptionCheckBoxes()
+    {
+        yield return splitMotlistsCheck;
+        yield return splitAnimationsCheck;
+        yield return noTexturesCheck;
+        yield return includeLodsCheck;
+        yield return includeOcclusionCheck;
+        yield return noPlaceholderBonesCheck;
+        yield return allowMissingStreamingCheck;
+    }
+
+    private static void SetCheckEnabled(CheckBox checkBox, bool enabled)
+    {
+        checkBox.Enabled = true;
+        checkBox.AutoCheck = enabled;
+        checkBox.TabStop = enabled;
+        checkBox.ForeColor = enabled ? DarkText : MutedText;
     }
 
     private static void SetControlTreeEnabled(Control? root, bool enabled)
@@ -989,14 +1365,14 @@ internal sealed class GuiWizardForm : Form
             UpdateRunningState(true);
             logText.Clear();
             SetProgress(0);
-            AppendLog("Starting export");
+            AppendLog(L("Starting export"));
             await RunExporterProcessAsync(args);
             SetProgress(100);
-            AppendLog("Export completed.");
+            AppendLog(L("Export completed."));
         }
         catch (Exception ex)
         {
-            AppendLog("ERROR: " + ex.Message);
+            AppendLog(L("ERROR: ") + ex.Message);
             MessageBox.Show(ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
@@ -1035,11 +1411,11 @@ internal sealed class GuiWizardForm : Form
         try
         {
             runningProcess?.Kill(entireProcessTree: true);
-            AppendLog("Export cancelled.");
+            AppendLog(L("Export cancelled."));
         }
         catch (Exception ex)
         {
-            AppendLog("Cancel failed: " + ex.Message);
+            AppendLog(L("Cancel failed: ") + ex.Message);
         }
     }
 
@@ -1137,22 +1513,24 @@ internal sealed class AssetPickerForm : Form
     private readonly IReadOnlyList<string> entries;
     private readonly string extractRoot;
     private readonly AssetPickerKind kind;
+    private readonly bool korean;
     private readonly TextBox searchText = new();
     private readonly ListBox resultList = new();
 
     public string SelectedPath { get; private set; } = "";
 
-    public AssetPickerForm(IReadOnlyList<string> entries, string extractRoot, AssetPickerKind kind)
+    public AssetPickerForm(IReadOnlyList<string> entries, string extractRoot, AssetPickerKind kind, bool korean)
     {
         this.entries = entries;
         this.extractRoot = extractRoot;
         this.kind = kind;
+        this.korean = korean;
         Text = kind switch
         {
-            AssetPickerKind.Mesh => "Find mesh",
-            AssetPickerKind.MotFile => "Find MOT file",
-            AssetPickerKind.MotlistFile => "Find MOTLIST file",
-            _ => "Find MOTLIST folder",
+            AssetPickerKind.Mesh => L("Find mesh"),
+            AssetPickerKind.MotFile => L("Find MOT file"),
+            AssetPickerKind.MotlistFile => L("Find MOTLIST file"),
+            _ => L("Find MOTLIST folder"),
         };
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(960, 640);
@@ -1170,7 +1548,7 @@ internal sealed class AssetPickerForm : Form
         Controls.Add(root);
 
         searchText.Dock = DockStyle.Fill;
-        searchText.PlaceholderText = "Type part of a filename or path";
+        searchText.PlaceholderText = L("Type part of a filename or path");
         searchText.TextChanged += (_, _) => RefreshResults();
         resultList.Dock = DockStyle.Fill;
         resultList.HorizontalScrollbar = true;
@@ -1178,9 +1556,9 @@ internal sealed class AssetPickerForm : Form
         resultList.DoubleClick += (_, _) => AcceptSelection();
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
-        var choose = new Button { Text = "Choose", Width = 100 };
+        var choose = new Button { Text = L("Choose"), Width = 100 };
         choose.Click += (_, _) => AcceptSelection();
-        var cancel = new Button { Text = "Cancel", Width = 100 };
+        var cancel = new Button { Text = L("Cancel"), Width = 100 };
         cancel.Click += (_, _) => DialogResult = DialogResult.Cancel;
         actions.Controls.Add(choose);
         actions.Controls.Add(cancel);
@@ -1267,4 +1645,17 @@ internal sealed class AssetPickerForm : Form
         SelectedPath = resultList.SelectedItem.ToString() ?? "";
         DialogResult = DialogResult.OK;
     }
+
+    private string L(string text)
+        => !korean ? text : text switch
+        {
+            "Find mesh" => "메시 찾기",
+            "Find MOT file" => "MOT 파일 찾기",
+            "Find MOTLIST file" => "MOTLIST 파일 찾기",
+            "Find MOTLIST folder" => "MOTLIST 폴더 찾기",
+            "Type part of a filename or path" => "파일 이름 또는 경로 일부 입력",
+            "Choose" => "선택",
+            "Cancel" => "취소",
+            _ => text,
+        };
 }

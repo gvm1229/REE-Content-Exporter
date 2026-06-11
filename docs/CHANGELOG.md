@@ -10,6 +10,7 @@
 - Added GUI and legacy console wizard selection for skeletal animation sources: MOTLIST folders, MOTLIST files, and raw MOT files.
 - Added legacy console wizard animation candidate inference. When a skeletal mesh includes animations, the wizard searches the selected game's downloaded `.list` with the mesh name and offers matching MOTLIST folder and raw MOT choices.
 - Added separate published entry-point executables: `REE-Content-Exporter-GUI.exe` for GUI-first use and `REE-Content-Exporter-CLI.exe` for command-line use.
+- Added GUI export option Default/Custom mode, persisted custom checkbox settings, English/Korean GUI language selection, button tooltips, and a clarified animation-name filter label.
 
 ### Changed
 
@@ -17,6 +18,7 @@
 - The GUI no longer hard-defaults the game dropdown to Pragmata when `config.json` has no saved `game`, avoiding startup selection errors and requiring an explicit saved game before export.
 - The GUI is now arranged into dark themed Setup, Export, and Progress tabs to prevent clipped controls and reduce visual clutter.
 - The GUI now uses wider/spaced controls, a full-width game dropdown, disabled inactive animation-source inputs, larger horizontally scrollable list-search dialogs, and a determinate percentage progress display instead of marquee progress.
+- The GUI Default export option mode now mirrors legacy console wizard preferences while keeping the checkboxes disabled and visibly checked/unchecked.
 - The project now targets `net10.0-windows` with Windows Forms enabled while preserving console output for direct CLI exports.
 - Developer helper scripts now look for the Release build under `bin\Release\net10.0-windows`.
 

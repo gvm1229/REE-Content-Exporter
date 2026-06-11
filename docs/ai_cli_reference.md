@@ -53,11 +53,22 @@ The GUI wraps the direct exporter command. It provides:
 - dropdowns for output format and texture format
 - animation source dropdown for `MOTLIST folder`, `MOTLIST files`, and `MOT files`; inactive source rows are disabled so the GUI mirrors the mutually exclusive CLI flow
 - numeric FBX scale control
+- export option mode dropdown with `Default` and `Custom`; `Default` shows disabled checkboxes using the legacy console wizard preferences, while `Custom` enables and persists GUI-only checkbox choices in `config.json`
 - checkboxes for animations, split MOTLISTs, split animations, textures, LODs, occlusion, missing animation bone handling, and missing streaming buffers
+- language dropdown for English/Korean GUI labels and messages, persisted in the shared `Language` config property
 - command preview, percentage progress bar parsed from exporter progress output, log window, cancel button, and command-copy action
 - larger downloaded-list search dialogs with horizontal scrolling for long asset paths
 
 The GUI currently runs the direct exporter process and captures stdout/stderr in the log window. The older script-generation and Blender Unreal-ready workflow remains available through the legacy console wizard.
+
+GUI export option defaults intentionally mirror the legacy console wizard script defaults rather than raw direct-CLI defaults:
+
+- MOTLIST folder and MOTLIST file modes default to `--split-motlists`.
+- Raw MOT mode does not default to `--split-motlists`.
+- Animation exports default to `--no-placeholder-animation-bones`.
+- Texture export stays enabled, while LODs, occlusion, split animations, and missing streaming buffers stay disabled.
+
+The GUI field labeled `Animation name filter` maps to `--animation-name <contains>`. It filters selected animation names after MOTLIST or MOT sources are chosen; it is not an animation source path.
 
 ## Universal Game Configuration
 
@@ -68,6 +79,8 @@ The wizard stores its config at:
 ```
 
 The selected game is stored in the JSON `game` property. The wizard does not reprompt for game selection while that property exists. To reselect a game, delete the `game` line and run the wizard again.
+
+GUI-only custom export settings are stored as `guiExportOptionsMode` plus `guiSplitMotlists`, `guiSplitAnimations`, `guiNoTextures`, `guiIncludeLods`, `guiIncludeOcclusion`, `guiNoPlaceholderBones`, and `guiAllowMissingStreaming`. Empty or missing `guiExportOptionsMode` means the GUI uses Default mode.
 
 Downloaded REE.PAK.Tool lists are cached beside the config:
 

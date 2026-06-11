@@ -35,7 +35,9 @@ CLI users can run `REE-Content-Exporter-CLI.exe`. The legacy console wizard is s
 5. Confirm the output path.
 6. Run the export and watch the percentage progress bar and log window.
 
-The GUI shows the generated command preview before export and writes progress output into the log window while the export runs.
+The GUI shows the generated command preview before export and writes progress output into the log window while the export runs. Export options use the legacy CLI wizard defaults unless you switch the export options dropdown to Custom. The language dropdown in the bottom-left corner is saved and restored on the next run.
+
+The animation name filter is optional. It filters selected MOTLIST or MOT animations by name and is not an animation file path.
 
 ### Detailed Reference
 
@@ -72,7 +74,9 @@ CLI 사용자는 `REE-Content-Exporter-CLI.exe`를 실행할 수 있습니다. �
 5. 출력 경로를 확인합니다.
 6. 내보내기를 실행하고 백분율 진행률 표시줄과 로그 창을 확인합니다.
 
-GUI는 내보내기 전에 생성된 명령 미리보기를 보여주며, 실행 중 진행 출력을 로그 창에 기록합니다.
+GUI는 내보내기 전에 생성된 명령 미리보기를 보여주며, 실행 중 진행 출력을 로그 창에 기록합니다. 내보내기 옵션은 기본적으로 기존 CLI 마법사 기본값을 사용하며, export options 드롭다운을 Custom으로 바꾸면 직접 설정할 수 있습니다. 왼쪽 아래의 언어 드롭다운은 저장되며 다음 실행 때 유지됩니다.
+
+애니메이션 이름 필터는 선택 사항입니다. MOTLIST 또는 MOT에서 선택된 애니메이션을 이름으로 거르는 기능이며, 애니메이션 파일 경로가 아닙니다.
 
 ### 자세한 참고 문서
 
