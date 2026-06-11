@@ -224,7 +224,7 @@ Rules:
 
 - Always verify that the generated export folder contains a non-empty `textures/` folder unless the script intentionally uses `--no-textures`.
 - Do not silently accept a missing or empty texture folder in production scripts.
-- Do not release a build that depends on users installing texture helper tools separately. PNG export requires `texconv.exe`; release artifacts must bundle it beside `REE-Content-Exporter.exe`, and build/publish should fail if the converter cannot be included.
+- Do not release a build that depends on users installing texture helper tools separately. PNG export requires `texconv.exe`; release artifacts must bundle it beside the exporter entry-point executables, and build/publish should fail if the converter cannot be included.
 - Keep the dynamic path fallback behavior for old/new `natives\STM` and `re_chunk_000\streaming` style paths.
 - Treat unsupported depth/3D TEX resources as warnings only; these textures are not needed for exported material files. Do not broaden this to missing texture sources or normal 2D texture read, DDS, or PNG conversion failures, which must remain fatal.
 - If adding a new asset script, confirm its material/MDF lookup still resolves textures from the correct source mesh.
@@ -264,13 +264,19 @@ Required behavior:
 5. After pushing, inspect GitHub releases with `gh release list` and `gh release view` to identify the latest release.
 6. Ask the user whether to update the existing latest release or version up. If versioning up, ask for or infer the next patch version only after showing the latest version found.
 7. After the user chooses the release target, rebuild the release zip, replace or upload the target release asset, and update that release description.
+8. Immediately after a successful release upload/replacement, create a local test build folder in the repository parent directory for the user to run directly. Use a timestamped folder name such as:
+   ```text
+   ../REE-Content-Exporter-<version>-localbuild-<yyyyMMdd_HHmmss>/
+   ```
+   Publish with the same release profile, verify the folder contains the required runtime files listed below, and smoke-test `REE-Content-Exporter-CLI.exe --help` plus `REE-Content-Exporter-GUI.exe` startup from that local folder.
 
 Release packaging defaults:
 
 - Use the existing `win-x64-singlefile` publish profile.
 - Verify the release archive contains:
   ```text
-  REE-Content-Exporter.exe
+   REE-Content-Exporter-GUI.exe
+   REE-Content-Exporter-CLI.exe
   texconv.exe
   DirectXTex.dll
   libGDeflate.dll

@@ -23,7 +23,7 @@ This document describes the currently validated FBX workflow for using PRAGMATA 
 
 - .NET SDK
 - Loose RE Engine files extracted with RETool
-- `texconv.exe` on the build machine for PNG conversion; release packages bundle it beside `REE-Content-Exporter.exe`
+- `texconv.exe` on the build machine for PNG conversion; release packages bundle it beside the exporter entry-point executables
 - Patched `REE-Content-Editor` sibling checkout
 - Blender `4.5.9 LTS`
 
@@ -147,7 +147,7 @@ D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\...
 D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\streaming\character\...
 ```
 
-The exporter treats missing texture sources or failed PNG conversion as fatal texture export failures. Release packages must include `texconv.exe` beside `REE-Content-Exporter.exe`; source builds copy it from WinGet or from `-p:TexconvPath="<path>\texconv.exe"`. The sample execution scripts also verify immediately after source export that `textures\` exists and contains at least one file. If the texture folder is missing or empty, the script fails.
+The exporter treats missing texture sources or failed PNG conversion as fatal texture export failures. Release packages must include `texconv.exe` beside the exporter entry-point executables; source builds copy it from WinGet or from `-p:TexconvPath="<path>\texconv.exe"`. The sample execution scripts also verify immediately after source export that `textures\` exists and contains at least one file. If the texture folder is missing or empty, the script fails.
 
 ## Blender stage
 

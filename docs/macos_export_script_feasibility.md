@@ -6,7 +6,7 @@ This document records the current position on a possible macOS variant of the ex
 
 A macOS port is possible in principle, but it is not a simple path rewrite. The current validated workflow is Windows-first and depends on several Windows-shaped assumptions:
 
-- `REE-Content-Exporter.exe` from the .NET build output.
+- `REE-Content-Exporter-CLI.exe` from a published Windows build, or the exporter DLL during local development.
 - A sibling patched `REE-Content-Editor` dependency that follows the current Windows development layout.
 - Windows extract paths such as `D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000`.
 - Blender 4.5.9 LTS at `C:\Program Files\Blender Foundation\Blender 4.5\blender.exe`.
@@ -90,7 +90,7 @@ The exporter logic supports old STM and flat `re_chunk_000` layouts, but the exe
 Windows scripts call:
 
 ```text
-bin\Release\net10.0-windows\REE-Content-Exporter.exe
+<publish-folder>\REE-Content-Exporter-CLI.exe
 ```
 
 On macOS, unless a self-contained macOS build is published, the likely command is:

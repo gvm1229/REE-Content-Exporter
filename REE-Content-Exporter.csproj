@@ -40,4 +40,10 @@
     <Copy SourceFiles="@(TexconvNative)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
 
+  <Target Name="CreateNamedPublishExecutables" AfterTargets="Publish" Condition="'$(PublishSingleFile)' == 'true' and Exists('$(PublishDir)$(AssemblyName).exe')">
+    <Copy SourceFiles="$(PublishDir)$(AssemblyName).exe" DestinationFiles="$(PublishDir)REE-Content-Exporter-GUI.exe" />
+    <Copy SourceFiles="$(PublishDir)$(AssemblyName).exe" DestinationFiles="$(PublishDir)REE-Content-Exporter-CLI.exe" />
+    <Delete Files="$(PublishDir)$(AssemblyName).exe" />
+  </Target>
+
 </Project>

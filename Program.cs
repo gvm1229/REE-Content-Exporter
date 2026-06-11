@@ -41,8 +41,8 @@ static void PrintUsage()
 {
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
-    Console.WriteLine("  REE-Content-Exporter [--gui|--wizard] [--reset-config] [--config <path>]");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter-GUI [--gui|--wizard] [--reset-config] [--config <path>]");
+    Console.WriteLine("  REE-Content-Exporter-CLI --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
 }
 
 static Dictionary<string, string> ParseAdditionalStreamingArgs(IEnumerable<string> values)
@@ -1367,7 +1367,7 @@ static string GenerateWizardScript(
     Directory.CreateDirectory(scriptDir);
     var assetName = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString());
     var scriptPath = Path.Combine(scriptDir, $"{assetName}_unreal_export_{DateTime.Now:yyyyMMdd_HHmmss}.ps1");
-    var exporterPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter.exe");
+    var exporterPath = ResolveCliExecutablePath();
     var script = BuildWizardPowerShell(config, exporterPath, exportRoot, meshPath, additionalMeshes, streamingPath, additionalStreaming, animation, isSkeletal);
     File.WriteAllText(scriptPath, script, Encoding.UTF8);
     return scriptPath;
@@ -1381,7 +1381,7 @@ static string GenerateWizardBatchScript(WizardConfig config, string exportRoot, 
     var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
     var batchRoot = Path.Combine(exportRoot, $"wizard_batch_{timestamp}");
     var scriptPath = Path.Combine(scriptDir, $"wizard_batch_unreal_export_{timestamp}.ps1");
-    var exporterPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter.exe");
+    var exporterPath = ResolveCliExecutablePath();
     var script = BuildWizardBatchPowerShell(config, exporterPath, batchRoot, jobs, skippedRows, existingExportScan);
     File.WriteAllText(scriptPath, script, Encoding.UTF8);
     return scriptPath;
@@ -2131,6 +2131,8 @@ static void RunGeneratedScript(string scriptPath, WizardLanguage language = Wiza
 }
 
 var wizardConfigPath = GetArg(args, "--config");
+var executableName = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? Environment.GetCommandLineArgs().FirstOrDefault() ?? "");
+var isCliExecutable = executableName.Contains("CLI", StringComparison.OrdinalIgnoreCase);
 if (HasFlag(args, "--reset-config"))
 {
     var path = ResolveWizardConfigPath(wizardConfigPath);
@@ -2139,6 +2141,18 @@ if (HasFlag(args, "--reset-config"))
         File.Delete(path);
         Console.WriteLine($"Deleted wizard config: {path}");
     }
+}
+if (args.Length == 0 && isCliExecutable)
+{
+    PrintUsage();
+    return;
+}
+
+static string ResolveCliExecutablePath()
+{
+    var cliPath = Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter-CLI.exe");
+    if (File.Exists(cliPath)) return cliPath;
+    return Environment.ProcessPath ?? cliPath;
 }
 if (args.Length == 0 || HasFlag(args, "--gui"))
 {
@@ -2811,7 +2825,7 @@ static void ConvertDdsToPng(string ddsPath, string pngPath)
 {
     var texconv = ResolveTool("texconv")
         ?? ResolveWinGetTool("texconv")
-        ?? throw new FileNotFoundException("texconv.exe not found. Released builds must include texconv.exe beside REE-Content-Exporter.exe. Source builds can install Microsoft.DirectXTex.Texconv or pass -p:TexconvPath=<path> during build.");
+        ?? throw new FileNotFoundException("texconv.exe not found. Released builds must include texconv.exe beside the exporter executables. Source builds can install Microsoft.DirectXTex.Texconv or pass -p:TexconvPath=<path> during build.");
     var outDir = Path.GetDirectoryName(pngPath) ?? ".";
 
     if (TryRunTexconv(null, out var defaultError)) return;

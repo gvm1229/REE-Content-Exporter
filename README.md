@@ -14,7 +14,7 @@ Version 0.5 opens as a Windows GUI wizard by default. The tool remains game-conf
 
 ### First Run
 
-Open `REE-Content-Exporter.exe`.
+Open `REE-Content-Exporter-GUI.exe`.
 
 Choose the game from the dropdown and save it. The wizard downloads the matching `.list` file from Ekey's REE.PAK.Tool repository and saves that choice in `config.json`.
 
@@ -24,7 +24,7 @@ After a game is saved, the wizard locks that choice and shows the current game c
 
 To change games later, delete only the `game` line from the config file or use the GUI's Change Game action.
 
-The legacy console wizard is still available by running `REE-Content-Exporter.exe --wizard`. Advanced command-line details are in the AI-oriented reference document.
+CLI users can run `REE-Content-Exporter-CLI.exe`. The legacy console wizard is still available by running `REE-Content-Exporter-GUI.exe --wizard` or `REE-Content-Exporter-CLI.exe --wizard`. Advanced command-line details are in the AI-oriented reference document.
 
 ### Normal Workflow
 
@@ -51,7 +51,7 @@ The full command-line reference, game ID table, release packaging notes, and AI-
 
 ### 첫 실행
 
-`REE-Content-Exporter.exe`를 실행하세요.
+`REE-Content-Exporter-GUI.exe`를 실행하세요.
 
 드롭다운에서 게임을 선택하고 저장하세요. 마법사는 Ekey의 REE.PAK.Tool 저장소에서 해당 `.list` 파일을 다운로드하고 선택한 게임을 `config.json`에 저장합니다.
 
@@ -61,7 +61,7 @@ The full command-line reference, game ID table, release packaging notes, and AI-
 
 나중에 다른 게임으로 바꾸려면 config 파일에서 `game` 줄만 삭제하거나 GUI의 Change Game 동작을 사용하세요.
 
-기존 콘솔 마법사는 `REE-Content-Exporter.exe --wizard`로 실행할 수 있습니다. 자세한 명령줄 정보는 AI용 참고 문서에 있습니다.
+CLI 사용자는 `REE-Content-Exporter-CLI.exe`를 실행할 수 있습니다. 기존 콘솔 마법사는 `REE-Content-Exporter-GUI.exe --wizard` 또는 `REE-Content-Exporter-CLI.exe --wizard`로 실행할 수 있습니다. 자세한 명령줄 정보는 AI용 참고 문서에 있습니다.
 
 ### 일반 사용 흐름
 

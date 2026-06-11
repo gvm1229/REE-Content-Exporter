@@ -36,7 +36,12 @@ The project targets `net10.0-windows` with Windows Forms enabled. Keep the appli
 
 ## GUI Wizard
 
-Launching `REE-Content-Exporter.exe` with no arguments opens the Windows Forms wizard. `--gui` does the same explicitly.
+Release packages contain two entry-point executables:
+
+- `REE-Content-Exporter-GUI.exe` opens the Windows Forms wizard with no arguments.
+- `REE-Content-Exporter-CLI.exe` prints command-line usage with no arguments and is intended for direct export commands.
+
+`--gui` opens the Windows Forms wizard explicitly from either executable.
 
 The GUI stores paths and game configuration in the same config file as the legacy wizard. Once the `game` property is saved, the GUI disables the game dropdown and uses that saved game for exports. The user can clear the saved game with the Change Game action or by deleting the `game` line from `config.json`.
 
@@ -106,19 +111,20 @@ Supported wizard game IDs:
 Startup modes:
 
 ```powershell
-REE-Content-Exporter.exe
-REE-Content-Exporter.exe --gui
-REE-Content-Exporter.exe --wizard
-REE-Content-Exporter.exe --reset-config --wizard
-REE-Content-Exporter.exe --config "<config.json>" --gui
+REE-Content-Exporter-GUI.exe
+REE-Content-Exporter-GUI.exe --wizard
+REE-Content-Exporter-CLI.exe --help
+REE-Content-Exporter-CLI.exe --wizard
+REE-Content-Exporter-CLI.exe --reset-config --wizard
+REE-Content-Exporter-GUI.exe --config "<config.json>" --gui
 ```
 
-No arguments or `--gui` opens the Windows GUI. `--wizard` opens the legacy console wizard. Direct export mode starts when `--mesh` and export arguments are supplied.
+No arguments on the GUI executable, or `--gui` on either executable, opens the Windows GUI. No arguments on the CLI executable prints usage. `--wizard` opens the legacy console wizard. Direct export mode starts when `--mesh` and export arguments are supplied.
 
 General usage:
 
 ```powershell
-REE-Content-Exporter.exe `
+REE-Content-Exporter-CLI.exe `
   --game <game-id> `
   --mesh "<primary.mesh.version>" `
   [mesh/material options] `
@@ -174,7 +180,8 @@ Wizard animation behavior:
 Release artifacts must include:
 
 ```text
-REE-Content-Exporter.exe
+REE-Content-Exporter-GUI.exe
+REE-Content-Exporter-CLI.exe
 texconv.exe
 DirectXTex.dll
 libGDeflate.dll

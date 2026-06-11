@@ -31,6 +31,13 @@ internal static class GuiWizardApplication
 internal sealed class GuiWizardForm : Form
 {
     private const string ReePakToolProjectsRawBaseUrl = "https://raw.githubusercontent.com/Ekey/REE.PAK.Tool/refs/heads/main/Projects/";
+    private static readonly Color DarkBack = Color.FromArgb(25, 28, 34);
+    private static readonly Color DarkPanel = Color.FromArgb(34, 38, 46);
+    private static readonly Color DarkInput = Color.FromArgb(18, 21, 26);
+    private static readonly Color DarkBorder = Color.FromArgb(63, 70, 84);
+    private static readonly Color DarkText = Color.FromArgb(232, 236, 244);
+    private static readonly Color MutedText = Color.FromArgb(170, 178, 192);
+    private static readonly Color Accent = Color.FromArgb(73, 145, 255);
 
     private readonly string configPath;
     private WizardConfig config;
@@ -74,13 +81,17 @@ internal sealed class GuiWizardForm : Form
 
         Text = "REE-Content-Exporter Wizard";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1040, 760);
-        Size = new Size(1180, 860);
+        MinimumSize = new Size(1120, 780);
+        Size = new Size(1280, 900);
+        BackColor = DarkBack;
+        ForeColor = DarkText;
+        Font = new Font("Segoe UI", 9F);
 
         BuildLayout();
         LoadConfigIntoControls();
         UpdateGameUi();
         UpdateCommandPreview();
+        ApplyDarkTheme(this);
     }
 
     private void BuildLayout()
@@ -89,31 +100,88 @@ internal sealed class GuiWizardForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 5,
+            RowCount = 2,
             Padding = new Padding(12),
+            BackColor = DarkBack,
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 156));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 348));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         Controls.Add(root);
 
-        root.Controls.Add(BuildGamePanel(), 0, 0);
-        root.Controls.Add(BuildPathPanel(), 0, 1);
-        root.Controls.Add(BuildExportPanel(), 0, 2);
-        root.Controls.Add(BuildLogPanel(), 0, 3);
-        root.Controls.Add(BuildActionPanel(), 0, 4);
+        var tabs = new TabControl
+        {
+            Dock = DockStyle.Fill,
+            DrawMode = TabDrawMode.OwnerDrawFixed,
+            Padding = new Point(16, 6),
+        };
+        tabs.DrawItem += DrawDarkTab;
+
+        tabs.TabPages.Add(BuildSetupTab());
+        tabs.TabPages.Add(BuildExportTab());
+        tabs.TabPages.Add(BuildProgressTab());
+
+        root.Controls.Add(tabs, 0, 0);
+        root.Controls.Add(BuildActionPanel(), 0, 1);
+    }
+
+    private TabPage BuildSetupTab()
+    {
+        var page = CreateTabPage("Setup");
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(10), BackColor = DarkBack };
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 160));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 180));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        page.Controls.Add(grid);
+
+        grid.Controls.Add(BuildGamePanel(), 0, 0);
+        grid.Controls.Add(BuildPathPanel(), 0, 1);
+        var spacer = new Panel { Dock = DockStyle.Fill, BackColor = DarkBack };
+        grid.Controls.Add(spacer, 0, 2);
+        return page;
+    }
+
+    private TabPage BuildExportTab()
+    {
+        var page = CreateTabPage("Export");
+        var scroller = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(10), BackColor = DarkBack };
+        var exportPanel = BuildExportPanel();
+        exportPanel.Dock = DockStyle.Top;
+        exportPanel.Height = 660;
+        scroller.Controls.Add(exportPanel);
+        page.Controls.Add(scroller);
+        return page;
+    }
+
+    private TabPage BuildProgressTab()
+    {
+        var page = CreateTabPage("Progress");
+        page.Padding = new Padding(10);
+        page.Controls.Add(BuildLogPanel());
+        return page;
+    }
+
+    private static TabPage CreateTabPage(string title)
+        => new(title) { BackColor = DarkBack, ForeColor = DarkText, UseVisualStyleBackColor = false };
+
+    private static void DrawDarkTab(object? sender, DrawItemEventArgs e)
+    {
+        if (sender is not TabControl tabs) return;
+        var selected = e.Index == tabs.SelectedIndex;
+        var bounds = e.Bounds;
+        using var back = new SolidBrush(selected ? DarkPanel : DarkBack);
+        using var text = new SolidBrush(selected ? DarkText : MutedText);
+        e.Graphics.FillRectangle(back, bounds);
+        TextRenderer.DrawText(e.Graphics, tabs.TabPages[e.Index].Text, tabs.Font, bounds, selected ? DarkText : MutedText, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
     }
 
     private Control BuildGamePanel()
     {
         var panel = CreateGroup("Game configuration");
-        var grid = CreateGrid(4);
+        var grid = CreateGrid(2);
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 82));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
         panel.Controls.Add(grid);
 
         currentGameLabel.AutoSize = true;
@@ -124,9 +192,9 @@ internal sealed class GuiWizardForm : Form
         gameCombo.Items.AddRange(WizardGames.Definitions.Cast<object>().ToArray());
         gameCombo.SelectedIndexChanged += (_, _) => UpdateCommandPreview();
 
-        saveGameButton = new Button { Text = "Save Game" };
+        saveGameButton = new Button { Text = "Set", Dock = DockStyle.Fill, Margin = new Padding(4, 3, 4, 3) };
         saveGameButton.Click += async (_, _) => await SaveSelectedGameAsync();
-        changeGameButton = new Button { Text = "Change Game" };
+        changeGameButton = new Button { Text = "Edit", Dock = DockStyle.Fill, Margin = new Padding(4, 3, 4, 3) };
         changeGameButton.Click += (_, _) => ClearSelectedGame();
 
         grid.Controls.Add(new Label { Text = "Current", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
@@ -145,7 +213,7 @@ internal sealed class GuiWizardForm : Form
         var grid = CreateGrid(3);
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58));
         panel.Controls.Add(grid);
 
         AddPathRow(grid, 0, "Extract root", extractRootText, () => BrowseFolder(extractRootText));
@@ -157,69 +225,53 @@ internal sealed class GuiWizardForm : Form
     private Control BuildExportPanel()
     {
         var panel = CreateGroup("Export setup");
-        var grid = CreateGrid(8);
-        grid.RowStyles[1] = new RowStyle(SizeType.Absolute, 64);
-        grid.RowStyles[4] = new RowStyle(SizeType.Absolute, 64);
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 8,
+            BackColor = DarkPanel,
+            Padding = new Padding(2),
+        };
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 86));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         panel.Controls.Add(grid);
 
-        AddPathRow(grid, 0, "Primary mesh", meshText, () => BrowseFile(meshText, "RE Engine mesh|*.mesh*|All files|*.*"));
-        var findMeshButton = new Button { Text = "Find in list" };
+        var findMeshButton = CreateCompactButton("Find", 58);
         findMeshButton.Click += (_, _) => PickAssetFromList(meshText, AssetPickerKind.Mesh);
-        grid.Controls.Add(findMeshButton, 3, 0);
+        grid.Controls.Add(CreatePathRow("Primary mesh", meshText, () => BrowseFile(meshText, "RE Engine mesh|*.mesh*|All files|*.*"), findMeshButton), 0, 0);
 
-        grid.Controls.Add(new Label { Text = "Additional meshes", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
-        additionalMeshList.Height = 56;
-        grid.Controls.Add(additionalMeshList, 1, 1);
-        grid.SetColumnSpan(additionalMeshList, 2);
-        var addMeshButton = new Button { Text = "Add" };
+        var addMeshButton = CreateCompactButton("+", 44);
         addMeshButton.Click += (_, _) => AddAdditionalMesh();
-        var removeMeshButton = new Button { Text = "Remove" };
+        var removeMeshButton = CreateCompactButton("-", 44);
         removeMeshButton.Click += (_, _) => RemoveSelectedAdditionalMesh();
-        var meshButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
-        meshButtons.Controls.Add(addMeshButton);
-        meshButtons.Controls.Add(removeMeshButton);
-        grid.Controls.Add(meshButtons, 3, 1);
-        grid.SetColumnSpan(meshButtons, 2);
+        grid.Controls.Add(CreateListRow("Additional meshes", additionalMeshList, addMeshButton, removeMeshButton), 0, 1);
 
         includeAnimationsCheck.CheckedChanged += (_, _) => UpdateAnimationSourceUi();
-        grid.Controls.Add(includeAnimationsCheck, 0, 2);
-        grid.Controls.Add(new Label { Text = "Animation source", AutoSize = true, Anchor = AnchorStyles.Left }, 1, 2);
         animationSourceCombo.DropDownStyle = ComboBoxStyle.DropDownList;
         animationSourceCombo.Items.AddRange(["MOTLIST folder", "MOTLIST files", "MOT files"]);
         animationSourceCombo.SelectedIndex = 0;
         animationSourceCombo.SelectedIndexChanged += (_, _) => UpdateAnimationSourceUi();
-        grid.Controls.Add(animationSourceCombo, 2, 2);
-        grid.SetColumnSpan(animationSourceCombo, 2);
+        grid.Controls.Add(CreateAnimationSourceRow(), 0, 2);
 
-        AddPathRow(grid, 3, "MOTLIST folder", motlistDirText, () => BrowseFolder(motlistDirText));
-        var findMotlistButton = new Button { Text = "Find folder" };
+        var findMotlistButton = CreateCompactButton("Find", 58);
         findMotlistButton.Click += (_, _) => PickAssetFromList(motlistDirText, AssetPickerKind.MotlistDirectory);
-        grid.Controls.Add(findMotlistButton, 3, 3);
+        grid.Controls.Add(CreatePathRow("MOTLIST folder", motlistDirText, () => BrowseFolder(motlistDirText), findMotlistButton), 0, 3);
 
-        grid.Controls.Add(new Label { Text = "Animation files", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 4);
-        animationFileList.Height = 56;
-        grid.Controls.Add(animationFileList, 1, 4);
-        grid.SetColumnSpan(animationFileList, 2);
-        var addAnimationFileButton = new Button { Text = "Add" };
+        var addAnimationFileButton = CreateCompactButton("+", 44);
         addAnimationFileButton.Click += (_, _) => AddAnimationFileFromDisk();
-        var findAnimationFileButton = new Button { Text = "Find in list" };
+        var findAnimationFileButton = CreateCompactButton("Find", 58);
         findAnimationFileButton.Click += (_, _) => PickAnimationFileFromList();
-        var removeAnimationFileButton = new Button { Text = "Remove" };
+        var removeAnimationFileButton = CreateCompactButton("-", 44);
         removeAnimationFileButton.Click += (_, _) => RemoveSelectedAnimationFile();
-        var animationButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
-        animationButtons.Controls.Add(addAnimationFileButton);
-        animationButtons.Controls.Add(findAnimationFileButton);
-        animationButtons.Controls.Add(removeAnimationFileButton);
-        grid.Controls.Add(animationButtons, 3, 4);
-        grid.SetColumnSpan(animationButtons, 2);
+        grid.Controls.Add(CreateListRow("Animation files", animationFileList, addAnimationFileButton, findAnimationFileButton, removeAnimationFileButton), 0, 4);
 
-        grid.Controls.Add(new Label { Text = "Animation filter", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 5);
-        grid.Controls.Add(animationFilterText, 1, 5);
         outputFormatCombo.DropDownStyle = ComboBoxStyle.DropDownList;
         outputFormatCombo.Items.AddRange(["fbx", "glb"]);
         outputFormatCombo.SelectedIndex = 0;
@@ -230,24 +282,18 @@ internal sealed class GuiWizardForm : Form
         fbxScaleInput.Minimum = 0.01M;
         fbxScaleInput.Maximum = 1000M;
         fbxScaleInput.Value = 100M;
-        var optionFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true };
-        optionFlow.Controls.AddRange([
-            new Label { Text = "Output", AutoSize = true, Padding = new Padding(0, 6, 0, 0) },
-            outputFormatCombo,
-            new Label { Text = "Textures", AutoSize = true, Padding = new Padding(12, 6, 0, 0) },
-            textureFormatCombo,
-            new Label { Text = "FBX scale", AutoSize = true, Padding = new Padding(12, 6, 0, 0) },
-            fbxScaleInput,
-        ]);
-        grid.Controls.Add(optionFlow, 2, 5);
-        grid.SetColumnSpan(optionFlow, 3);
+        grid.Controls.Add(CreateFormatRow(), 0, 5);
 
-        var checks = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true };
+        var checksRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = DarkPanel };
+        checksRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        checksRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        checksRow.Controls.Add(CreateRowLabel("Export options"), 0, 0);
+        var checks = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = false, WrapContents = true, BackColor = DarkPanel };
         checks.Controls.AddRange([splitMotlistsCheck, splitAnimationsCheck, noTexturesCheck, includeLodsCheck, includeOcclusionCheck, noPlaceholderBonesCheck, allowMissingStreamingCheck]);
-        grid.Controls.Add(checks, 0, 6);
-        grid.SetColumnSpan(checks, 5);
+        checksRow.Controls.Add(checks, 1, 0);
+        grid.Controls.Add(checksRow, 0, 6);
 
-        AddPathRow(grid, 7, "Output path", outputPathText, () => BrowseSaveOutput());
+        grid.Controls.Add(CreatePathRow("Output path", outputPathText, () => BrowseSaveOutput()), 0, 7);
 
         foreach (Control control in EnumerateControls(grid))
         {
@@ -270,6 +316,105 @@ internal sealed class GuiWizardForm : Form
 
         UpdateAnimationSourceUi();
         return panel;
+
+        Button CreateCompactButton(string text, int width)
+            => new() { Text = text, Width = width, Height = 34, Margin = new Padding(4, 3, 0, 3) };
+
+        Label CreateRowLabel(string text)
+            => new() { Text = text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 8, 0) };
+
+        TableLayoutPanel CreatePathRow(string label, TextBox textBox, Action browse, params Button[] extraButtons)
+        {
+            var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3 + extraButtons.Length, RowCount = 1, BackColor = DarkPanel };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 54));
+            foreach (var _ in extraButtons) row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
+            row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            textBox.Dock = DockStyle.Fill;
+            textBox.Margin = new Padding(0, 5, 6, 5);
+            var browseButton = CreateCompactButton("...", 46);
+            browseButton.Dock = DockStyle.Fill;
+            browseButton.Click += (_, _) => browse();
+
+            row.Controls.Add(CreateRowLabel(label), 0, 0);
+            row.Controls.Add(textBox, 1, 0);
+            row.Controls.Add(browseButton, 2, 0);
+            for (var i = 0; i < extraButtons.Length; i++)
+            {
+                extraButtons[i].Dock = DockStyle.Fill;
+                row.Controls.Add(extraButtons[i], 3 + i, 0);
+            }
+            return row;
+        }
+
+        TableLayoutPanel CreateListRow(string label, ListBox listBox, params Button[] buttons)
+        {
+            var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = DarkPanel };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Math.Max(150, buttons.Length * 80)));
+            row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            listBox.Dock = DockStyle.Fill;
+            listBox.Margin = new Padding(0, 5, 6, 5);
+            var buttonFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, BackColor = DarkPanel };
+            buttonFlow.Controls.AddRange(buttons);
+
+            row.Controls.Add(CreateRowLabel(label), 0, 0);
+            row.Controls.Add(listBox, 1, 0);
+            row.Controls.Add(buttonFlow, 2, 0);
+            return row;
+        }
+
+        TableLayoutPanel CreateAnimationSourceRow()
+        {
+            var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = DarkPanel };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            includeAnimationsCheck.AutoSize = true;
+            includeAnimationsCheck.Margin = new Padding(0, 9, 0, 0);
+            animationSourceCombo.Dock = DockStyle.Fill;
+            animationSourceCombo.Margin = new Padding(0, 7, 0, 5);
+            row.Controls.Add(CreateRowLabel("Animations"), 0, 0);
+            row.Controls.Add(includeAnimationsCheck, 1, 0);
+            row.Controls.Add(CreateRowLabel("Source"), 2, 0);
+            row.Controls.Add(animationSourceCombo, 3, 0);
+            return row;
+        }
+
+        TableLayoutPanel CreateFormatRow()
+        {
+            var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = DarkPanel };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            row.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            row.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+
+            animationFilterText.Dock = DockStyle.Fill;
+            animationFilterText.Margin = new Padding(0, 5, 0, 5);
+            row.Controls.Add(CreateRowLabel("Animation filter"), 0, 0);
+            row.Controls.Add(animationFilterText, 1, 0);
+
+            var optionFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = false, WrapContents = false, BackColor = DarkPanel };
+            outputFormatCombo.Width = 90;
+            textureFormatCombo.Width = 90;
+            fbxScaleInput.Width = 90;
+            optionFlow.Controls.AddRange([
+                new Label { Text = "Output", AutoSize = true, Padding = new Padding(0, 7, 0, 0) },
+                outputFormatCombo,
+                new Label { Text = "Textures", AutoSize = true, Padding = new Padding(20, 7, 0, 0) },
+                textureFormatCombo,
+                new Label { Text = "FBX scale", AutoSize = true, Padding = new Padding(20, 7, 0, 0) },
+                fbxScaleInput,
+            ]);
+            row.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = DarkPanel }, 0, 1);
+            row.Controls.Add(optionFlow, 1, 1);
+            return row;
+        }
     }
 
     private Control BuildLogPanel()
@@ -301,13 +446,16 @@ internal sealed class GuiWizardForm : Form
     private Control BuildActionPanel()
     {
         var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
-        runButton.Width = 120;
-        cancelButton.Width = 100;
+        runButton.Text = "Run";
+        runButton.Width = 64;
+        runButton.Height = 34;
+        cancelButton.Width = 72;
+        cancelButton.Height = 34;
         runButton.Click += async (_, _) => await RunExportAsync();
         cancelButton.Click += (_, _) => CancelExport();
-        var saveConfigButton = new Button { Text = "Save Paths", Width = 100 };
+        var saveConfigButton = new Button { Text = "Save", Width = 64, Height = 34 };
         saveConfigButton.Click += (_, _) => SavePathConfig();
-        var copyCommandButton = new Button { Text = "Copy Command", Width = 120 };
+        var copyCommandButton = new Button { Text = "Copy", Width = 64, Height = 34 };
         copyCommandButton.Click += (_, _) => Clipboard.SetText(commandPreviewText.Text);
         panel.Controls.Add(runButton);
         panel.Controls.Add(cancelButton);
@@ -321,9 +469,73 @@ internal sealed class GuiWizardForm : Form
 
     private static TableLayoutPanel CreateGrid(int rows)
     {
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = rows };
-        for (var i = 0; i < rows; i++) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = rows, BackColor = DarkPanel };
+        for (var i = 0; i < rows; i++) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         return grid;
+    }
+
+    private static void ApplyDarkTheme(Control root)
+    {
+        root.BackColor = root is TextBoxBase or ListBox or ComboBox ? DarkInput : root is GroupBox ? DarkPanel : root.BackColor == SystemColors.Control ? DarkBack : root.BackColor;
+        root.ForeColor = root.Enabled ? DarkText : MutedText;
+
+        switch (root)
+        {
+            case GroupBox group:
+                group.BackColor = DarkPanel;
+                group.ForeColor = DarkText;
+                break;
+            case TextBox textBox:
+                textBox.BackColor = DarkInput;
+                textBox.ForeColor = DarkText;
+                textBox.BorderStyle = BorderStyle.FixedSingle;
+                break;
+            case ListBox listBox:
+                listBox.BackColor = DarkInput;
+                listBox.ForeColor = DarkText;
+                listBox.BorderStyle = BorderStyle.FixedSingle;
+                break;
+            case ComboBox comboBox:
+                comboBox.BackColor = DarkInput;
+                comboBox.ForeColor = DarkText;
+                comboBox.FlatStyle = FlatStyle.Flat;
+                break;
+            case Button button:
+                button.BackColor = DarkBorder;
+                button.ForeColor = DarkText;
+                button.FlatStyle = FlatStyle.Flat;
+                button.FlatAppearance.BorderColor = Accent;
+                button.FlatAppearance.MouseOverBackColor = Color.FromArgb(54, 65, 82);
+                button.UseCompatibleTextRendering = true;
+                button.TextAlign = ContentAlignment.MiddleCenter;
+                button.MinimumSize = new Size(0, 32);
+                break;
+            case CheckBox checkBox:
+                checkBox.AutoSize = true;
+                checkBox.BackColor = root.Parent?.BackColor ?? DarkPanel;
+                checkBox.ForeColor = DarkText;
+                break;
+            case Label label:
+                label.BackColor = root.Parent?.BackColor ?? DarkPanel;
+                label.ForeColor = DarkText;
+                break;
+            case FlowLayoutPanel flow:
+                flow.BackColor = root.Parent?.BackColor ?? DarkPanel;
+                break;
+            case TableLayoutPanel table:
+                table.BackColor = root.Parent?.BackColor ?? DarkPanel;
+                break;
+            case TabControl tabs:
+                tabs.BackColor = DarkBack;
+                tabs.ForeColor = DarkText;
+                break;
+            case TabPage page:
+                page.BackColor = DarkBack;
+                page.ForeColor = DarkText;
+                break;
+        }
+
+        foreach (Control child in root.Controls) ApplyDarkTheme(child);
     }
 
     private static IEnumerable<Control> EnumerateControls(Control root)
@@ -338,7 +550,8 @@ internal sealed class GuiWizardForm : Form
     private static void AddPathRow(TableLayoutPanel grid, int row, string label, TextBox textBox, Action browse, int startColumn = 0)
     {
         textBox.Dock = DockStyle.Fill;
-        var browseButton = new Button { Text = "Browse" };
+        textBox.Margin = new Padding(0, 4, 6, 4);
+        var browseButton = new Button { Text = "...", Dock = DockStyle.Fill, Margin = new Padding(4, 3, 4, 3) };
         browseButton.Click += (_, _) => browse();
         grid.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left }, startColumn, row);
         grid.Controls.Add(textBox, startColumn + 1, row);
@@ -720,13 +933,20 @@ internal sealed class GuiWizardForm : Form
     {
         try
         {
-            var exe = Environment.ProcessPath ?? "REE-Content-Exporter.exe";
+            var exe = ResolveCliExecutablePath();
             commandPreviewText.Text = Quote(exe) + " " + string.Join(" ", BuildExportArgs().Select(Quote));
         }
         catch (Exception ex)
         {
             commandPreviewText.Text = ex.Message;
         }
+    }
+
+    private static string ResolveCliExecutablePath()
+    {
+        var cliPath = Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter-CLI.exe");
+        if (File.Exists(cliPath)) return cliPath;
+        return Environment.ProcessPath ?? cliPath;
     }
 
     private async Task RunExportAsync()

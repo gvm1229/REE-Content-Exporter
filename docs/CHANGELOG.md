@@ -4,16 +4,18 @@
 
 ### Added
 
-- Added a Windows Forms GUI wizard that opens by default when `REE-Content-Exporter.exe` is launched without arguments.
+- Added a Windows Forms GUI wizard that opens by default when `REE-Content-Exporter-GUI.exe` is launched without arguments.
 - Added `--gui` for explicit GUI startup and `--wizard` for the legacy console wizard.
 - Added GUI controls for game selection, REE.PAK.Tool list download, mesh/list search, path browsing, output/texture dropdowns, FBX scale, export checkboxes, command preview, progress display, cancellation, and live log output.
 - Added GUI and legacy console wizard selection for skeletal animation sources: MOTLIST folders, MOTLIST files, and raw MOT files.
 - Added legacy console wizard animation candidate inference. When a skeletal mesh includes animations, the wizard searches the selected game's downloaded `.list` with the mesh name and offers matching MOTLIST folder and raw MOT choices.
+- Added separate published entry-point executables: `REE-Content-Exporter-GUI.exe` for GUI-first use and `REE-Content-Exporter-CLI.exe` for command-line use.
 
 ### Changed
 
 - The saved game configuration is locked in the GUI after selection, matching the universal v0.4 behavior. Changing games now requires clearing the saved game through the GUI or deleting the `game` line from `config.json`.
 - The GUI no longer hard-defaults the game dropdown to Pragmata when `config.json` has no saved `game`, avoiding startup selection errors and requiring an explicit saved game before export.
+- The GUI is now arranged into dark themed Setup, Export, and Progress tabs to prevent clipped controls and reduce visual clutter.
 - The project now targets `net10.0-windows` with Windows Forms enabled while preserving console output for direct CLI exports.
 - Developer helper scripts now look for the Release build under `bin\Release\net10.0-windows`.
 
@@ -40,7 +42,7 @@
 
 ### Changed
 
-- Release build and publish outputs now include `texconv.exe` beside `REE-Content-Exporter.exe` so downloaded packages can export PNG textures without a separate DirectXTex install.
+- Release build and publish outputs now include `texconv.exe` beside the exporter entry-point executables so downloaded packages can export PNG textures without a separate DirectXTex install.
 - Release build/publish now fails if `texconv.exe` cannot be found on the build machine or supplied with `-p:TexconvPath="<path>\texconv.exe"`.
 - Runtime PNG conversion now prefers the bundled `texconv.exe` before checking `PATH` or the developer WinGet package cache.
 - Texture export failures now fail the exporter instead of producing a misleading success log with only `materials.textures.json` or leftover temporary DDS files.
