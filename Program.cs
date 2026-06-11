@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading;
+using System.Runtime.InteropServices;
 using ContentEditor;
 using ContentEditor.App.FileLoaders;
 using ReeLib;
@@ -2160,6 +2161,7 @@ if (HasFlag(args, "--help"))
 if (args.Length == 0 && isCliExecutable)
 {
     PrintUsage();
+    PauseIfStandaloneConsole();
     return;
 }
 
@@ -2425,6 +2427,28 @@ static bool IsConfigOnlyInvocation(string[] args)
     return string.Equals(args[0], "--config", StringComparison.OrdinalIgnoreCase)
         && !string.IsNullOrWhiteSpace(args[1]);
 }
+
+static void PauseIfStandaloneConsole()
+{
+    if (!OperatingSystem.IsWindows() || Console.IsInputRedirected) return;
+    try
+    {
+        var processIds = new uint[4];
+        if (GetConsoleProcessList(processIds, (uint)processIds.Length) <= 1)
+        {
+            Console.WriteLine();
+            Console.Write("Press Enter to close...");
+            Console.ReadLine();
+        }
+    }
+    catch
+    {
+        // Best-effort Explorer double-click nicety; never block normal CLI use if detection fails.
+    }
+}
+
+[DllImport("kernel32.dll", SetLastError = true)]
+static extern uint GetConsoleProcessList([Out] uint[] processList, uint processCount);
 
 static void WriteCliError(Exception ex)
 {

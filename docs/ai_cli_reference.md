@@ -39,7 +39,7 @@ The project targets `net10.0-windows` with Windows Forms enabled. Keep the appli
 Release packages contain two entry-point executables:
 
 - `REE-Content-Exporter-GUI.exe` opens the Windows Forms wizard with no arguments.
-- `REE-Content-Exporter-CLI.exe` prints command-line usage with no arguments and is intended for direct export commands.
+- `REE-Content-Exporter-CLI.exe` prints command-line usage with no arguments and is intended for direct export commands. When launched by double-click from Explorer with no arguments, it waits for Enter after printing usage so the temporary console remains readable.
 
 `--gui` opens the Windows Forms wizard explicitly from either executable.
 
@@ -134,7 +134,7 @@ REE-Content-Exporter-CLI.exe --reset-config --wizard
 REE-Content-Exporter-GUI.exe --config "<config.json>" --gui
 ```
 
-No arguments on the GUI executable, `--gui` on either executable, or `REE-Content-Exporter-GUI.exe --config "<config.json>"` opens the Windows GUI. No arguments on the CLI executable prints usage. `--wizard` opens the legacy console wizard. Direct export mode starts when `--mesh` and export arguments are supplied.
+No arguments on the GUI executable, `--gui` on either executable, or `REE-Content-Exporter-GUI.exe --config "<config.json>"` opens the Windows GUI. No arguments on the CLI executable prints usage; Explorer double-click no-arg launches pause for Enter before closing, while terminal/script invocations return immediately. `--wizard` opens the legacy console wizard. Direct export mode starts when `--mesh` and export arguments are supplied.
 
 Direct export mode preflights the primary mesh, additional meshes, explicit streaming files, explicit MDF, MOTLIST inputs, raw MOT inputs, and output parent path before loading REE files. Missing required arguments return exit code `2`; file, directory, and export failures return exit code `1`. Normal CLI failures print a concise `ERROR:` line without a .NET stack trace unless `REE_CONTENT_EXPORTER_DEBUG_ERRORS` is set.
 
