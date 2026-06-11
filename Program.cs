@@ -41,7 +41,7 @@ static void PrintUsage()
 {
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
-    Console.WriteLine("  REE-Content-Exporter [--wizard] [--reset-config] [--config <path>]");
+    Console.WriteLine("  REE-Content-Exporter [--gui|--wizard] [--reset-config] [--config <path>]");
     Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
 }
 
@@ -269,7 +269,7 @@ static void RunSingleMeshWizard(WizardConfig config, IReadOnlyList<GameListEntry
     var animation = WizardAnimationSelection.None;
     if (isSkeletal && PromptYesNo(language == WizardLanguage.Korean ? "애니메이션을 포함할까요?" : "Include animations?", defaultValue: false, language))
     {
-        animation = PromptForAnimationSelection(config, index, language);
+        animation = PromptForAnimationSelection(mesh.Path, config, index, language);
     }
 
     var exportRoot = PromptExportRoot(config.DefaultExportRoot, language);
@@ -311,7 +311,7 @@ static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<GameListEntry> 
             var animation = WizardAnimationSelection.None;
             if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.PromptForAnimations && PromptYesNo(language == WizardLanguage.Korean ? $"{assetName}의 애니메이션을 포함할까요?" : $"Include animations for {assetName}?", defaultValue: false, language))
             {
-                animation = PromptForAnimationSelection(config, index, language);
+                animation = PromptForAnimationSelection(mesh.Path, config, index, language);
             }
             else if (isSkeletal && skeletalMode == WizardBatchSkeletalMode.SkipAnimationPrompts)
             {
@@ -800,9 +800,132 @@ static ResolvedAsset ChooseAsset(string label, IReadOnlyList<ResolvedAsset> matc
     }
 }
 
-static WizardAnimationSelection PromptForAnimationSelection(WizardConfig config, IReadOnlyList<GameListEntry> index, WizardLanguage language)
+static WizardAnimationSelection PromptForAnimationSelection(string meshPath, WizardConfig config, IReadOnlyList<GameListEntry> index, WizardLanguage language)
 {
-    if (PromptYesNo(language == WizardLanguage.Korean ? "MOTLIST 파일을 하나씩 선택하는 대신 MOTLIST 폴더를 사용할까요?" : "Use a MOTLIST folder instead of selecting MOTLIST files one by one?", defaultValue: true, language))
+    var inferred = InferAnimationCandidates(meshPath, config, index);
+    if (inferred.HasAnyCandidates)
+    {
+        return PromptForInferredAnimationSelection(inferred, language);
+    }
+
+    Console.WriteLine(language == WizardLanguage.Korean
+        ? "메시 이름으로 자동 감지된 애니메이션 파일이 없습니다. 수동으로 선택합니다."
+        : "No animation files were inferred from the mesh name. Choose animation sources manually.");
+    return PromptForManualAnimationSelection(config, index, language);
+}
+
+static WizardAnimationSelection PromptForInferredAnimationSelection(WizardAnimationCandidates inferred, WizardLanguage language)
+{
+    Console.WriteLine(language == WizardLanguage.Korean ? "자동 감지된 애니메이션 후보:" : "Inferred animation candidates:");
+    if (!string.IsNullOrWhiteSpace(inferred.MotlistDirectory))
+    {
+        Console.WriteLine($"[.motlist folder] \"{inferred.MotlistDirectory}\" found.");
+    }
+    if (inferred.MotFiles.Count == 1)
+    {
+        Console.WriteLine($"[.mot file] \"{inferred.MotFiles[0]}\" found.");
+    }
+    else if (inferred.MotFiles.Count > 1)
+    {
+        Console.WriteLine($"[.mot files] {inferred.MotFiles.Count} files found.");
+    }
+
+    var choices = new List<(int Number, string Label, Func<WizardAnimationSelection> Select)>();
+    var next = 1;
+    if (!string.IsNullOrWhiteSpace(inferred.MotlistDirectory))
+    {
+        choices.Add((next++, language == WizardLanguage.Korean ? "폴더의 모든 .motlist 파일 포함" : "Include all .motlist files in the folder", () => WizardAnimationSelection.FromMotlistDirectory(inferred.MotlistDirectory!)));
+        choices.Add((next++, language == WizardLanguage.Korean ? "폴더에서 .motlist 파일 선택" : "Select .motlist file(s) from the folder", () => PromptForMotlistFilesFromFolder(inferred.MotlistDirectory!, language)));
+    }
+    if (inferred.MotFiles.Count > 0)
+    {
+        choices.Add((next++, language == WizardLanguage.Korean ? ".mot 파일만 포함" : "Select only the .mot file(s)", () => WizardAnimationSelection.FromMotFiles(inferred.MotFiles)));
+    }
+    if (!string.IsNullOrWhiteSpace(inferred.MotlistDirectory) && inferred.MotFiles.Count > 0)
+    {
+        choices.Add((next++, language == WizardLanguage.Korean ? "위 항목 모두 포함" : "Select all of the above", () => WizardAnimationSelection.FromMotlistDirectoryAndMotFiles(inferred.MotlistDirectory!, inferred.MotFiles)));
+    }
+
+    foreach (var choice in choices)
+    {
+        Console.WriteLine($"  {choice.Number}. {choice.Label}");
+    }
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? $"1-{choices.Count} 중 선택: " : $"Choose 1-{choices.Count}: ");
+        if (int.TryParse(Console.ReadLine(), out var selected))
+        {
+            var choice = choices.FirstOrDefault(item => item.Number == selected);
+            if (choice.Select != null)
+            {
+                PrintWizardPromptSeparator();
+                return choice.Select();
+            }
+        }
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
+    }
+}
+
+static WizardAnimationSelection PromptForMotlistFilesFromFolder(string folder, WizardLanguage language)
+{
+    var files = Directory.GetFiles(folder, "*.motlist*", SearchOption.AllDirectories)
+        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    if (files.Count == 0)
+    {
+        throw new InvalidOperationException($"No .motlist files were found in {folder}");
+    }
+
+    Console.WriteLine(language == WizardLanguage.Korean ? "MOTLIST 파일:" : "MOTLIST files:");
+    for (var i = 0; i < files.Count; i++)
+    {
+        Console.WriteLine($"  {i + 1}. {files[i]}");
+    }
+
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? "선택할 번호를 공백으로 구분해 입력: " : "Enter selected numbers separated by whitespace: ");
+        var input = Console.ReadLine() ?? "";
+        var selected = ParseNumberSelection(input, files.Count);
+        if (selected.Count > 0)
+        {
+            PrintWizardPromptSeparator();
+            return WizardAnimationSelection.FromMotlists(selected.Select(index => files[index - 1]).ToList());
+        }
+        Console.WriteLine(language == WizardLanguage.Korean ? "번호를 하나 이상 올바르게 입력하세요." : "Enter at least one valid number.");
+    }
+}
+
+static IReadOnlyList<int> ParseNumberSelection(string input, int max)
+{
+    var selected = new List<int>();
+    foreach (var token in input.Split([' ', '\t', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        if (!int.TryParse(token, out var number) || number < 1 || number > max) return [];
+        if (!selected.Contains(number)) selected.Add(number);
+    }
+    return selected;
+}
+
+static WizardAnimationSelection PromptForManualAnimationSelection(WizardConfig config, IReadOnlyList<GameListEntry> index, WizardLanguage language)
+{
+    Console.WriteLine(language == WizardLanguage.Korean ? "애니메이션 소스:" : "Animation source:");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  1. MOTLIST 폴더" : "  1. MOTLIST folder");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  2. MOTLIST 파일" : "  2. MOTLIST files");
+    Console.WriteLine(language == WizardLanguage.Korean ? "  3. MOT 파일" : "  3. MOT files");
+    int sourceMode;
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? "1-3 중 선택: " : "Choose 1-3: ");
+        if (int.TryParse(Console.ReadLine(), out sourceMode) && sourceMode >= 1 && sourceMode <= 3)
+        {
+            PrintWizardPromptSeparator();
+            break;
+        }
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
+    }
+
+    if (sourceMode == 1)
     {
         while (true)
         {
@@ -818,28 +941,32 @@ static WizardAnimationSelection PromptForAnimationSelection(WizardConfig config,
         }
     }
 
-    var motlists = new List<string>();
+    var kind = sourceMode == 3 ? AssetKind.Mot : AssetKind.Motlist;
+    var label = sourceMode == 3 ? "MOT" : "MOTLIST";
+    var selectedFiles = new List<string>();
     while (true)
     {
-        var query = PromptText(motlists.Count == 0
-            ? (language == WizardLanguage.Korean ? "MOTLIST 파일 이름/경로" : "MOTLIST filename/path")
-            : (language == WizardLanguage.Korean ? "다음 MOTLIST 파일 이름/경로, 또는 done" : "Next MOTLIST filename/path, or done"));
+        var query = PromptText(selectedFiles.Count == 0
+            ? (language == WizardLanguage.Korean ? $"{label} 파일 이름/경로" : $"{label} filename/path")
+            : (language == WizardLanguage.Korean ? $"다음 {label} 파일 이름/경로, 또는 done" : $"Next {label} filename/path, or done"));
         if (IsDoneInput(query))
         {
-            if (motlists.Count > 0) break;
-            Console.WriteLine(language == WizardLanguage.Korean ? "MOTLIST를 하나 이상 선택하거나, 다시 시작해서 애니메이션 없음을 선택해 주세요." : "Select at least one MOTLIST, or restart and choose no animations.");
+            if (selectedFiles.Count > 0) break;
+            Console.WriteLine(language == WizardLanguage.Korean ? $"{label} 파일을 하나 이상 선택하거나, 다시 시작해서 애니메이션 없음을 선택해 주세요." : $"Select at least one {label} file, or restart and choose no animations.");
             continue;
         }
-        var matches = ResolveAssetQuery(query, AssetKind.Motlist, config, index);
+        var matches = ResolveAssetQuery(query, kind, config, index);
         if (matches.Count == 0)
         {
-            Console.WriteLine(language == WizardLanguage.Korean ? "일치하는 MOTLIST를 찾지 못했습니다." : "No matching MOTLIST was found.");
+            Console.WriteLine(language == WizardLanguage.Korean ? $"일치하는 {label} 파일을 찾지 못했습니다." : $"No matching {label} file was found.");
             continue;
         }
-        var selected = matches.Count == 1 ? matches[0] : ChooseAsset("MOTLIST", matches, language);
-        if (!motlists.Contains(selected.Path, StringComparer.OrdinalIgnoreCase)) motlists.Add(selected.Path);
+        var selected = matches.Count == 1 ? matches[0] : ChooseAsset(label, matches, language);
+        if (!selectedFiles.Contains(selected.Path, StringComparer.OrdinalIgnoreCase)) selectedFiles.Add(selected.Path);
     }
-    return WizardAnimationSelection.FromMotlists(motlists);
+    return sourceMode == 3
+        ? WizardAnimationSelection.FromMotFiles(selectedFiles)
+        : WizardAnimationSelection.FromMotlists(selectedFiles);
 }
 
 static string ChoosePath(string label, IReadOnlyList<string> paths, WizardLanguage language)
@@ -938,6 +1065,7 @@ static ResolvedAsset? ResolveDirectAsset(string query, AssetKind kind)
     var full = Path.GetFullPath(query);
     if (kind == AssetKind.Mesh && (!IsMeshPath(full) || IsStreamingPath(full))) return null;
     if (kind == AssetKind.Motlist && !IsMotlistPath(full)) return null;
+    if (kind == AssetKind.Mot && !IsMotPath(full)) return null;
     return new ResolvedAsset(full, null);
 }
 
@@ -964,10 +1092,64 @@ static IReadOnlyList<string> ResolveMotlistDirectoryQuery(string query, WizardCo
     return dirs;
 }
 
+static WizardAnimationCandidates InferAnimationCandidates(string meshPath, WizardConfig config, IReadOnlyList<GameListEntry> index)
+{
+    var meshName = PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString();
+    if (string.IsNullOrWhiteSpace(meshName)) return WizardAnimationCandidates.Empty(meshName);
+    var searchTerms = BuildAnimationSearchTerms(meshName);
+
+    var motlistFiles = ResolveInferredAnimationFiles(searchTerms, AssetKind.Motlist, config, index);
+    var motlistDirectory = motlistFiles
+        .Select(Path.GetDirectoryName)
+        .Where(path => !string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
+        .GroupBy(path => path!, StringComparer.OrdinalIgnoreCase)
+        .OrderByDescending(group => group.Count())
+        .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+        .Select(group => group.Key)
+        .FirstOrDefault();
+
+    var motFiles = ResolveInferredAnimationFiles(searchTerms, AssetKind.Mot, config, index);
+    return new WizardAnimationCandidates(meshName, motlistDirectory, motFiles);
+}
+
+static IReadOnlyList<string> BuildAnimationSearchTerms(string meshName)
+{
+    var terms = new List<string> { meshName };
+    var parts = meshName.Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    for (var take = parts.Length - 1; take >= 2; take--)
+    {
+        terms.Add(string.Join('_', parts.Take(take)));
+    }
+    if (parts.Length > 1) terms.Add(parts[0]);
+    return terms
+        .Where(term => term.Length >= 3)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderByDescending(term => term.Length)
+        .ToList();
+}
+
+static IReadOnlyList<string> ResolveInferredAnimationFiles(IReadOnlyList<string> searchTerms, AssetKind kind, WizardConfig config, IReadOnlyList<GameListEntry> index)
+{
+    return index
+        .Where(entry => EntryMatchesKind(entry, kind))
+        .Where(entry => EntryMatchesAnimationMeshName(entry, searchTerms))
+        .SelectMany(entry => GenerateDiskCandidates(config.ExtractRoot, entry.RelativePath))
+        .Where(File.Exists)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+}
+
+static bool EntryMatchesAnimationMeshName(GameListEntry entry, IReadOnlyList<string> searchTerms)
+    => searchTerms.Any(term =>
+        entry.RelativePath.Contains(term, StringComparison.OrdinalIgnoreCase)
+        || entry.FileName.Contains(term, StringComparison.OrdinalIgnoreCase));
+
 static bool EntryMatchesKind(GameListEntry entry, AssetKind kind) => kind switch
 {
     AssetKind.Mesh => IsMeshPath(entry.RelativePath) && !IsStreamingPath(entry.RelativePath),
     AssetKind.Motlist => IsMotlistPath(entry.RelativePath),
+    AssetKind.Mot => IsMotPath(entry.RelativePath),
     _ => false,
 };
 
@@ -1161,6 +1343,7 @@ static bool IsTopLevelGameFolder(string value) => value.Equals("camera", StringC
 
 static bool IsMeshPath(string path) => path.Contains(".mesh.", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".mesh", StringComparison.OrdinalIgnoreCase);
 static bool IsMotlistPath(string path) => path.Contains(".motlist.", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".motlist", StringComparison.OrdinalIgnoreCase);
+static bool IsMotPath(string path) => (path.Contains(".mot.", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".mot", StringComparison.OrdinalIgnoreCase)) && !IsMotlistPath(path);
 static bool IsStreamingPath(string path) => NormalizeIndexPath(path).Split('/').Contains("streaming", StringComparer.OrdinalIgnoreCase);
 
 static string ResolveWizardConfigPath(string? overridePath)
@@ -1554,7 +1737,7 @@ static string BuildWizardPowerShell(
             args.Add(animation.MotlistDirectory!);
             args.Add("--split-motlists");
         }
-        else
+        else if (animation.Mode == WizardAnimationMode.Motlists)
         {
             foreach (var motlist in animation.Motlists)
             {
@@ -1563,13 +1746,32 @@ static string BuildWizardPowerShell(
             }
             args.Add("--split-motlists");
         }
+        else if (animation.Mode == WizardAnimationMode.MotFiles)
+        {
+            foreach (var mot in animation.MotFiles)
+            {
+                args.Add("--mot");
+                args.Add(mot);
+            }
+        }
+        else
+        {
+            args.Add("--motlist-dir");
+            args.Add(animation.MotlistDirectory!);
+            foreach (var mot in animation.MotFiles)
+            {
+                args.Add("--mot");
+                args.Add(mot);
+            }
+        }
     }
 
     var argLines = args.Select(arg => arg == "$OutputRequest" ? "    $OutputRequest" : "    " + PsQuote(arg)).ToList();
+    var isSplitMotlistExport = animation.Mode is WizardAnimationMode.MotlistDirectory or WizardAnimationMode.Motlists;
     var outputRequestLine = animation.Mode == WizardAnimationMode.None
         ? $"$OutputRequest = Join-Path $ExportRoot {PsQuote(sourceName)}"
         : $"$OutputRequest = Join-Path $ExportRoot {PsQuote(sourceName)}";
-    var sourceDiscovery = animation.Mode == WizardAnimationMode.None
+    var sourceDiscovery = !isSplitMotlistExport
         ? $$"""
     $Source = Get-ChildItem $ExportRoot -Recurse -File -Filter {{PsQuote(sourceName)}} |
         Where-Object { $_.LastWriteTime -ge $Start.AddMinutes(-2) } |
@@ -1938,7 +2140,12 @@ if (HasFlag(args, "--reset-config"))
         Console.WriteLine($"Deleted wizard config: {path}");
     }
 }
-if (args.Length == 0 || HasFlag(args, "--wizard") || HasFlag(args, "--reset-config"))
+if (args.Length == 0 || HasFlag(args, "--gui"))
+{
+    GuiWizardApplication.Run(wizardConfigPath);
+    return;
+}
+if (HasFlag(args, "--wizard") || HasFlag(args, "--reset-config"))
 {
     RunWizard(wizardConfigPath);
     return;
@@ -2908,7 +3115,7 @@ sealed class ProgressStatus : IDisposable
     private readonly object sync = new();
     private readonly bool enabled = !Console.IsOutputRedirected;
     private readonly string[] frames = [".", "..", "..."];
-    private Timer? timer;
+    private System.Threading.Timer? timer;
     private string message = "";
     private int frameIndex;
     private int lastLength;
@@ -2927,7 +3134,7 @@ sealed class ProgressStatus : IDisposable
             message = text;
             frameIndex = 0;
             active = true;
-            timer ??= new Timer(_ => Tick(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(500));
+            timer ??= new System.Threading.Timer(_ => Tick(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(500));
             DrawLocked();
         }
     }
@@ -3118,6 +3325,7 @@ enum AssetKind
 {
     Mesh,
     Motlist,
+    Mot,
 }
 
 enum WizardAnimationMode
@@ -3125,23 +3333,35 @@ enum WizardAnimationMode
     None,
     MotlistDirectory,
     Motlists,
+    MotFiles,
+    MotlistDirectoryAndMotFiles,
 }
 
 sealed class WizardAnimationSelection
 {
-    public static WizardAnimationSelection None { get; } = new(WizardAnimationMode.None, null, []);
+    public static WizardAnimationSelection None { get; } = new(WizardAnimationMode.None, null, [], []);
 
     public WizardAnimationMode Mode { get; }
     public string? MotlistDirectory { get; }
     public IReadOnlyList<string> Motlists { get; }
+    public IReadOnlyList<string> MotFiles { get; }
 
-    private WizardAnimationSelection(WizardAnimationMode mode, string? motlistDirectory, IReadOnlyList<string> motlists)
+    private WizardAnimationSelection(WizardAnimationMode mode, string? motlistDirectory, IReadOnlyList<string> motlists, IReadOnlyList<string> motFiles)
     {
         Mode = mode;
         MotlistDirectory = motlistDirectory;
         Motlists = motlists;
+        MotFiles = motFiles;
     }
 
-    public static WizardAnimationSelection FromMotlistDirectory(string path) => new(WizardAnimationMode.MotlistDirectory, path, []);
-    public static WizardAnimationSelection FromMotlists(IReadOnlyList<string> paths) => new(WizardAnimationMode.Motlists, null, paths);
+    public static WizardAnimationSelection FromMotlistDirectory(string path) => new(WizardAnimationMode.MotlistDirectory, path, [], []);
+    public static WizardAnimationSelection FromMotlists(IReadOnlyList<string> paths) => new(WizardAnimationMode.Motlists, null, paths, []);
+    public static WizardAnimationSelection FromMotFiles(IReadOnlyList<string> paths) => new(WizardAnimationMode.MotFiles, null, [], paths);
+    public static WizardAnimationSelection FromMotlistDirectoryAndMotFiles(string motlistDirectory, IReadOnlyList<string> motFiles) => new(WizardAnimationMode.MotlistDirectoryAndMotFiles, motlistDirectory, [], motFiles);
+}
+
+sealed record WizardAnimationCandidates(string MeshName, string? MotlistDirectory, IReadOnlyList<string> MotFiles)
+{
+    public bool HasAnyCandidates => !string.IsNullOrWhiteSpace(MotlistDirectory) || MotFiles.Count > 0;
+    public static WizardAnimationCandidates Empty(string meshName) => new(meshName, null, []);
 }

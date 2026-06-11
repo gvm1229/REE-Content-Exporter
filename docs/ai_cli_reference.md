@@ -4,7 +4,7 @@ This document is accessible to human users, but it is intended primarily for AI 
 
 ## Architecture
 
-REE-Content-Exporter is a CLI/wizard wrapper around REE-Content-Editor and RE-Engine-Lib.
+REE-Content-Exporter is a Windows GUI, CLI, and legacy console-wizard wrapper around REE-Content-Editor and RE-Engine-Lib.
 
 Expected development layout:
 
@@ -31,6 +31,27 @@ Publish:
 ```powershell
 dotnet publish -c Release -p:PublishProfile=win-x64-singlefile
 ```
+
+The project targets `net10.0-windows` with Windows Forms enabled. Keep the application output type as `Exe` so direct CLI invocations still write console output.
+
+## GUI Wizard
+
+Launching `REE-Content-Exporter.exe` with no arguments opens the Windows Forms wizard. `--gui` does the same explicitly.
+
+The GUI stores paths and game configuration in the same config file as the legacy wizard. Once the `game` property is saved, the GUI disables the game dropdown and uses that saved game for exports. The user can clear the saved game with the Change Game action or by deleting the `game` line from `config.json`.
+
+The GUI wraps the direct exporter command. It provides:
+
+- game dropdown and `.list` download through REE.PAK.Tool metadata
+- folder/file pickers for extract root, export root, Blender path, primary mesh, animation sources, and output path
+- downloaded-list search for primary mesh, MOTLIST folders/files, and raw `.mot.*` files
+- dropdowns for output format and texture format
+- animation source dropdown for `MOTLIST folder`, `MOTLIST files`, and `MOT files`
+- numeric FBX scale control
+- checkboxes for animations, split MOTLISTs, split animations, textures, LODs, occlusion, missing animation bone handling, and missing streaming buffers
+- command preview, progress bar, log window, cancel button, and command-copy action
+
+The GUI currently runs the direct exporter process and captures stdout/stderr in the log window. The older script-generation and Blender Unreal-ready workflow remains available through the legacy console wizard.
 
 ## Universal Game Configuration
 
@@ -82,6 +103,18 @@ Supported wizard game IDs:
 
 ## Command Line
 
+Startup modes:
+
+```powershell
+REE-Content-Exporter.exe
+REE-Content-Exporter.exe --gui
+REE-Content-Exporter.exe --wizard
+REE-Content-Exporter.exe --reset-config --wizard
+REE-Content-Exporter.exe --config "<config.json>" --gui
+```
+
+No arguments or `--gui` opens the Windows GUI. `--wizard` opens the legacy console wizard. Direct export mode starts when `--mesh` and export arguments are supplied.
+
 General usage:
 
 ```powershell
@@ -108,7 +141,7 @@ Core options:
 | `--mdf <path>` | Explicit MDF for primary mesh materials. |
 | `--motlist <path>` | MOTLIST animation source. Repeatable. |
 | `--motlist-dir <folder>` | Recursively uses all `*.motlist*` files under a folder. |
-| `--mot <path>` | Raw MOT animation source. Repeatable. |
+| `--mot <path>` | Raw MOT animation source parsed through REE-Lib `MotFile`. Repeatable. |
 | `--output <path>` | `.glb`, `.fbx`, or folder output target. |
 | `--animation-name <text>` | Case-insensitive animation-name filter. |
 | `--split-motlists` | One output file per non-empty MOTLIST. |
@@ -123,6 +156,18 @@ Core options:
 | `--include-lods` | Includes LOD geometry where supported. |
 | `--include-occlusion` | Includes occlusion geometry where supported. |
 | `--allow-missing-streaming` | Diagnostic-only escape hatch for missing required streaming buffers. |
+
+Wizard animation behavior:
+
+- GUI direct export can use a MOTLIST folder, repeatable MOTLIST files, or repeatable raw MOT files.
+- Legacy console script generation asks for the same source type when animations are enabled.
+- When the legacy console wizard detects a skeletal mesh and the user includes animations, it searches the downloaded `.list` with the mesh stem and suggests inferred MOTLIST folders and raw MOT files before falling back to manual selection.
+- Inferred MOTLIST folder mode keeps the existing `--motlist-dir --split-motlists` script behavior.
+- Inferred selected MOTLIST files pass repeatable `--motlist` arguments and keep split-MOTLIST behavior.
+- Inferred raw MOT files pass repeatable `--mot` arguments.
+- Selecting all inferred MOTLIST folder and raw MOT candidates passes both `--motlist-dir` and `--mot` without `--split-motlists`, because the direct exporter rejects `--split-motlists` when raw MOT inputs are present.
+- Raw MOT files are resolved from downloaded REE.PAK.Tool lists by `.mot.*` paths, excluding `.motlist.*`.
+- Generated Unreal-ready scripts pass raw MOT files as `--mot` and keep them in a single source FBX for Blender re-export.
 
 ## Runtime Dependencies
 

@@ -90,13 +90,13 @@ The exporter logic supports old STM and flat `re_chunk_000` layouts, but the exe
 Windows scripts call:
 
 ```text
-bin\Release\net10.0\REE-Content-Exporter.exe
+bin\Release\net10.0-windows\REE-Content-Exporter.exe
 ```
 
 On macOS, unless a self-contained macOS build is published, the likely command is:
 
 ```bash
-dotnet bin/Release/net10.0/REE-Content-Exporter.dll
+dotnet bin/Release/net10.0-windows/REE-Content-Exporter.dll
 ```
 
 This must be verified because the project references the patched REE-Content-Editor dependency, and that dependency may carry Windows-specific assumptions.

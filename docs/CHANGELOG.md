@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## 0.5.0 - GUI wizard
+
+### Added
+
+- Added a Windows Forms GUI wizard that opens by default when `REE-Content-Exporter.exe` is launched without arguments.
+- Added `--gui` for explicit GUI startup and `--wizard` for the legacy console wizard.
+- Added GUI controls for game selection, REE.PAK.Tool list download, mesh/list search, path browsing, output/texture dropdowns, FBX scale, export checkboxes, command preview, progress display, cancellation, and live log output.
+- Added GUI and legacy console wizard selection for skeletal animation sources: MOTLIST folders, MOTLIST files, and raw MOT files.
+- Added legacy console wizard animation candidate inference. When a skeletal mesh includes animations, the wizard searches the selected game's downloaded `.list` with the mesh name and offers matching MOTLIST folder and raw MOT choices.
+
+### Changed
+
+- The saved game configuration is locked in the GUI after selection, matching the universal v0.4 behavior. Changing games now requires clearing the saved game through the GUI or deleting the `game` line from `config.json`.
+- The GUI no longer hard-defaults the game dropdown to Pragmata when `config.json` has no saved `game`, avoiding startup selection errors and requiring an explicit saved game before export.
+- The project now targets `net10.0-windows` with Windows Forms enabled while preserving console output for direct CLI exports.
+- Developer helper scripts now look for the Release build under `bin\Release\net10.0-windows`.
+
 ## 0.4.0 - universal game configuration
 
 ### Added

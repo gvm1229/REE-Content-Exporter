@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Resolve-Path (Join-Path $ScriptDir "..")
-$Exporter = Join-Path $RepoRoot "bin\Release\net10.0\REE-Content-Exporter.exe"
+$Exporter = Join-Path $RepoRoot "bin\Release\net10.0-windows\REE-Content-Exporter.exe"
 
 if (!(Test-Path $Exporter)) { throw "Missing exporter: $Exporter. Build with dotnet build -c Release." }
 if (!(Test-Path $Blender)) { throw "Missing Blender 4.5.9 executable: $Blender" }

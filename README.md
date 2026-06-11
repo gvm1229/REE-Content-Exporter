@@ -2,7 +2,7 @@
 
 REE-Content-Exporter is a small export wizard built on top of REE-Content-Editor / RE-Engine-Lib. It helps move supported RE Engine meshes, materials, textures, skeletons, and animations into Blender, Unreal, or other DCC/game-engine workflows.
 
-Version 0.4 makes the wizard game-configurable. It is no longer a PRAGMATA-only workflow.
+Version 0.5 opens as a Windows GUI wizard by default. The tool remains game-configurable and is no longer a PRAGMATA-only workflow.
 
 ## English
 
@@ -16,26 +16,26 @@ Version 0.4 makes the wizard game-configurable. It is no longer a PRAGMATA-only 
 
 Open `REE-Content-Exporter.exe`.
 
-The wizard asks for language, then asks which game configuration to use. Choose the game from the numbered list. The wizard downloads the matching `.list` file from Ekey's REE.PAK.Tool repository and saves that choice in `config.json`.
+Choose the game from the dropdown and save it. The wizard downloads the matching `.list` file from Ekey's REE.PAK.Tool repository and saves that choice in `config.json`.
 
-After a game is saved, the wizard does not ask again. Each run prints the current game configuration before any other prompts, for example:
+After a game is saved, the wizard locks that choice and shows the current game configuration at the top of the window, for example:
 
 `Current game configuration: Pragmata (delete the "game" line from config.json to set a different game)`
 
-To change games later, delete only the `game` line from the config file and run the wizard again.
+To change games later, delete only the `game` line from the config file or use the GUI's Change Game action.
+
+The legacy console wizard is still available by running `REE-Content-Exporter.exe --wizard`. Advanced command-line details are in the AI-oriented reference document.
 
 ### Normal Workflow
 
-1. Select or confirm the game extract folder.
-2. Select or confirm the export folder.
-3. Select or confirm Blender 4.5.9 LTS.
-4. Choose a single mesh export or CSV batch export.
-5. Pick meshes by path, filename, or search text from the selected game's downloaded list.
-6. For skeletal meshes, choose whether to include MOTLIST animations.
-7. Let the wizard generate the PowerShell export script.
-8. Run the generated script when ready.
+1. Select or confirm the game extract folder and export folder.
+2. Pick the primary mesh from disk or search the selected game's downloaded list.
+3. Add extra mesh parts if the asset needs them.
+4. Choose animation, texture, scale, LOD, occlusion, and streaming options with the GUI controls. Skeletal animation sources can be MOTLIST folders, MOTLIST files, or raw MOT files. In the console wizard, detected skeletal meshes suggest animation candidates automatically when matching MOTLIST or MOT paths are found in the selected game's list.
+5. Confirm the output path.
+6. Run the export and watch the progress bar and log window.
 
-Generated scripts write logs and reports into the export folder. Successful logs end in `-SUCCESS.log`; failed logs end in `-FAIL.log`.
+The GUI shows the generated command preview before export and writes progress output into the log window while the export runs.
 
 ### Detailed Reference
 
@@ -53,26 +53,26 @@ The full command-line reference, game ID table, release packaging notes, and AI-
 
 `REE-Content-Exporter.exe`를 실행하세요.
 
-마법사는 언어를 물어본 뒤 사용할 게임 구성을 물어봅니다. 번호 목록에서 게임을 선택하세요. 마법사는 Ekey의 REE.PAK.Tool 저장소에서 해당 `.list` 파일을 다운로드하고 선택한 게임을 `config.json`에 저장합니다.
+드롭다운에서 게임을 선택하고 저장하세요. 마법사는 Ekey의 REE.PAK.Tool 저장소에서 해당 `.list` 파일을 다운로드하고 선택한 게임을 `config.json`에 저장합니다.
 
-게임이 저장된 뒤에는 다시 묻지 않습니다. 이후 마법사를 실행할 때마다 다음과 같은 현재 게임 구성을 먼저 출력합니다.
+게임이 저장된 뒤에는 선택이 잠기며, 창 상단에 다음과 같은 현재 게임 구성이 표시됩니다.
 
 `현재 게임 구성: Pragmata (다른 게임을 설정하려면 config.json 파일에서 "game" 줄을 삭제하세요)`
 
-나중에 다른 게임으로 바꾸려면 config 파일에서 `game` 줄만 삭제한 뒤 마법사를 다시 실행하세요.
+나중에 다른 게임으로 바꾸려면 config 파일에서 `game` 줄만 삭제하거나 GUI의 Change Game 동작을 사용하세요.
+
+기존 콘솔 마법사는 `REE-Content-Exporter.exe --wizard`로 실행할 수 있습니다. 자세한 명령줄 정보는 AI용 참고 문서에 있습니다.
 
 ### 일반 사용 흐름
 
-1. 게임 추출 폴더를 선택하거나 확인합니다.
-2. 내보내기 폴더를 선택하거나 확인합니다.
-3. Blender 4.5.9 LTS 경로를 선택하거나 확인합니다.
-4. 단일 메시 내보내기 또는 CSV 배치 내보내기를 선택합니다.
-5. 선택한 게임의 다운로드된 목록에서 경로, 파일명, 검색어로 메시를 고릅니다.
-6. 스켈레탈 메시라면 MOTLIST 애니메이션 포함 여부를 선택합니다.
-7. 마법사가 PowerShell 내보내기 스크립트를 생성하도록 합니다.
-8. 준비되면 생성된 스크립트를 실행합니다.
+1. 게임 추출 폴더와 내보내기 폴더를 선택하거나 확인합니다.
+2. 디스크에서 기본 메시를 선택하거나 선택한 게임의 다운로드된 목록에서 검색합니다.
+3. 필요한 경우 추가 메시 파트를 더합니다.
+4. GUI 컨트롤로 애니메이션, 텍스처, 스케일, LOD, occlusion, streaming 옵션을 선택합니다. 스켈레탈 애니메이션 소스는 MOTLIST 폴더, MOTLIST 파일, raw MOT 파일을 사용할 수 있습니다. 콘솔 마법사에서는 선택한 게임 목록에서 일치하는 MOTLIST 또는 MOT 경로를 찾으면 감지된 스켈레탈 메시의 애니메이션 후보를 자동으로 제안합니다.
+5. 출력 경로를 확인합니다.
+6. 내보내기를 실행하고 진행률 표시줄과 로그 창을 확인합니다.
 
-생성된 스크립트는 로그와 보고서를 내보내기 폴더에 기록합니다. 성공 로그는 `-SUCCESS.log`, 실패 로그는 `-FAIL.log`로 끝납니다.
+GUI는 내보내기 전에 생성된 명령 미리보기를 보여주며, 실행 중 진행 출력을 로그 창에 기록합니다.
 
 ### 자세한 참고 문서
 

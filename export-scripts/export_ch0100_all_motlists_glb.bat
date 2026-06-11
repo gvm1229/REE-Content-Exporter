@@ -5,7 +5,7 @@ REM ch0100 split-by-motlist export.
 REM Includes mesh folders 00, 10, 20, and 40.
 REM Intentionally excludes folders 15 and 45.
 
-set "EXPORTER=%~dp0..\bin\Release\net10.0\REE-Content-Exporter.exe"
+set "EXPORTER=%~dp0..\bin\Release\net10.0-windows\REE-Content-Exporter.exe"
 set "MESH00=D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\ch\ch01\ch0100\00\ch0100_00.mesh.251121828"
 set "MESH10=D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\ch\ch01\ch0100\10\ch0100_10.mesh.251121828"
 set "MESH20=D:\RE_EXTRACT\PRAG_EXTRACT\re_chunk_000\natives\STM\character\ch\ch01\ch0100\20\ch0100_20.mesh.251121828"
