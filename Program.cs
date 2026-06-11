@@ -1352,6 +1352,13 @@ static string ResolveWizardConfigPath(string? overridePath)
     return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "REE-Content-Exporter", "config.json");
 }
 
+static string ResolveCliExecutablePath()
+{
+    var cliPath = Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter-CLI.exe");
+    if (File.Exists(cliPath)) return cliPath;
+    return Environment.ProcessPath ?? cliPath;
+}
+
 static string GenerateWizardScript(
     WizardConfig config,
     string exportRoot,
@@ -2130,9 +2137,12 @@ static void RunGeneratedScript(string scriptPath, WizardLanguage language = Wiza
     }
 }
 
+try
+{
 var wizardConfigPath = GetArg(args, "--config");
 var executableName = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? Environment.GetCommandLineArgs().FirstOrDefault() ?? "");
 var isCliExecutable = executableName.Contains("CLI", StringComparison.OrdinalIgnoreCase);
+var isGuiExecutable = executableName.Contains("GUI", StringComparison.OrdinalIgnoreCase);
 if (HasFlag(args, "--reset-config"))
 {
     var path = ResolveWizardConfigPath(wizardConfigPath);
@@ -2142,19 +2152,18 @@ if (HasFlag(args, "--reset-config"))
         Console.WriteLine($"Deleted wizard config: {path}");
     }
 }
+if (HasFlag(args, "--help"))
+{
+    PrintUsage();
+    return;
+}
 if (args.Length == 0 && isCliExecutable)
 {
     PrintUsage();
     return;
 }
 
-static string ResolveCliExecutablePath()
-{
-    var cliPath = Path.Combine(AppContext.BaseDirectory, "REE-Content-Exporter-CLI.exe");
-    if (File.Exists(cliPath)) return cliPath;
-    return Environment.ProcessPath ?? cliPath;
-}
-if (args.Length == 0 || HasFlag(args, "--gui"))
+if (args.Length == 0 || HasFlag(args, "--gui") || (isGuiExecutable && IsConfigOnlyInvocation(args)))
 {
     GuiWizardApplication.Run(wizardConfigPath);
     return;
@@ -2164,12 +2173,6 @@ if (HasFlag(args, "--wizard") || HasFlag(args, "--reset-config"))
     RunWizard(wizardConfigPath);
     return;
 }
-if (HasFlag(args, "--help"))
-{
-    PrintUsage();
-    return;
-}
-
 using var progress = new ProgressStatus();
 
 var meshPath = GetArg(args, "--mesh") ?? throw new ArgumentException("Missing --mesh");
@@ -2181,6 +2184,7 @@ var motlistPaths = GetArgs(args, "--motlist").ToList();
 var motlistDir = GetArg(args, "--motlist-dir");
 if (!string.IsNullOrWhiteSpace(motlistDir))
 {
+    RequireExistingDirectory(motlistDir, "--motlist-dir");
     motlistPaths.AddRange(Directory.GetFiles(motlistDir, "*.motlist*", SearchOption.AllDirectories).OrderBy(path => path, StringComparer.OrdinalIgnoreCase));
 }
 motlistPaths = motlistPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -2222,6 +2226,7 @@ if (unknownAdditionalStreamingKeys.Count != 0)
 {
     throw new ArgumentException("--additional-streaming keys must match a supplied --additional-mesh path. Unknown key(s): " + string.Join("; ", unknownAdditionalStreamingKeys));
 }
+ValidateExportInputs(meshPath, additionalMeshPaths, streamingPath, additionalStreamingByMesh, mdfPath, motlistPaths, motPaths, outputPath);
 
 var mesh = LoadMesh(meshPath, streamingPath, allowMissingStreaming);
 
@@ -2399,6 +2404,98 @@ else
 }
 
 progress.WriteLine("DONE");
+}
+catch (ArgumentException ex)
+{
+    WriteCliError(ex);
+    PrintUsage();
+    Environment.ExitCode = 2;
+    return;
+}
+catch (Exception ex)
+{
+    WriteCliError(ex);
+    Environment.ExitCode = 1;
+    return;
+}
+
+static bool IsConfigOnlyInvocation(string[] args)
+{
+    if (args.Length != 2) return false;
+    return string.Equals(args[0], "--config", StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(args[1]);
+}
+
+static void WriteCliError(Exception ex)
+{
+    Console.Error.WriteLine($"ERROR: {ex.Message}");
+    if (IsDebugErrorEnabled())
+    {
+        Console.Error.WriteLine(ex);
+    }
+}
+
+static bool IsDebugErrorEnabled()
+{
+    var value = Environment.GetEnvironmentVariable("REE_CONTENT_EXPORTER_DEBUG_ERRORS");
+    return value is not null
+        && !value.Equals("0", StringComparison.OrdinalIgnoreCase)
+        && !value.Equals("false", StringComparison.OrdinalIgnoreCase)
+        && !value.Equals("no", StringComparison.OrdinalIgnoreCase);
+}
+
+static void ValidateExportInputs(
+    string meshPath,
+    IReadOnlyList<string> additionalMeshPaths,
+    string? streamingPath,
+    IReadOnlyDictionary<string, string> additionalStreamingByMesh,
+    string? mdfPath,
+    IReadOnlyList<string> motlistPaths,
+    IReadOnlyList<string> motPaths,
+    string outputPath)
+{
+    RequireExistingFile(meshPath, "--mesh");
+    foreach (var additionalMeshPath in additionalMeshPaths)
+        RequireExistingFile(additionalMeshPath, "--additional-mesh");
+    if (!string.IsNullOrWhiteSpace(streamingPath))
+        RequireExistingFile(streamingPath, "--streaming");
+    foreach (var additionalStreamingPath in additionalStreamingByMesh.Values)
+        RequireExistingFile(additionalStreamingPath, "--additional-streaming");
+    if (!string.IsNullOrWhiteSpace(mdfPath))
+        RequireExistingFile(mdfPath, "--mdf");
+    foreach (var motlistPath in motlistPaths)
+        RequireExistingFile(motlistPath, "--motlist");
+    foreach (var motPath in motPaths)
+        RequireExistingFile(motPath, "--mot");
+    EnsureOutputParentCanBeCreated(outputPath);
+}
+
+static void RequireExistingFile(string path, string optionName)
+{
+    if (string.IsNullOrWhiteSpace(path))
+        throw new ArgumentException($"{optionName} requires a non-empty path.");
+    if (!File.Exists(path))
+        throw new FileNotFoundException($"{optionName} path does not exist: {path}", path);
+}
+
+static void RequireExistingDirectory(string path, string optionName)
+{
+    if (string.IsNullOrWhiteSpace(path))
+        throw new ArgumentException($"{optionName} requires a non-empty path.");
+    if (!Directory.Exists(path))
+        throw new DirectoryNotFoundException($"{optionName} directory does not exist: {path}");
+}
+
+static void EnsureOutputParentCanBeCreated(string outputPath)
+{
+    if (string.IsNullOrWhiteSpace(outputPath))
+        throw new ArgumentException("--output requires a non-empty path.");
+    var parent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+    if (string.IsNullOrWhiteSpace(parent)) return;
+    if (File.Exists(parent))
+        throw new IOException($"--output parent path is a file, not a directory: {parent}");
+    Directory.CreateDirectory(parent);
+}
 
 static void ExportOne(
     CommonMeshResource resource,

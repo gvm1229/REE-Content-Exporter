@@ -24,7 +24,7 @@ After a game is saved, the wizard locks that choice and shows the current game c
 
 To change games later, delete only the `game` line from the config file or use the GUI's Edit action.
 
-CLI users can run `REE-Content-Exporter-CLI.exe`. The legacy console wizard is still available by running `REE-Content-Exporter-GUI.exe --wizard` or `REE-Content-Exporter-CLI.exe --wizard`. Advanced command-line details are in the AI-oriented reference document.
+CLI users can run `REE-Content-Exporter-CLI.exe`. The legacy console wizard is still available by running `REE-Content-Exporter-GUI.exe --wizard` or `REE-Content-Exporter-CLI.exe --wizard`. `REE-Content-Exporter-GUI.exe --config "<config.json>"` opens the GUI with that config. CLI input errors print `ERROR:` and exit nonzero instead of crashing with an unhandled .NET exception. Advanced command-line details are in the AI-oriented reference document.
 
 ### Normal Workflow
 
@@ -63,7 +63,7 @@ The full command-line reference, game ID table, release packaging notes, and AI-
 
 나중에 다른 게임으로 바꾸려면 config 파일에서 `game` 줄만 삭제하거나 GUI의 Edit 동작을 사용하세요.
 
-CLI 사용자는 `REE-Content-Exporter-CLI.exe`를 실행할 수 있습니다. 기존 콘솔 마법사는 `REE-Content-Exporter-GUI.exe --wizard` 또는 `REE-Content-Exporter-CLI.exe --wizard`로 실행할 수 있습니다. 자세한 명령줄 정보는 AI용 참고 문서에 있습니다.
+CLI 사용자는 `REE-Content-Exporter-CLI.exe`를 실행할 수 있습니다. 기존 콘솔 마법사는 `REE-Content-Exporter-GUI.exe --wizard` 또는 `REE-Content-Exporter-CLI.exe --wizard`로 실행할 수 있습니다. `REE-Content-Exporter-GUI.exe --config "<config.json>"`는 해당 설정 파일로 GUI를 엽니다. CLI 입력 오류는 처리되지 않은 .NET 예외로 충돌하지 않고 `ERROR:`를 출력한 뒤 0이 아닌 종료 코드로 끝납니다. 자세한 명령줄 정보는 AI용 참고 문서에 있습니다.
 
 ### 일반 사용 흐름
 

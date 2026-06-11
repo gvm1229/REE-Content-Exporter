@@ -19,6 +19,7 @@
 - The GUI is now arranged into dark themed Setup, Export, and Progress tabs to prevent clipped controls and reduce visual clutter.
 - The GUI now uses wider/spaced controls, a full-width game dropdown, disabled inactive animation-source inputs, larger horizontally scrollable list-search dialogs, and a determinate percentage progress display instead of marquee progress.
 - The GUI Default export option mode now mirrors legacy console wizard preferences while keeping the checkboxes disabled and visibly checked/unchecked.
+- The v0.5 release zip was replaced after fixing startup routing and CLI error handling: `REE-Content-Exporter-GUI.exe --config <path>` now opens the GUI, and direct CLI input failures now print a concise `ERROR:` with a nonzero exit instead of terminating as an unhandled .NET exception.
 - The project now targets `net10.0-windows` with Windows Forms enabled while preserving console output for direct CLI exports.
 - Developer helper scripts now look for the Release build under `bin\Release\net10.0-windows`.
 

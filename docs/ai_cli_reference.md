@@ -126,6 +126,7 @@ Startup modes:
 
 ```powershell
 REE-Content-Exporter-GUI.exe
+REE-Content-Exporter-GUI.exe --config "<config.json>"
 REE-Content-Exporter-GUI.exe --wizard
 REE-Content-Exporter-CLI.exe --help
 REE-Content-Exporter-CLI.exe --wizard
@@ -133,7 +134,9 @@ REE-Content-Exporter-CLI.exe --reset-config --wizard
 REE-Content-Exporter-GUI.exe --config "<config.json>" --gui
 ```
 
-No arguments on the GUI executable, or `--gui` on either executable, opens the Windows GUI. No arguments on the CLI executable prints usage. `--wizard` opens the legacy console wizard. Direct export mode starts when `--mesh` and export arguments are supplied.
+No arguments on the GUI executable, `--gui` on either executable, or `REE-Content-Exporter-GUI.exe --config "<config.json>"` opens the Windows GUI. No arguments on the CLI executable prints usage. `--wizard` opens the legacy console wizard. Direct export mode starts when `--mesh` and export arguments are supplied.
+
+Direct export mode preflights the primary mesh, additional meshes, explicit streaming files, explicit MDF, MOTLIST inputs, raw MOT inputs, and output parent path before loading REE files. Missing required arguments return exit code `2`; file, directory, and export failures return exit code `1`. Normal CLI failures print a concise `ERROR:` line without a .NET stack trace unless `REE_CONTENT_EXPORTER_DEBUG_ERRORS` is set.
 
 General usage:
 
