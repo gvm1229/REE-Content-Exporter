@@ -22,7 +22,7 @@ After a game is saved, the wizard locks that choice and shows the current game c
 
 `Current game configuration: Pragmata (delete the "game" line from config.json to set a different game)`
 
-To change games later, delete only the `game` line from the config file or use the GUI's Change Game action.
+To change games later, delete only the `game` line from the config file or use the GUI's Edit action.
 
 CLI users can run `REE-Content-Exporter-CLI.exe`. The legacy console wizard is still available by running `REE-Content-Exporter-GUI.exe --wizard` or `REE-Content-Exporter-CLI.exe --wizard`. Advanced command-line details are in the AI-oriented reference document.
 
@@ -33,7 +33,7 @@ CLI users can run `REE-Content-Exporter-CLI.exe`. The legacy console wizard is s
 3. Add extra mesh parts if the asset needs them.
 4. Choose animation, texture, scale, LOD, occlusion, and streaming options with the GUI controls. Skeletal animation sources can be MOTLIST folders, MOTLIST files, or raw MOT files. In the console wizard, detected skeletal meshes suggest animation candidates automatically when matching MOTLIST or MOT paths are found in the selected game's list.
 5. Confirm the output path.
-6. Run the export and watch the progress bar and log window.
+6. Run the export and watch the percentage progress bar and log window.
 
 The GUI shows the generated command preview before export and writes progress output into the log window while the export runs.
 
@@ -59,7 +59,7 @@ The full command-line reference, game ID table, release packaging notes, and AI-
 
 `현재 게임 구성: Pragmata (다른 게임을 설정하려면 config.json 파일에서 "game" 줄을 삭제하세요)`
 
-나중에 다른 게임으로 바꾸려면 config 파일에서 `game` 줄만 삭제하거나 GUI의 Change Game 동작을 사용하세요.
+나중에 다른 게임으로 바꾸려면 config 파일에서 `game` 줄만 삭제하거나 GUI의 Edit 동작을 사용하세요.
 
 CLI 사용자는 `REE-Content-Exporter-CLI.exe`를 실행할 수 있습니다. 기존 콘솔 마법사는 `REE-Content-Exporter-GUI.exe --wizard` 또는 `REE-Content-Exporter-CLI.exe --wizard`로 실행할 수 있습니다. 자세한 명령줄 정보는 AI용 참고 문서에 있습니다.
 
@@ -70,7 +70,7 @@ CLI 사용자는 `REE-Content-Exporter-CLI.exe`를 실행할 수 있습니다. �
 3. 필요한 경우 추가 메시 파트를 더합니다.
 4. GUI 컨트롤로 애니메이션, 텍스처, 스케일, LOD, occlusion, streaming 옵션을 선택합니다. 스켈레탈 애니메이션 소스는 MOTLIST 폴더, MOTLIST 파일, raw MOT 파일을 사용할 수 있습니다. 콘솔 마법사에서는 선택한 게임 목록에서 일치하는 MOTLIST 또는 MOT 경로를 찾으면 감지된 스켈레탈 메시의 애니메이션 후보를 자동으로 제안합니다.
 5. 출력 경로를 확인합니다.
-6. 내보내기를 실행하고 진행률 표시줄과 로그 창을 확인합니다.
+6. 내보내기를 실행하고 백분율 진행률 표시줄과 로그 창을 확인합니다.
 
 GUI는 내보내기 전에 생성된 명령 미리보기를 보여주며, 실행 중 진행 출력을 로그 창에 기록합니다.
 

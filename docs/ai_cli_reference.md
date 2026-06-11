@@ -43,7 +43,7 @@ Release packages contain two entry-point executables:
 
 `--gui` opens the Windows Forms wizard explicitly from either executable.
 
-The GUI stores paths and game configuration in the same config file as the legacy wizard. Once the `game` property is saved, the GUI disables the game dropdown and uses that saved game for exports. The user can clear the saved game with the Change Game action or by deleting the `game` line from `config.json`.
+The GUI stores paths and game configuration in the same config file as the legacy wizard. Once the `game` property is saved, the GUI disables the game dropdown and uses that saved game for exports. The user can clear the saved game with the Edit action or by deleting the `game` line from `config.json`.
 
 The GUI wraps the direct exporter command. It provides:
 
@@ -51,10 +51,11 @@ The GUI wraps the direct exporter command. It provides:
 - folder/file pickers for extract root, export root, Blender path, primary mesh, animation sources, and output path
 - downloaded-list search for primary mesh, MOTLIST folders/files, and raw `.mot.*` files
 - dropdowns for output format and texture format
-- animation source dropdown for `MOTLIST folder`, `MOTLIST files`, and `MOT files`
+- animation source dropdown for `MOTLIST folder`, `MOTLIST files`, and `MOT files`; inactive source rows are disabled so the GUI mirrors the mutually exclusive CLI flow
 - numeric FBX scale control
 - checkboxes for animations, split MOTLISTs, split animations, textures, LODs, occlusion, missing animation bone handling, and missing streaming buffers
-- command preview, progress bar, log window, cancel button, and command-copy action
+- command preview, percentage progress bar parsed from exporter progress output, log window, cancel button, and command-copy action
+- larger downloaded-list search dialogs with horizontal scrolling for long asset paths
 
 The GUI currently runs the direct exporter process and captures stdout/stderr in the log window. The older script-generation and Blender Unreal-ready workflow remains available through the legacy console wizard.
 

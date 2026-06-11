@@ -16,6 +16,7 @@
 - The saved game configuration is locked in the GUI after selection, matching the universal v0.4 behavior. Changing games now requires clearing the saved game through the GUI or deleting the `game` line from `config.json`.
 - The GUI no longer hard-defaults the game dropdown to Pragmata when `config.json` has no saved `game`, avoiding startup selection errors and requiring an explicit saved game before export.
 - The GUI is now arranged into dark themed Setup, Export, and Progress tabs to prevent clipped controls and reduce visual clutter.
+- The GUI now uses wider/spaced controls, a full-width game dropdown, disabled inactive animation-source inputs, larger horizontally scrollable list-search dialogs, and a determinate percentage progress display instead of marquee progress.
 - The project now targets `net10.0-windows` with Windows Forms enabled while preserving console output for direct CLI exports.
 - Developer helper scripts now look for the Release build under `bin\Release\net10.0-windows`.
 

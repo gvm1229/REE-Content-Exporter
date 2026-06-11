@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 internal static class GuiWizardApplication
@@ -69,10 +70,13 @@ internal sealed class GuiWizardForm : Form
     private readonly TextBox commandPreviewText = new();
     private readonly TextBox logText = new();
     private readonly ProgressBar progressBar = new();
+    private readonly Label progressPercentLabel = new() { Text = "0%", TextAlign = ContentAlignment.MiddleRight };
     private readonly Button runButton = new() { Text = "Run Export" };
     private readonly Button cancelButton = new() { Text = "Cancel", Enabled = false };
     private Button? saveGameButton;
     private Button? changeGameButton;
+    private Control? motlistDirRow;
+    private Control? animationFileRow;
 
     public GuiWizardForm(string? configPathOverride)
     {
@@ -146,7 +150,7 @@ internal sealed class GuiWizardForm : Form
         var scroller = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(10), BackColor = DarkBack };
         var exportPanel = BuildExportPanel();
         exportPanel.Dock = DockStyle.Top;
-        exportPanel.Height = 660;
+        exportPanel.Height = 760;
         scroller.Controls.Add(exportPanel);
         page.Controls.Add(scroller);
         return page;
@@ -184,9 +188,13 @@ internal sealed class GuiWizardForm : Form
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
         panel.Controls.Add(grid);
 
-        currentGameLabel.AutoSize = true;
+        currentGameLabel.AutoSize = false;
+        currentGameLabel.AutoEllipsis = true;
+        currentGameLabel.Dock = DockStyle.Fill;
         currentGameLabel.TextAlign = ContentAlignment.MiddleLeft;
         gameCombo.DropDownStyle = ComboBoxStyle.DropDownList;
+        gameCombo.Dock = DockStyle.Fill;
+        gameCombo.Margin = new Padding(0, 4, 0, 4);
         gameCombo.DisplayMember = nameof(WizardGameDefinition.DisplayName);
         gameCombo.ValueMember = nameof(WizardGameDefinition.Id);
         gameCombo.Items.AddRange(WizardGames.Definitions.Cast<object>().ToArray());
@@ -233,14 +241,14 @@ internal sealed class GuiWizardForm : Form
             BackColor = DarkPanel,
             Padding = new Padding(2),
         };
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 86));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 132));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
         panel.Controls.Add(grid);
 
         var findMeshButton = CreateCompactButton("Find", 58);
@@ -262,7 +270,8 @@ internal sealed class GuiWizardForm : Form
 
         var findMotlistButton = CreateCompactButton("Find", 58);
         findMotlistButton.Click += (_, _) => PickAssetFromList(motlistDirText, AssetPickerKind.MotlistDirectory);
-        grid.Controls.Add(CreatePathRow("MOTLIST folder", motlistDirText, () => BrowseFolder(motlistDirText), findMotlistButton), 0, 3);
+        motlistDirRow = CreatePathRow("MOTLIST folder", motlistDirText, () => BrowseFolder(motlistDirText), findMotlistButton);
+        grid.Controls.Add(motlistDirRow, 0, 3);
 
         var addAnimationFileButton = CreateCompactButton("+", 44);
         addAnimationFileButton.Click += (_, _) => AddAnimationFileFromDisk();
@@ -270,7 +279,8 @@ internal sealed class GuiWizardForm : Form
         findAnimationFileButton.Click += (_, _) => PickAnimationFileFromList();
         var removeAnimationFileButton = CreateCompactButton("-", 44);
         removeAnimationFileButton.Click += (_, _) => RemoveSelectedAnimationFile();
-        grid.Controls.Add(CreateListRow("Animation files", animationFileList, addAnimationFileButton, findAnimationFileButton, removeAnimationFileButton), 0, 4);
+        animationFileRow = CreateListRow("Animation files", animationFileList, addAnimationFileButton, findAnimationFileButton, removeAnimationFileButton);
+        grid.Controls.Add(animationFileRow, 0, 4);
 
         outputFormatCombo.DropDownStyle = ComboBoxStyle.DropDownList;
         outputFormatCombo.Items.AddRange(["fbx", "glb"]);
@@ -426,7 +436,16 @@ internal sealed class GuiWizardForm : Form
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         panel.Controls.Add(grid);
 
+        var progressRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkPanel };
+        progressRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        progressRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58));
         progressBar.Dock = DockStyle.Fill;
+        progressBar.Style = ProgressBarStyle.Blocks;
+        progressBar.Minimum = 0;
+        progressBar.Maximum = 100;
+        progressPercentLabel.Dock = DockStyle.Fill;
+        progressRow.Controls.Add(progressBar, 0, 0);
+        progressRow.Controls.Add(progressPercentLabel, 1, 0);
         commandPreviewText.Dock = DockStyle.Fill;
         commandPreviewText.Multiline = true;
         commandPreviewText.ReadOnly = true;
@@ -437,7 +456,7 @@ internal sealed class GuiWizardForm : Form
         logText.ScrollBars = ScrollBars.Both;
         logText.WordWrap = false;
 
-        grid.Controls.Add(progressBar, 0, 0);
+        grid.Controls.Add(progressRow, 0, 0);
         grid.Controls.Add(commandPreviewText, 0, 1);
         grid.Controls.Add(logText, 0, 2);
         return panel;
@@ -586,21 +605,21 @@ internal sealed class GuiWizardForm : Form
     {
         if (TryGetConfiguredGame(out var game))
         {
-            currentGameLabel.Text = $"{game.DisplayName} ({game.Id}) - delete the \"game\" line from config.json or click Change Game to set a different game.";
+            currentGameLabel.Text = $"{game.DisplayName} ({game.Id}). Delete the config.json game line or click Edit to change.";
             gameCombo.Enabled = false;
             if (saveGameButton != null) saveGameButton.Enabled = false;
             if (changeGameButton != null) changeGameButton.Enabled = true;
         }
         else if (!string.IsNullOrWhiteSpace(config.Game))
         {
-            currentGameLabel.Text = $"Unsupported saved game: {config.Game}. Click Change Game or delete the \"game\" line from config.json.";
+            currentGameLabel.Text = $"Unsupported saved game: {config.Game}. Click Edit or delete the config.json game line.";
             gameCombo.Enabled = false;
             if (saveGameButton != null) saveGameButton.Enabled = false;
             if (changeGameButton != null) changeGameButton.Enabled = true;
         }
         else
         {
-            currentGameLabel.Text = "No game saved yet. Select a game and click Save Game.";
+            currentGameLabel.Text = "No game saved. Select a game, then click Set.";
             gameCombo.Enabled = true;
             if (saveGameButton != null) saveGameButton.Enabled = true;
             if (changeGameButton != null) changeGameButton.Enabled = false;
@@ -667,7 +686,7 @@ internal sealed class GuiWizardForm : Form
         SaveConfig();
         UpdateGameUi();
         UpdateCommandPreview();
-        AppendLog("Cleared game configuration. Select a game and click Save Game.");
+        AppendLog("Cleared game configuration. Select a game and click Set.");
     }
 
     private void SavePathConfig()
@@ -911,13 +930,24 @@ internal sealed class GuiWizardForm : Form
     {
         var enabled = includeAnimationsCheck.Checked;
         var mode = GetAnimationSourceMode();
-        motlistDirText.Enabled = enabled && mode == GuiAnimationSourceMode.MotlistDirectory;
-        animationFileList.Enabled = enabled && mode != GuiAnimationSourceMode.MotlistDirectory;
+        var motlistDirEnabled = enabled && mode == GuiAnimationSourceMode.MotlistDirectory;
+        var animationFilesEnabled = enabled && mode != GuiAnimationSourceMode.MotlistDirectory;
+        animationSourceCombo.Enabled = enabled;
+        animationFilterText.Enabled = enabled;
+        SetControlTreeEnabled(motlistDirRow, motlistDirEnabled);
+        SetControlTreeEnabled(animationFileRow, animationFilesEnabled);
         splitMotlistsCheck.Enabled = enabled && mode == GuiAnimationSourceMode.MotlistDirectory;
         splitAnimationsCheck.Enabled = enabled && mode != GuiAnimationSourceMode.MotlistDirectory;
         if (mode != GuiAnimationSourceMode.MotlistDirectory) splitMotlistsCheck.Checked = false;
         if (mode == GuiAnimationSourceMode.MotlistDirectory) splitAnimationsCheck.Checked = false;
         UpdateCommandPreview();
+    }
+
+    private static void SetControlTreeEnabled(Control? root, bool enabled)
+    {
+        if (root == null) return;
+        root.Enabled = enabled;
+        foreach (Control child in root.Controls) SetControlTreeEnabled(child, enabled);
     }
 
     private string ResolveOutputPath()
@@ -958,10 +988,10 @@ internal sealed class GuiWizardForm : Form
             outputPathText.Text = ResolveOutputPath();
             UpdateRunningState(true);
             logText.Clear();
+            SetProgress(0);
             AppendLog("Starting export");
             await RunExporterProcessAsync(args);
-            progressBar.Style = ProgressBarStyle.Blocks;
-            progressBar.Value = 100;
+            SetProgress(100);
             AppendLog("Export completed.");
         }
         catch (Exception ex)
@@ -977,7 +1007,7 @@ internal sealed class GuiWizardForm : Form
 
     private async Task RunExporterProcessAsync(IReadOnlyList<string> args)
     {
-        var exe = Environment.ProcessPath ?? throw new InvalidOperationException("Could not resolve exporter executable path.");
+        var exe = ResolveCliExecutablePath();
         var psi = new ProcessStartInfo
         {
             FileName = exe,
@@ -988,8 +1018,8 @@ internal sealed class GuiWizardForm : Form
         };
         foreach (var arg in args) psi.ArgumentList.Add(arg);
         runningProcess = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        runningProcess.OutputDataReceived += (_, e) => { if (e.Data != null) BeginInvoke(() => AppendLog(e.Data)); };
-        runningProcess.ErrorDataReceived += (_, e) => { if (e.Data != null) BeginInvoke(() => AppendLog(e.Data)); };
+        runningProcess.OutputDataReceived += (_, e) => { if (e.Data != null) BeginInvoke(() => AppendProcessLine(e.Data)); };
+        runningProcess.ErrorDataReceived += (_, e) => { if (e.Data != null) BeginInvoke(() => AppendProcessLine(e.Data)); };
         if (!runningProcess.Start()) throw new InvalidOperationException("Failed to start exporter process.");
         runningProcess.BeginOutputReadLine();
         runningProcess.BeginErrorReadLine();
@@ -1017,13 +1047,45 @@ internal sealed class GuiWizardForm : Form
     {
         runButton.Enabled = !running;
         cancelButton.Enabled = running;
-        progressBar.Style = running ? ProgressBarStyle.Marquee : ProgressBarStyle.Blocks;
-        if (!running && progressBar.Value != 100) progressBar.Value = 0;
+        progressBar.Style = ProgressBarStyle.Blocks;
+        if (!running && progressBar.Value != 100) SetProgress(0);
+    }
+
+    private void AppendProcessLine(string line)
+    {
+        AppendLog(line);
+        UpdateProgressFromLine(line);
     }
 
     private void AppendLog(string line)
     {
         logText.AppendText(line + Environment.NewLine);
+    }
+
+    private void UpdateProgressFromLine(string line)
+    {
+        var percentMatch = Regex.Match(line, @"(?<!\d)(\d{1,3})\s*%");
+        if (percentMatch.Success && int.TryParse(percentMatch.Groups[1].Value, out var percent))
+        {
+            SetProgress(percent);
+            return;
+        }
+
+        var fractionMatches = Regex.Matches(line, @"(?<!\d)(\d{1,6})\s*/\s*(\d{1,6})(?!\d)");
+        foreach (Match match in fractionMatches)
+        {
+            if (!int.TryParse(match.Groups[1].Value, out var current)) continue;
+            if (!int.TryParse(match.Groups[2].Value, out var total) || total <= 0 || current < 0 || current > total) continue;
+            SetProgress((int)Math.Round(current * 100.0 / total));
+            return;
+        }
+    }
+
+    private void SetProgress(int percent)
+    {
+        percent = Math.Clamp(percent, progressBar.Minimum, progressBar.Maximum);
+        progressBar.Value = percent;
+        progressPercentLabel.Text = percent.ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "%";
     }
 
     private static WizardConfig? LoadConfig(string path)
@@ -1093,7 +1155,8 @@ internal sealed class AssetPickerForm : Form
             _ => "Find MOTLIST folder",
         };
         StartPosition = FormStartPosition.CenterParent;
-        Size = new Size(860, 600);
+        MinimumSize = new Size(960, 640);
+        Size = new Size(1180, 760);
         BuildLayout();
         RefreshResults();
     }
@@ -1110,6 +1173,8 @@ internal sealed class AssetPickerForm : Form
         searchText.PlaceholderText = "Type part of a filename or path";
         searchText.TextChanged += (_, _) => RefreshResults();
         resultList.Dock = DockStyle.Fill;
+        resultList.HorizontalScrollbar = true;
+        resultList.IntegralHeight = false;
         resultList.DoubleClick += (_, _) => AcceptSelection();
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
@@ -1138,6 +1203,9 @@ internal sealed class AssetPickerForm : Form
         resultList.BeginUpdate();
         resultList.Items.Clear();
         foreach (var match in matches) resultList.Items.Add(match);
+        resultList.HorizontalExtent = matches.Count == 0
+            ? 0
+            : matches.Max(match => TextRenderer.MeasureText(match, resultList.Font).Width) + 32;
         resultList.EndUpdate();
     }
 
