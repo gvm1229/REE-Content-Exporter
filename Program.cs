@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Threading;
 using ContentEditor;
 using ContentEditor.App.FileLoaders;
@@ -42,7 +42,7 @@ static void PrintUsage()
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
     Console.WriteLine("  REE-Content-Exporter [--wizard] [--reset-config] [--config <path>]");
-    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
 }
 
 static Dictionary<string, string> ParseAdditionalStreamingArgs(IEnumerable<string> values)
@@ -73,6 +73,138 @@ static Dictionary<string, string> ParseAdditionalStreamingArgs(IEnumerable<strin
     return result;
 }
 
+const string ReePakToolProjectsRawBaseUrl = "https://raw.githubusercontent.com/Ekey/REE.PAK.Tool/refs/heads/main/Projects/";
+
+static WizardGameDefinition GetGameDefinition(string gameId)
+{
+    if (TryGetGameDefinition(gameId, out var game)) return game;
+    throw new ArgumentException($"Unsupported game: {gameId}");
+}
+
+static bool TryGetGameDefinition(string? gameId, out WizardGameDefinition definition)
+{
+    if (!string.IsNullOrWhiteSpace(gameId))
+    {
+        var normalized = NormalizeGameId(gameId);
+        foreach (var game in WizardGames.Definitions)
+        {
+            if (game.Id.Equals(normalized, StringComparison.OrdinalIgnoreCase)
+                || game.DisplayName.Equals(gameId, StringComparison.OrdinalIgnoreCase)
+                || game.GameName.ToString().Equals(gameId, StringComparison.OrdinalIgnoreCase))
+            {
+                definition = game;
+                return true;
+            }
+        }
+    }
+
+    definition = null!;
+    return false;
+}
+
+static string NormalizeGameId(string value) => value.Trim().ToLowerInvariant().Replace("-", "").Replace("_", "");
+
+static string ResolveWizardListDirectory(string configPath)
+{
+    var configDir = Path.GetDirectoryName(configPath);
+    if (string.IsNullOrWhiteSpace(configDir)) configDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    return Path.Combine(configDir, "lists");
+}
+
+static string ResolveWizardListPath(string configPath, WizardGameDefinition game)
+    => Path.Combine(ResolveWizardListDirectory(configPath), game.ListFileName);
+
+static void DownloadGameList(WizardGameDefinition game, string targetPath, WizardLanguage language)
+{
+    Directory.CreateDirectory(Path.GetDirectoryName(targetPath) ?? ".");
+    var url = ReePakToolProjectsRawBaseUrl + Uri.EscapeDataString(game.ListFileName);
+    Console.WriteLine(language == WizardLanguage.Korean ? $"REE.PAK.Tool 목록을 다운로드합니다: {game.ListFileName}" : $"Downloading REE.PAK.Tool list: {game.ListFileName}");
+    using var http = new HttpClient();
+    http.DefaultRequestHeaders.UserAgent.ParseAdd("REE-Content-Exporter/0.4");
+    var bytes = http.GetByteArrayAsync(url).GetAwaiter().GetResult();
+    if (bytes.Length == 0) throw new InvalidOperationException($"Downloaded list was empty: {url}");
+    File.WriteAllBytes(targetPath, bytes);
+    Console.WriteLine(language == WizardLanguage.Korean ? $"목록을 저장했습니다: {targetPath}" : $"Saved game list: {targetPath}");
+}
+
+static WizardConfig EnsureWizardGameConfig(WizardConfig? config, string configPath, WizardLanguage language)
+{
+    config ??= new WizardConfig();
+
+    if (string.IsNullOrWhiteSpace(config.Game))
+    {
+        var selected = PromptWizardGame(language);
+        config.Game = selected.Id;
+        config.GameDisplayName = selected.DisplayName;
+        config.GameListFile = selected.ListFileName;
+        config.GameListPath = ResolveWizardListPath(configPath, selected);
+        DownloadGameList(selected, config.GameListPath, language);
+        SaveWizardConfig(configPath, config);
+        return config;
+    }
+
+    if (!TryGetGameDefinition(config.Game, out var game))
+    {
+        throw new ArgumentException($"Unsupported configured game '{config.Game}'. Delete the \"game\" line from {configPath} to choose a supported game.");
+    }
+
+    config.Game = game.Id;
+    config.GameDisplayName = game.DisplayName;
+    config.GameListFile = game.ListFileName;
+    if (string.IsNullOrWhiteSpace(config.GameListPath)
+        || !Path.GetFileName(config.GameListPath).Equals(game.ListFileName, StringComparison.OrdinalIgnoreCase))
+    {
+        config.GameListPath = ResolveWizardListPath(configPath, game);
+    }
+    if (!File.Exists(config.GameListPath) || new FileInfo(config.GameListPath).Length == 0)
+    {
+        DownloadGameList(game, config.GameListPath, language);
+        SaveWizardConfig(configPath, config);
+    }
+
+    return config;
+}
+
+static WizardGameDefinition PromptWizardGame(WizardLanguage language)
+{
+    Console.WriteLine(language == WizardLanguage.Korean ? "게임 구성 선택:" : "Select game configuration:");
+    for (var i = 0; i < WizardGames.Definitions.Count; i++)
+    {
+        var game = WizardGames.Definitions[i];
+        Console.WriteLine($"  {i + 1}. {game.DisplayName} ({game.Id}, {game.ListFileName})");
+    }
+
+    while (true)
+    {
+        Console.Write(language == WizardLanguage.Korean ? $"1-{WizardGames.Definitions.Count} 중 선택: " : $"Choose 1-{WizardGames.Definitions.Count}: ");
+        var input = (Console.ReadLine() ?? "").Trim();
+        if (int.TryParse(input, out var selected) && selected >= 1 && selected <= WizardGames.Definitions.Count)
+        {
+            PrintWizardPromptSeparator();
+            return WizardGames.Definitions[selected - 1];
+        }
+        Console.WriteLine(language == WizardLanguage.Korean ? "잘못된 선택입니다." : "Invalid selection.");
+    }
+}
+
+static void PrintCurrentGameConfiguration(WizardConfig config, string configPath, WizardLanguage language)
+{
+    var display = string.IsNullOrWhiteSpace(config.GameDisplayName) ? config.Game : config.GameDisplayName;
+    Console.WriteLine(language == WizardLanguage.Korean
+        ? $"현재 게임 구성: {display} (다른 게임을 설정하려면 {configPath} 파일에서 \"game\" 줄을 삭제하세요)"
+        : $"Current game configuration: {display} (delete the \"game\" line from {configPath} to set a different game)");
+    PrintWizardPromptSeparator();
+}
+
+static GameName ResolveConfiguredGameName(WizardConfig? config, string? explicitGame)
+{
+    if (!string.IsNullOrWhiteSpace(explicitGame))
+        return GetGameDefinition(explicitGame).GameName;
+    if (!string.IsNullOrWhiteSpace(config?.Game))
+        return GetGameDefinition(config.Game).GameName;
+    return GameName.unknown;
+}
+
 static void RunWizard(string? configPathOverride)
 {
     var configPath = ResolveWizardConfigPath(configPathOverride);
@@ -87,6 +219,11 @@ static void RunWizard(string? configPathOverride)
         Console.WriteLine(language == WizardLanguage.Korean ? $"마법사 언어 설정을 저장했습니다: {configPath}" : $"Saved wizard language setting: {configPath}");
     }
 
+    config = EnsureWizardGameConfig(config, configPath, language);
+    config.Language = SerializeWizardLanguage(language);
+    SaveWizardConfig(configPath, config);
+    PrintCurrentGameConfiguration(config, configPath, language);
+
     var reason = "";
     if (config == null || !ValidateWizardConfig(config, out reason))
     {
@@ -97,7 +234,7 @@ static void RunWizard(string? configPathOverride)
         Console.WriteLine(language == WizardLanguage.Korean ? $"마법사 설정을 저장했습니다: {configPath}" : $"Saved wizard config: {configPath}");
     }
 
-    var index = LoadPragmataIndex();
+    var index = LoadGameIndex(config);
     var mode = PromptWizardMode(language);
     if (mode == WizardMode.BatchCsv)
     {
@@ -110,7 +247,7 @@ static void RunWizard(string? configPathOverride)
     RunSingleMeshWizard(config, index, language);
 }
 
-static void RunSingleMeshWizard(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
+static void RunSingleMeshWizard(WizardConfig config, IReadOnlyList<GameListEntry> index, WizardLanguage language)
 {
     var mesh = PromptForAsset(language == WizardLanguage.Korean ? "기본 메시" : "Primary mesh", AssetKind.Mesh, config, index, language);
     var additionalMeshes = new List<ResolvedAsset>();
@@ -145,7 +282,7 @@ static void RunSingleMeshWizard(WizardConfig config, IReadOnlyList<PragmataIndex
     }
 }
 
-static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardBatchSkeletalMode skeletalMode, WizardBatchExistingExportScan existingExportScan, WizardLanguage language)
+static void RunBatchCsvWizard(WizardConfig config, IReadOnlyList<GameListEntry> index, WizardBatchSkeletalMode skeletalMode, WizardBatchExistingExportScan existingExportScan, WizardLanguage language)
 {
     var csvPath = PromptFilePath(language == WizardLanguage.Korean ? "CSV 파일 경로" : "CSV file path", null, mustExist: true, language);
     if (!csvPath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
@@ -212,7 +349,7 @@ static WizardConfig? LoadWizardConfig(string path)
     try
     {
         if (!File.Exists(path)) return null;
-        return JsonSerializer.Deserialize<WizardConfig>(File.ReadAllText(path));
+        return JsonSerializer.Deserialize<WizardConfig>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
     }
     catch (Exception ex)
     {
@@ -267,7 +404,7 @@ static bool ValidateWizardConfig(WizardConfig config, out string reason)
     }
     if (!HasLikelyExtractLayout(config.ExtractRoot))
     {
-        reason = "game extract path does not look like a PRAGMATA loose-file extract";
+        reason = "game extract path does not look like a loose-file RE Engine extract";
         return false;
     }
     if (string.IsNullOrWhiteSpace(config.DefaultExportRoot))
@@ -291,6 +428,11 @@ static WizardConfig PromptForWizardConfig(WizardConfig? existing, WizardLanguage
     var blenderPath = PromptFilePath(language == WizardLanguage.Korean ? "Blender 4.5.9 실행 파일" : "Blender 4.5.9 executable", existing?.BlenderPath ?? @"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe", mustExist: true, language);
     return new WizardConfig
     {
+        Game = existing?.Game ?? "",
+        GameDisplayName = existing?.GameDisplayName ?? "",
+        GameListFile = existing?.GameListFile ?? "",
+        GameListPath = existing?.GameListPath ?? "",
+        Language = SerializeWizardLanguage(language),
         ExtractRoot = extractRoot,
         DefaultExportRoot = defaultExportRoot,
         BlenderPath = blenderPath,
@@ -414,7 +556,7 @@ static string LocalizeConfigReason(string reason, WizardLanguage language)
     return reason switch
     {
         "game extract path is missing or does not exist" => "게임 추출 경로가 없거나 존재하지 않습니다",
-        "game extract path does not look like a PRAGMATA loose-file extract" => "게임 추출 경로가 PRAGMATA loose-file 추출 구조처럼 보이지 않습니다",
+        "game extract path does not look like a loose-file RE Engine extract" => "게임 추출 경로가 RE Engine loose-file 추출 구조처럼 보이지 않습니다",
         "default export path is missing" => "기본 내보내기 경로가 없습니다",
         "Blender executable is missing or does not exist" => "Blender 실행 파일이 없거나 존재하지 않습니다",
         _ => reason,
@@ -597,7 +739,7 @@ static bool IsWizardCsvMeshHeader(string value)
     || value.Equals("mesh_name", StringComparison.OrdinalIgnoreCase)
     || value.Equals("name", StringComparison.OrdinalIgnoreCase);
 
-static ResolvedAsset ResolveCsvMesh(int rowNumber, string query, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
+static ResolvedAsset ResolveCsvMesh(int rowNumber, string query, WizardConfig config, IReadOnlyList<GameListEntry> index, WizardLanguage language)
 {
     var matches = ResolveAssetQuery(query, AssetKind.Mesh, config, index);
     if (matches.Count == 0)
@@ -620,7 +762,7 @@ static string MakeUniqueWizardFolderName(string baseName, ISet<string> usedFolde
     return candidate;
 }
 
-static ResolvedAsset PromptForAsset(string label, AssetKind kind, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
+static ResolvedAsset PromptForAsset(string label, AssetKind kind, WizardConfig config, IReadOnlyList<GameListEntry> index, WizardLanguage language)
 {
     while (true)
     {
@@ -658,7 +800,7 @@ static ResolvedAsset ChooseAsset(string label, IReadOnlyList<ResolvedAsset> matc
     }
 }
 
-static WizardAnimationSelection PromptForAnimationSelection(WizardConfig config, IReadOnlyList<PragmataIndexEntry> index, WizardLanguage language)
+static WizardAnimationSelection PromptForAnimationSelection(WizardConfig config, IReadOnlyList<GameListEntry> index, WizardLanguage language)
 {
     if (PromptYesNo(language == WizardLanguage.Korean ? "MOTLIST 파일을 하나씩 선택하는 대신 MOTLIST 폴더를 사용할까요?" : "Use a MOTLIST folder instead of selecting MOTLIST files one by one?", defaultValue: true, language))
     {
@@ -748,37 +890,27 @@ static WizardMeshInspection InspectMeshForWizard(string meshPath, string? stream
         RequiresStreaming: mesh.RequiresStreamingData);
 }
 
-static IReadOnlyList<PragmataIndexEntry> LoadPragmataIndex()
+static IReadOnlyList<GameListEntry> LoadGameIndex(WizardConfig config)
 {
-    Stream? stream = null;
-    var localList = Path.Combine(AppContext.BaseDirectory, "pragmata.list");
-    if (File.Exists(localList))
-    {
-        stream = File.OpenRead(localList);
-    }
-    else if (File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "pragmata.list")))
-    {
-        stream = File.OpenRead(Path.Combine(Directory.GetCurrentDirectory(), "pragmata.list"));
-    }
-    else
-    {
-        stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("pragmata.list");
-    }
-    if (stream == null) throw new FileNotFoundException("Could not find pragmata.list beside the executable or as an embedded resource.");
+    if (string.IsNullOrWhiteSpace(config.GameListPath))
+        throw new FileNotFoundException("Configured game list path is missing. Delete the \"game\" line from config.json and run the wizard again.");
+    if (!File.Exists(config.GameListPath))
+        throw new FileNotFoundException("Configured game list file was not found. Delete the \"game\" line from config.json and run the wizard again.", config.GameListPath);
 
+    using var stream = File.OpenRead(config.GameListPath);
     using var reader = new StreamReader(stream);
-    var entries = new List<PragmataIndexEntry>();
+    var entries = new List<GameListEntry>();
     string? line;
     while ((line = reader.ReadLine()) != null)
     {
         line = line.Trim();
         if (line.Length == 0) continue;
-        entries.Add(new PragmataIndexEntry(line));
+        entries.Add(new GameListEntry(line));
     }
     return entries;
 }
 
-static IReadOnlyList<ResolvedAsset> ResolveAssetQuery(string query, AssetKind kind, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index)
+static IReadOnlyList<ResolvedAsset> ResolveAssetQuery(string query, AssetKind kind, WizardConfig config, IReadOnlyList<GameListEntry> index)
 {
     query = NormalizeUserPath(query);
     var direct = ResolveDirectAsset(query, kind);
@@ -809,7 +941,7 @@ static ResolvedAsset? ResolveDirectAsset(string query, AssetKind kind)
     return new ResolvedAsset(full, null);
 }
 
-static IReadOnlyList<string> ResolveMotlistDirectoryQuery(string query, WizardConfig config, IReadOnlyList<PragmataIndexEntry> index)
+static IReadOnlyList<string> ResolveMotlistDirectoryQuery(string query, WizardConfig config, IReadOnlyList<GameListEntry> index)
 {
     query = NormalizeUserPath(query);
     if (Directory.Exists(query))
@@ -832,14 +964,14 @@ static IReadOnlyList<string> ResolveMotlistDirectoryQuery(string query, WizardCo
     return dirs;
 }
 
-static bool EntryMatchesKind(PragmataIndexEntry entry, AssetKind kind) => kind switch
+static bool EntryMatchesKind(GameListEntry entry, AssetKind kind) => kind switch
 {
     AssetKind.Mesh => IsMeshPath(entry.RelativePath) && !IsStreamingPath(entry.RelativePath),
     AssetKind.Motlist => IsMotlistPath(entry.RelativePath),
     _ => false,
 };
 
-static bool EntryMatchesQuery(PragmataIndexEntry entry, string normalizedQuery, string fileQuery)
+static bool EntryMatchesQuery(GameListEntry entry, string normalizedQuery, string fileQuery)
 {
     if (!string.IsNullOrWhiteSpace(fileQuery) && entry.FileName.Equals(fileQuery, StringComparison.OrdinalIgnoreCase)) return true;
     if (entry.RelativePath.Equals(normalizedQuery, StringComparison.OrdinalIgnoreCase)) return true;
@@ -1392,6 +1524,7 @@ static string BuildWizardPowerShell(
     var sourceName = SanitizeFileName(PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString()) + "_source.fbx";
     var args = new List<string>
     {
+        "--game", config.Game,
         "--mesh", meshPath,
         "--texture-format", string.IsNullOrWhiteSpace(config.TextureFormat) ? "png" : config.TextureFormat,
         "--fbx-scale", "100",
@@ -1837,6 +1970,7 @@ var includeAnimations = !HasFlag(args, "--no-animations");
 var includeTextures = !HasFlag(args, "--no-textures");
 var textureFormat = (GetArg(args, "--texture-format") ?? "png").ToLowerInvariant();
 if (textureFormat is not ("png" or "dds")) throw new ArgumentException("--texture-format must be png or dds");
+var exportGame = ResolveConfiguredGameName(LoadWizardConfig(ResolveWizardConfigPath(wizardConfigPath)), GetArg(args, "--game"));
 var fbxScale = GetFloatArg(args, "--fbx-scale") ?? 1f;
 if (fbxScale <= 0) throw new ArgumentException("--fbx-scale must be greater than 0");
 AppConfig.Settings.Import.ExportScale = fbxScale;
@@ -1858,6 +1992,7 @@ Console.WriteLine($"MDF: {mdfPath ?? "auto"}");
 Console.WriteLine($"Motlists: {(motlistPaths.Count == 0 ? "-" : string.Join("; ", motlistPaths))}");
 Console.WriteLine($"Mots: {(motPaths.Count == 0 ? "-" : string.Join("; ", motPaths))}");
 Console.WriteLine($"Output: {outputPath}");
+Console.WriteLine($"Game: {exportGame}");
 
 var unknownAdditionalStreamingKeys = additionalStreamingByMesh.Keys
     .Where(key => !additionalMeshPaths.Contains(key, StringComparer.OrdinalIgnoreCase))
@@ -1915,7 +2050,7 @@ if (batchMotlist && animationSourceCount > 1 && !splitAnimations)
 var resource = new CommonMeshResource(name, null!)
 {
     NativeMesh = mesh,
-    GameVersion = GameName.pragmata,
+    GameVersion = exportGame,
     ExportTextureFormat = textureFormat,
     ExportRootNodeName = "Armature",
     ExportStripMeshNamePrefix = true,
@@ -1929,7 +2064,7 @@ foreach (var additionalMeshPath in additionalMeshPaths)
     additionalResources.Add(new CommonMeshResource(additionalName, null!)
     {
         NativeMesh = LoadMesh(additionalMeshPath, additionalStreamingByMesh.TryGetValue(additionalMeshPath, out var additionalStreamingPath) ? additionalStreamingPath : null, allowMissingStreaming),
-        GameVersion = GameName.pragmata,
+        GameVersion = exportGame,
         ExportTextureFormat = textureFormat,
         ExportRootNodeName = "Armature",
         ExportStripMeshNamePrefix = true,
@@ -2878,6 +3013,14 @@ sealed class ProgressStatus : IDisposable
 
 sealed class WizardConfig
 {
+    [JsonPropertyName("game")]
+    public string Game { get; set; } = "";
+    [JsonPropertyName("gameDisplayName")]
+    public string GameDisplayName { get; set; } = "";
+    [JsonPropertyName("gameListFile")]
+    public string GameListFile { get; set; } = "";
+    [JsonPropertyName("gameListPath")]
+    public string GameListPath { get; set; } = "";
     public string Language { get; set; } = "";
     public string ExtractRoot { get; set; } = "";
     public string DefaultExportRoot { get; set; } = "";
@@ -2887,7 +3030,37 @@ sealed class WizardConfig
     public DateTimeOffset UpdatedUtc { get; set; }
 }
 
-sealed record PragmataIndexEntry(string RelativePath)
+sealed record WizardGameDefinition(string Id, GameName GameName, string DisplayName, string ListFileName);
+
+static class WizardGames
+{
+    public static readonly IReadOnlyList<WizardGameDefinition> Definitions =
+    [
+        new("re2", GameName.re2, "Resident Evil 2", "RE2_STM_Release.list"),
+        new("re2rt", GameName.re2rt, "Resident Evil 2 RT", "RE2_RT_STM_Release.list"),
+        new("re3", GameName.re3, "Resident Evil 3", "RE3_STM_Release.list"),
+        new("re3rt", GameName.re3rt, "Resident Evil 3 RT", "RE3_RT_STM_Release.list"),
+        new("re4", GameName.re4, "Resident Evil 4", "RE4_STM_Release.list"),
+        new("re7", GameName.re7, "Resident Evil 7", "RE7_STM_Release.list"),
+        new("re7rt", GameName.re7rt, "Resident Evil 7 RT", "RE7_RT_STM_Release.list"),
+        new("re8", GameName.re8, "Resident Evil Village", "RE8_STM_Release.list"),
+        new("re9", GameName.re9, "Resident Evil Requiem", "RE9_STM_Release.list"),
+        new("dmc5", GameName.dmc5, "Devil May Cry 5", "DMC5_STM_Release.list"),
+        new("mhrise", GameName.mhrise, "Monster Hunter Rise", "MHR_STM_Release.list"),
+        new("sf6", GameName.sf6, "Street Fighter 6", "SF6_STM_Release.list"),
+        new("dd2", GameName.dd2, "Dragon's Dogma 2", "DD2_STM_Release.list"),
+        new("gtrick", GameName.gtrick, "Ghost Trick", "GTPD_STM_Release.list"),
+        new("apollo", GameName.apollo, "Apollo Justice: Ace Attorney Trilogy", "AJ_AAT_STM_Release.list"),
+        new("drdr", GameName.drdr, "Dead Rising Deluxe Remaster", "DRDR_STM_Release.list"),
+        new("kunitsu", GameName.kunitsu, "Kunitsu-Gami: Path of the Goddess", "KGPG_STM_Release.list"),
+        new("oni2", GameName.oni2, "Onimusha 2", "O2_SD_STM_Release.list"),
+        new("mhwilds", GameName.mhwilds, "Monster Hunter Wilds", "MHWs_STM_Release.list"),
+        new("pragmata", GameName.pragmata, "Pragmata", "P_STM_Release.list"),
+        new("mhsto3", GameName.mhsto3, "Monster Hunter Stories 3", "MHS3_TR_STM_Demo.list"),
+    ];
+}
+
+sealed record GameListEntry(string RelativePath)
 {
     public string FileName { get; } = Path.GetFileName(RelativePath.Replace('/', Path.DirectorySeparatorChar));
     public string RelativeDirectory { get; } = Path.GetDirectoryName(RelativePath.Replace('/', Path.DirectorySeparatorChar))?.Replace('\\', '/') ?? "";

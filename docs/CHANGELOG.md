@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 0.4.0 - universal game configuration
+
+### Added
+
+- Added a one-time wizard game configuration step. The wizard now shows a numbered list of supported RE Engine games, downloads the matching `.list` file from Ekey's REE.PAK.Tool `Projects` folder, and stores the selected game in `config.json`.
+- Added `--game <game-id>` to the CLI and generated wizard scripts so exports use the configured REE-Lib `GameName` instead of a hardcoded PRAGMATA value.
+- Added `docs/ai_cli_reference.md` for command-line details, game IDs, release packaging notes, and AI-agent maintenance reference.
+
+### Changed
+
+- The wizard now prints the current game configuration on every run and tells users to delete the `game` line from `config.json` to choose a different game.
+- Wizard asset lookup now reads the downloaded game-specific `.list` file instead of the tracked `pragmata.list`.
+- The README is now a concise human-facing workflow in English and Korean, with advanced details moved to the AI-oriented reference document.
+- Extract-root validation now describes a generic RE Engine loose-file extract instead of a PRAGMATA-specific extract.
+
+### Removed
+
+- Removed the tracked and embedded `pragmata.list` file. Game lists are now downloaded and cached per user configuration.
+
 ## Unreleased - self-contained PNG texture export hardening
 
 ### Changed

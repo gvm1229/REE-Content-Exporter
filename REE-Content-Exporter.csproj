@@ -2,7 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\REE-Content-Editor\ContentEditor.App\ContentEditor.App.csproj" />
-    <EmbeddedResource Include="pragmata.list" LogicalName="pragmata.list" />
   </ItemGroup>
 
   <PropertyGroup>
