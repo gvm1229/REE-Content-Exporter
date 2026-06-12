@@ -1,5 +1,9 @@
 # REE-Content-Exporter
 
+| GUI wizard | Legacy CLI wizard |
+| --- | --- |
+| <img src="docs/images/gui-wizard.png" alt="REE-Content-Exporter GUI wizard" width="520"> | <img src="docs/images/cli-wizard.png" alt="REE-Content-Exporter legacy CLI wizard" width="520"> |
+
 REE-Content-Exporter is a small export wizard built on top of REE-Content-Editor / RE-Engine-Lib. It helps move supported RE Engine meshes, materials, textures, skeletons, and animations into Blender, Unreal, or other DCC/game-engine workflows.
 
 Version 0.5 opens as a Windows GUI wizard by default. The tool remains game-configurable and is no longer a PRAGMATA-only workflow.
@@ -11,6 +15,19 @@ Version 0.5 opens as a Windows GUI wizard by default. The tool remains game-conf
 - A loose-file extract of the RE Engine game you want to export from.
 - Blender 4.5.9 LTS when using the Unreal-ready FBX workflow.
 - The release package of REE-Content-Exporter, or a local developer build prepared with the matching REE-Content-Editor dependency.
+
+### Dependencies and Credits
+
+REE-Content-Exporter is a wrapper around, and depends on, these upstream projects:
+
+- [REE-Content-Editor](https://github.com/kagenocookie/REE-Content-Editor) and [RE-Engine-Lib](https://github.com/kagenocookie/RE-Engine-Lib) by kagenocookie provide the core RE Engine file loading, conversion, and export pipeline.
+- [REE.PAK.Tool](https://github.com/Ekey/REE.PAK.Tool) by Ekey provides the public game file lists used by the wizard for asset search and game metadata.
+- [Blender](https://www.blender.org/) is required for the Unreal-ready FBX re-export workflow.
+- [Assimp](https://github.com/assimp/assimp) through [AssimpNetter](https://github.com/Saalvage/AssimpNetter) is used by the upstream exporter stack for scene import/export.
+- [DirectXTex](https://github.com/microsoft/DirectXTex), `texconv.exe`, and [Hexa.NET.DirectXTex](https://github.com/HexaEngine/Hexa.NET.DirectXTex) support DDS/PNG texture conversion.
+- GDeflateNet, the wrapper bundled by the upstream dependency around [GDeflateCore](https://github.com/neptuwunium/GDeflateCore), supports GDeflate-compressed RE Engine texture payloads.
+
+Release packages bundle the required runtime files beside the executables: `texconv.exe`, `DirectXTex.dll`, `libGDeflate.dll`, and `assimp.dll`.
 
 ### First Run
 
@@ -52,6 +69,19 @@ The full command-line reference, game ID table, release packaging notes, and AI-
 - 내보낼 RE Engine 게임의 loose-file 추출 폴더.
 - Unreal-ready FBX 워크플로를 사용할 경우 Blender 4.5.9 LTS.
 - REE-Content-Exporter 릴리스 패키지 또는 일치하는 REE-Content-Editor 의존성이 준비된 로컬 개발 빌드.
+
+### 의존성 및 크레딧
+
+REE-Content-Exporter는 다음 업스트림 프로젝트를 감싸서 사용하는 래퍼입니다.
+
+- kagenocookie의 [REE-Content-Editor](https://github.com/kagenocookie/REE-Content-Editor)와 [RE-Engine-Lib](https://github.com/kagenocookie/RE-Engine-Lib)는 RE Engine 파일 로딩, 변환, 내보내기 파이프라인의 핵심을 제공합니다.
+- Ekey의 [REE.PAK.Tool](https://github.com/Ekey/REE.PAK.Tool)은 마법사의 에셋 검색과 게임 메타데이터에 쓰이는 공개 게임 파일 목록을 제공합니다.
+- [Blender](https://www.blender.org/)는 Unreal-ready FBX 재내보내기 워크플로에 필요합니다.
+- [Assimp](https://github.com/assimp/assimp)와 [AssimpNetter](https://github.com/Saalvage/AssimpNetter)는 업스트림 exporter 스택의 scene import/export에 사용됩니다.
+- [DirectXTex](https://github.com/microsoft/DirectXTex), `texconv.exe`, [Hexa.NET.DirectXTex](https://github.com/HexaEngine/Hexa.NET.DirectXTex)는 DDS/PNG 텍스처 변환을 지원합니다.
+- 업스트림 의존성에 포함된 GDeflateNet 래퍼와 그 기반인 [GDeflateCore](https://github.com/neptuwunium/GDeflateCore)는 GDeflate 압축 RE Engine 텍스처 payload 처리를 지원합니다.
+
+릴리스 패키지는 실행 파일 옆에 필요한 런타임 파일인 `texconv.exe`, `DirectXTex.dll`, `libGDeflate.dll`, `assimp.dll`을 함께 포함합니다.
 
 ### 첫 실행
 
