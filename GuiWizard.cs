@@ -99,6 +99,10 @@ internal sealed class GuiWizardForm : Form
     private bool suppressLanguagePersistence;
     private bool initializing = true;
 
+    private int FieldRowHeight => Math.Max(46, Font.Height + 22);
+    private int GroupOverhead => Math.Max(48, Font.Height + 30);
+    private int GroupPanelHeight(int rows) => rows * FieldRowHeight + GroupOverhead;
+
     [DllImport("user32.dll")]
     private static extern bool ReleaseCapture();
 
@@ -216,9 +220,9 @@ internal sealed class GuiWizardForm : Form
     private Control BuildWorkflowColumn()
     {
         var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = DarkBack, Padding = new Padding(0, 0, 8, 0) };
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 136));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 184));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 220));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, GroupPanelHeight(2)));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, GroupPanelHeight(3)));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, Math.Max(GroupPanelHeight(2), 210)));
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         panel.Controls.Add(BuildGamePanel(), 0, 0);
         panel.Controls.Add(BuildPathPanel(), 0, 1);
@@ -230,8 +234,8 @@ internal sealed class GuiWizardForm : Form
     private Control BuildRunColumn()
     {
         var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = DarkBack, Padding = new Padding(8, 0, 0, 0) };
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 194));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, GroupPanelHeight(4)));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, Math.Max(GroupPanelHeight(2), 152)));
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         panel.Controls.Add(BuildOutputPanel(), 0, 0);
         panel.Controls.Add(BuildOptionsPanel(), 0, 1);
@@ -243,7 +247,7 @@ internal sealed class GuiWizardForm : Form
     {
         var panel = CreateGroup("Assets");
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         panel.Controls.Add(grid);
 
@@ -266,11 +270,11 @@ internal sealed class GuiWizardForm : Form
     {
         var panel = CreateGroup("Animation");
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         panel.Controls.Add(grid);
 
         includeAnimationsCheck.CheckedChanged += (_, _) => UpdateAnimationSourceUi();
@@ -307,9 +311,9 @@ internal sealed class GuiWizardForm : Form
     {
         var panel = CreateGroup("Output");
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         panel.Controls.Add(grid);
 
@@ -333,7 +337,7 @@ internal sealed class GuiWizardForm : Form
     {
         var panel = CreateGroup("Options");
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         panel.Controls.Add(grid);
 
@@ -355,12 +359,12 @@ internal sealed class GuiWizardForm : Form
         => new ThemedButton { Text = text, Width = width, Height = 34, Margin = new Padding(6, 4, 0, 4) };
 
     private Label CreateFieldLabel(string text)
-        => new() { Text = L(text), Width = 112, Dock = DockStyle.Left, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DarkText, BackColor = DarkPanel };
+        => new() { Text = L(text), Width = 146, Dock = DockStyle.Left, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DarkText, BackColor = DarkPanel };
 
     private TableLayoutPanel CreateWidePathRow(string label, TextBox textBox, Action browse, params Button[] extraButtons)
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3 + extraButtons.Length, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52));
         foreach (var _ in extraButtons) row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
@@ -387,7 +391,7 @@ internal sealed class GuiWizardForm : Form
     private TableLayoutPanel CreateWideListRow(string label, ListBox listBox, params Button[] buttons)
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Math.Max(116, buttons.Length * 58)));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -405,7 +409,7 @@ internal sealed class GuiWizardForm : Form
     private TableLayoutPanel CreatePickerRow(string label, ThemedComboBox picker)
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         picker.Dock = DockStyle.Fill;
@@ -418,7 +422,7 @@ internal sealed class GuiWizardForm : Form
     private TableLayoutPanel CreateNumberRow(string label, ThemedNumericUpDown number)
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         number.Dock = DockStyle.Left;
@@ -432,9 +436,9 @@ internal sealed class GuiWizardForm : Form
     private TableLayoutPanel CreateAnimationHeaderRow()
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 128));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         includeAnimationsCheck.Dock = DockStyle.Fill;
@@ -443,7 +447,7 @@ internal sealed class GuiWizardForm : Form
         animationSourceCombo.Margin = new Padding(0, 6, 0, 6);
         row.Controls.Add(CreateFieldLabel("Include"), 0, 0);
         row.Controls.Add(includeAnimationsCheck, 1, 0);
-        row.Controls.Add(CreateFieldLabel("Source"), 2, 0);
+        row.Controls.Add(new Label { Text = L("Source"), Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DarkText, BackColor = DarkPanel }, 2, 0);
         row.Controls.Add(animationSourceCombo, 3, 0);
         return row;
     }
@@ -1082,6 +1086,7 @@ internal sealed class GuiWizardForm : Form
     private sealed class ThemedComboBox : Control
     {
         private int selectedIndex = -1;
+        private ContextMenuStrip? openMenu;
 
         public event EventHandler? SelectedIndexChanged;
         public ThemedComboBoxItemCollection Items { get; } = new();
@@ -1146,8 +1151,14 @@ internal sealed class GuiWizardForm : Form
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
             BackColor = DarkInput;
             ForeColor = DarkText;
-            Height = 32;
+            Height = PreferredControlHeight(Font);
             Cursor = Cursors.Hand;
+        }
+
+        protected override void OnFontChanged(EventArgs e)
+        {
+            base.OnFontChanged(e);
+            Height = PreferredControlHeight(Font);
         }
 
         public void BeginUpdate()
@@ -1173,13 +1184,70 @@ internal sealed class GuiWizardForm : Form
         protected override void OnClick(EventArgs e)
         {
             base.OnClick(e);
+            ShowDropDown();
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            if (e.KeyCode is Keys.Enter or Keys.Space || e.KeyCode == Keys.Down && e.Alt)
+            {
+                ShowDropDown();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.Up && selectedIndex > 0)
+            {
+                SelectedIndex--;
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.Down && selectedIndex < Items.Count - 1)
+            {
+                SelectedIndex++;
+                e.Handled = true;
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                openMenu?.Dispose();
+                openMenu = null;
+            }
+            base.Dispose(disposing);
+        }
+
+        private void ShowDropDown()
+        {
             if (!Enabled || Items.Count == 0) return;
-            using var menu = new ContextMenuStrip
+            if (openMenu is { IsDisposed: false })
+            {
+                openMenu.Close();
+                return;
+            }
+
+            var menu = new ContextMenuStrip
             {
                 BackColor = DarkPanelAlt,
                 ForeColor = DarkText,
                 Renderer = new DarkMenuRenderer(),
                 ShowImageMargin = false,
+            };
+            menu.MinimumSize = new Size(Width, 0);
+            menu.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(openMenu, menu)) openMenu = null;
+                if (!IsDisposed && IsHandleCreated)
+                {
+                    BeginInvoke(() =>
+                    {
+                        if (!menu.IsDisposed) menu.Dispose();
+                    });
+                }
+                else if (!menu.IsDisposed)
+                {
+                    menu.Dispose();
+                }
             };
             for (var i = 0; i < Items.Count; i++)
             {
@@ -1188,6 +1256,7 @@ internal sealed class GuiWizardForm : Form
                 item.Click += (_, _) => SelectedIndex = index;
                 menu.Items.Add(item);
             }
+            openMenu = menu;
             menu.Show(this, new Point(0, Height + 2));
         }
 
@@ -1214,6 +1283,9 @@ internal sealed class GuiWizardForm : Form
             using var brush = new SolidBrush(color);
             graphics.FillPolygon(brush, [new Point(midX - 4, midY - 2), new Point(midX + 4, midY - 2), new Point(midX, midY + 3)]);
         }
+
+        private static int PreferredControlHeight(Font font)
+            => Math.Max(34, font.Height + 14);
 
         public sealed class ThemedComboBoxItemCollection : List<object>
         {
@@ -1324,7 +1396,13 @@ internal sealed class GuiWizardForm : Form
             BackColor = DarkInput;
             ForeColor = DarkText;
             Cursor = Cursors.Hand;
-            Height = 32;
+            Height = PreferredControlHeight(Font);
+        }
+
+        protected override void OnFontChanged(EventArgs e)
+        {
+            base.OnFontChanged(e);
+            Height = PreferredControlHeight(Font);
         }
 
         protected override void OnMouseWheel(MouseEventArgs e)
@@ -1380,10 +1458,13 @@ internal sealed class GuiWizardForm : Form
             g.FillPolygon(brush, [new Point(midX, topY - 3), new Point(midX - 4, topY + 2), new Point(midX + 4, topY + 2)]);
             g.FillPolygon(brush, [new Point(midX, bottomY + 3), new Point(midX - 4, bottomY - 2), new Point(midX + 4, bottomY - 2)]);
         }
+
+        private static int PreferredControlHeight(Font font)
+            => Math.Max(34, font.Height + 14);
     }
 
     private static GroupBox CreateGroup(string title)
-        => new ThemedGroupBox { Text = title, Dock = DockStyle.Fill, Padding = new Padding(12, 14, 12, 10) };
+        => new ThemedGroupBox { Text = title, Dock = DockStyle.Fill, Padding = new Padding(12, 18, 12, 10) };
 
     private sealed class ThemedGroupBox : GroupBox
     {
@@ -1398,21 +1479,22 @@ internal sealed class GuiWizardForm : Form
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             e.Graphics.Clear(BackColor);
-            var textSize = TextRenderer.MeasureText(Text, Font);
-            var textRect = new Rectangle(10, 0, textSize.Width + 8, textSize.Height);
-            var borderRect = new Rectangle(0, textSize.Height / 2, Width - 1, Height - textSize.Height / 2 - 1);
+            var textSize = TextRenderer.MeasureText(Text, Font, Size.Empty, TextFormatFlags.NoPadding);
+            var textRect = new Rectangle(10, 2, textSize.Width + 18, textSize.Height + 4);
+            var borderTop = Math.Max(8, textRect.Top + textRect.Height / 2);
+            var borderRect = new Rectangle(0, borderTop, Width - 1, Height - borderTop - 1);
             using var border = new Pen(Color.FromArgb(78, 84, 96));
             e.Graphics.DrawRectangle(border, borderRect);
             using var titleBack = new SolidBrush(BackColor);
             e.Graphics.FillRectangle(titleBack, textRect);
-            TextRenderer.DrawText(e.Graphics, Text, Font, textRect, ForeColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+            TextRenderer.DrawText(e.Graphics, Text, Font, textRect, ForeColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
     }
 
-    private static TableLayoutPanel CreateGrid(int rows)
+    private TableLayoutPanel CreateGrid(int rows)
     {
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = rows, BackColor = DarkPanel };
-        for (var i = 0; i < rows; i++) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        for (var i = 0; i < rows; i++) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         return grid;
     }
 
@@ -1860,10 +1942,13 @@ internal sealed class GuiWizardForm : Form
         ["Extract root"] = "추출 루트",
         ["Export folder"] = "내보내기 폴더",
         ["Blender 4.5.9"] = "Blender 4.5.9",
+        ["Assets"] = "에셋",
+        ["Animation"] = "애니메이션",
         ["Export setup"] = "내보내기 설정",
         ["Primary mesh"] = "기본 메시",
         ["Additional meshes"] = "추가 메시",
         ["Animations"] = "애니메이션",
+        ["Include"] = "포함",
         ["Include animations"] = "애니메이션 포함",
         ["Source"] = "소스",
         ["MOTLIST folder"] = "MOTLIST 폴더",
@@ -1871,9 +1956,13 @@ internal sealed class GuiWizardForm : Form
         ["MOT files"] = "MOT 파일",
         ["Animation files"] = "애니메이션 파일",
         ["Animation name filter"] = "애니메이션 이름 필터",
+        ["Name filter"] = "이름 필터",
         ["Output"] = "출력",
+        ["Format"] = "형식",
         ["Textures"] = "텍스처",
         ["FBX scale"] = "FBX 스케일",
+        ["Options"] = "옵션",
+        ["Mode"] = "모드",
         ["Export options"] = "내보내기 옵션",
         ["Default"] = "기본값",
         ["Custom"] = "사용자 지정",

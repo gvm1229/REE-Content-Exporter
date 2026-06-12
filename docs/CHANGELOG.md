@@ -22,6 +22,8 @@
 - The GUI now uses a dark pale-blue-accented palette with rounded buttons and visible hover/pressed states across the main wizard and Find dialog.
 - The Find dialog now uses dark surfaces, a persistent selected/hovered full-path preview, and a fixed-height action strip so Choose/Cancel controls are not clipped.
 - The GUI Default export option mode now mirrors legacy console wizard preferences while keeping the checkboxes disabled and visibly checked/unchecked.
+- GUI dropdowns now stay open and selectable after the dark custom control overhaul.
+- GUI rows and group labels now scale from the active font height so high-DPI English/Korean text such as `출력` and `Options` is not clipped.
 - The v0.5 release zip was replaced after fixing startup routing and CLI error handling: `REE-Content-Exporter-GUI.exe --config <path>` now opens the GUI, and direct CLI input failures now print a concise `ERROR:` with a nonzero exit instead of terminating as an unhandled .NET exception.
 - The CLI no-argument path now pauses after printing usage when launched from Explorer/double-click, so the temporary Windows console remains readable instead of closing immediately.
 - The project now targets `net10.0-windows` with Windows Forms enabled while preserving console output for direct CLI exports.
