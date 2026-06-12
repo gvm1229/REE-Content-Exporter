@@ -57,7 +57,9 @@ The GUI wraps the direct exporter command. It provides:
 - checkboxes for animations, split MOTLISTs, split animations, textures, LODs, occlusion, missing animation bone handling, and missing streaming buffers
 - language dropdown for English/Korean GUI labels and messages, persisted in the shared `Language` config property
 - command preview, percentage progress bar parsed from exporter progress output, log window, cancel button, and command-copy action
-- larger downloaded-list search dialogs with horizontal scrolling for long asset paths
+- larger dark downloaded-list search dialogs with horizontal scrolling, hover path previews, and unclipped Choose/Cancel actions for long asset paths
+
+The GUI uses a dark visual style with a pale blue accent, rounded buttons, and visible hover/pressed button states. Path text boxes and list rows should expose full-path tooltips whenever the rendered text is too narrow to show the whole value.
 
 The GUI currently runs the direct exporter process and captures stdout/stderr in the log window. The older script-generation and Blender Unreal-ready workflow remains available through the legacy console wizard.
 

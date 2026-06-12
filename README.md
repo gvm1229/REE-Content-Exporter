@@ -37,6 +37,8 @@ CLI users can run `REE-Content-Exporter-CLI.exe`. Double-clicking the CLI execut
 
 The GUI shows the generated command preview before export and writes progress output into the log window while the export runs. Export options use the legacy CLI wizard defaults unless you switch the export options dropdown to Custom. The language dropdown in the bottom-left corner is saved and restored on the next run.
 
+The GUI uses a dark theme with pale-blue-accented rounded buttons. Hovering over path fields, list rows, and Find-dialog results previews the full path so long game asset paths are not hidden by clipped text.
+
 The animation name filter is optional. It filters selected MOTLIST or MOT animations by name and is not an animation file path.
 
 ### Detailed Reference
@@ -75,6 +77,8 @@ CLI 사용자는 `REE-Content-Exporter-CLI.exe`를 실행할 수 있습니다. C
 6. 내보내기를 실행하고 백분율 진행률 표시줄과 로그 창을 확인합니다.
 
 GUI는 내보내기 전에 생성된 명령 미리보기를 보여주며, 실행 중 진행 출력을 로그 창에 기록합니다. 내보내기 옵션은 기본적으로 기존 CLI 마법사 기본값을 사용하며, export options 드롭다운을 Custom으로 바꾸면 직접 설정할 수 있습니다. 왼쪽 아래의 언어 드롭다운은 저장되며 다음 실행 때 유지됩니다.
+
+GUI는 어두운 테마와 옅은 파란색 강조색의 둥근 버튼을 사용합니다. 경로 입력칸, 목록 행, Find 대화상자 결과 위에 마우스를 올리면 긴 게임 에셋 경로가 잘려 보이지 않도록 전체 경로를 미리 볼 수 있습니다.
 
 애니메이션 이름 필터는 선택 사항입니다. MOTLIST 또는 MOT에서 선택된 애니메이션을 이름으로 거르는 기능이며, 애니메이션 파일 경로가 아닙니다.
 
