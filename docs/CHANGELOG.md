@@ -11,13 +11,16 @@
 - Added legacy console wizard animation candidate inference. When a skeletal mesh includes animations, the wizard searches the selected game's downloaded `.list` with the mesh name and offers matching MOTLIST folder and raw MOT choices.
 - Added separate published entry-point executables: `REE-Content-Exporter-GUI.exe` for GUI-first use and `REE-Content-Exporter-CLI.exe` for command-line use.
 - Added GUI export option Default/Custom mode, persisted custom checkbox settings, English/Korean GUI language selection, button tooltips, and a clarified animation-name filter label.
+- Added full-path hover previews for GUI path fields, mesh/animation lists, and downloaded-list Find dialog results.
 
 ### Changed
 
 - The saved game configuration is locked in the GUI after selection, matching the universal v0.4 behavior. Changing games now requires clearing the saved game through the GUI or deleting the `game` line from `config.json`.
 - The GUI no longer hard-defaults the game dropdown to Pragmata when `config.json` has no saved `game`, avoiding startup selection errors and requiring an explicit saved game before export.
-- The GUI is now arranged into dark themed Setup, Export, and Progress tabs to prevent clipped controls and reduce visual clutter.
+- The GUI is now arranged as a borderless single-screen dark workspace with workflow inputs on the left and output/progress controls on the right.
 - The GUI now uses wider/spaced controls, a full-width game dropdown, disabled inactive animation-source inputs, larger horizontally scrollable list-search dialogs, and a determinate percentage progress display instead of marquee progress.
+- The GUI now uses a dark pale-blue-accented palette with rounded buttons and visible hover/pressed states across the main wizard and Find dialog.
+- The Find dialog now uses dark surfaces, a persistent selected/hovered full-path preview, and a fixed-height action strip so Choose/Cancel controls are not clipped.
 - The GUI Default export option mode now mirrors legacy console wizard preferences while keeping the checkboxes disabled and visibly checked/unchecked.
 - The v0.5 release zip was replaced after fixing startup routing and CLI error handling: `REE-Content-Exporter-GUI.exe --config <path>` now opens the GUI, and direct CLI input failures now print a concise `ERROR:` with a nonzero exit instead of terminating as an unhandled .NET exception.
 - The CLI no-argument path now pauses after printing usage when launched from Explorer/double-click, so the temporary Windows console remains readable instead of closing immediately.

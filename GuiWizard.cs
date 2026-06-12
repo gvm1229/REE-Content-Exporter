@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.ComponentModel;
+using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -32,50 +35,59 @@ internal static class GuiWizardApplication
 internal sealed class GuiWizardForm : Form
 {
     private const string ReePakToolProjectsRawBaseUrl = "https://raw.githubusercontent.com/Ekey/REE.PAK.Tool/refs/heads/main/Projects/";
-    private static readonly Color DarkBack = Color.FromArgb(25, 28, 34);
-    private static readonly Color DarkPanel = Color.FromArgb(34, 38, 46);
-    private static readonly Color DarkInput = Color.FromArgb(18, 21, 26);
-    private static readonly Color DarkBorder = Color.FromArgb(63, 70, 84);
-    private static readonly Color DarkText = Color.FromArgb(232, 236, 244);
-    private static readonly Color MutedText = Color.FromArgb(170, 178, 192);
-    private static readonly Color Accent = Color.FromArgb(73, 145, 255);
+    private const int WmNclButtonDown = 0x00A1;
+    private const int HtCaption = 0x02;
+    private static readonly Color DarkBack = Color.FromArgb(18, 20, 24);
+    private static readonly Color DarkPanel = Color.FromArgb(28, 31, 37);
+    private static readonly Color DarkPanelAlt = Color.FromArgb(34, 38, 46);
+    private static readonly Color DarkInput = Color.FromArgb(13, 15, 18);
+    private static readonly Color DarkBorder = Color.FromArgb(70, 72, 78);
+    private static readonly Color DarkText = Color.FromArgb(240, 242, 245);
+    private static readonly Color MutedText = Color.FromArgb(166, 171, 181);
+    private static readonly Color Accent = Color.FromArgb(154, 207, 255);
+    private static readonly Color AccentHover = Color.FromArgb(190, 226, 255);
+    private static readonly Color ButtonBase = Color.FromArgb(43, 47, 55);
+    private static readonly Color ButtonHover = Color.FromArgb(48, 59, 70);
+    private static readonly Color ButtonPressed = Color.FromArgb(54, 86, 116);
+    private static readonly Color DisabledBack = Color.FromArgb(35, 38, 44);
 
     private readonly string configPath;
     private WizardConfig config;
     private Process? runningProcess;
 
     private readonly Label currentGameLabel = new();
-    private readonly ComboBox gameCombo = new();
+    private readonly Label savedGameValueLabel = new();
+    private readonly ThemedComboBox gameCombo = new();
     private readonly TextBox extractRootText = new();
     private readonly TextBox exportRootText = new();
     private readonly TextBox blenderPathText = new();
     private readonly TextBox meshText = new();
     private readonly ListBox additionalMeshList = new();
-    private readonly CheckBox includeAnimationsCheck = new() { Text = "Include animations" };
-    private readonly ComboBox animationSourceCombo = new();
+    private readonly CheckBox includeAnimationsCheck = new ThemedCheckBox() { Text = "Include animations" };
+    private readonly ThemedComboBox animationSourceCombo = new();
     private readonly TextBox motlistDirText = new();
     private readonly ListBox animationFileList = new();
     private readonly TextBox animationFilterText = new();
-    private readonly ComboBox outputFormatCombo = new();
-    private readonly ComboBox textureFormatCombo = new();
-    private readonly NumericUpDown fbxScaleInput = new();
-    private readonly ComboBox exportOptionsModeCombo = new();
-    private readonly ComboBox languageCombo = new();
-    private readonly CheckBox splitMotlistsCheck = new() { Text = "Split by MOTLIST" };
-    private readonly CheckBox splitAnimationsCheck = new() { Text = "Split animations" };
-    private readonly CheckBox noTexturesCheck = new() { Text = "No textures" };
-    private readonly CheckBox includeLodsCheck = new() { Text = "Include LODs" };
-    private readonly CheckBox includeOcclusionCheck = new() { Text = "Include occlusion" };
-    private readonly CheckBox noPlaceholderBonesCheck = new() { Text = "Skip missing bone channels" };
-    private readonly CheckBox allowMissingStreamingCheck = new() { Text = "Allow missing streaming buffers" };
+    private readonly ThemedComboBox outputFormatCombo = new();
+    private readonly ThemedComboBox textureFormatCombo = new();
+    private readonly ThemedNumericUpDown fbxScaleInput = new();
+    private readonly ThemedComboBox exportOptionsModeCombo = new();
+    private readonly ThemedComboBox languageCombo = new();
+    private readonly CheckBox splitMotlistsCheck = new ThemedCheckBox() { Text = "Split by MOTLIST" };
+    private readonly CheckBox splitAnimationsCheck = new ThemedCheckBox() { Text = "Split animations" };
+    private readonly CheckBox noTexturesCheck = new ThemedCheckBox() { Text = "No textures" };
+    private readonly CheckBox includeLodsCheck = new ThemedCheckBox() { Text = "Include LODs" };
+    private readonly CheckBox includeOcclusionCheck = new ThemedCheckBox() { Text = "Include occlusion" };
+    private readonly CheckBox noPlaceholderBonesCheck = new ThemedCheckBox() { Text = "Skip missing bone channels" };
+    private readonly CheckBox allowMissingStreamingCheck = new ThemedCheckBox() { Text = "Allow missing streaming buffers" };
     private readonly TextBox outputPathText = new();
     private readonly TextBox commandPreviewText = new();
     private readonly TextBox logText = new();
-    private readonly ProgressBar progressBar = new();
+    private readonly ThemedProgressBar progressBar = new();
     private readonly Label progressPercentLabel = new() { Text = "0%", TextAlign = ContentAlignment.MiddleRight };
     private readonly ToolTip tooltips = new();
-    private readonly Button runButton = new FooterActionButton() { Text = "Run Export" };
-    private readonly Button cancelButton = new FooterActionButton() { Text = "Cancel", Enabled = false };
+    private readonly Button runButton = new ThemedButton() { Text = "Run Export", AccentButton = true };
+    private readonly Button cancelButton = new ThemedButton() { Text = "Cancel", Enabled = false };
     private Button? savePathsButton;
     private Button? copyCommandButton;
     private Button? saveGameButton;
@@ -87,6 +99,12 @@ internal sealed class GuiWizardForm : Form
     private bool suppressLanguagePersistence;
     private bool initializing = true;
 
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+
     public GuiWizardForm(string? configPathOverride)
     {
         configPath = ResolveConfigPath(configPathOverride);
@@ -94,8 +112,9 @@ internal sealed class GuiWizardForm : Form
 
         Text = "REE-Content-Exporter Wizard";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1180, 820);
-        Size = new Size(1280, 920);
+        FormBorderStyle = FormBorderStyle.None;
+        MinimumSize = new Size(1120, 980);
+        Size = new Size(1180, 1020);
         BackColor = DarkBack;
         ForeColor = DarkText;
         Font = new Font("Segoe UI", 9F);
@@ -116,34 +135,345 @@ internal sealed class GuiWizardForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2,
-            Padding = new Padding(12),
+            RowCount = 3,
+            Padding = new Padding(0),
             BackColor = DarkBack,
         };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
         Controls.Add(root);
 
-        var tabs = new TabControl
+        root.Controls.Add(BuildTitleBar(), 0, 0);
+        root.Controls.Add(BuildWorkspace(), 0, 1);
+        root.Controls.Add(BuildActionPanel(), 0, 2);
+    }
+
+    private Control BuildTitleBar()
+    {
+        var title = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            DrawMode = TabDrawMode.OwnerDrawFixed,
-            Padding = new Point(16, 6),
+            ColumnCount = 5,
+            RowCount = 1,
+            BackColor = DarkPanel,
+            Padding = new Padding(10, 5, 8, 5),
         };
-        tabs.DrawItem += DrawDarkTab;
+        title.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 22));
+        title.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        title.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
+        title.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
+        title.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
+        title.MouseDown += DragWindow;
+        title.Paint += (_, e) =>
+        {
+            TextRenderer.DrawText(e.Graphics, "REE-Content-Exporter", new Font(Font, FontStyle.Bold), new Rectangle(32, 0, Math.Max(1, title.Width - 160), title.Height), DarkText, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        };
 
-        tabs.TabPages.Add(BuildSetupTab());
-        tabs.TabPages.Add(BuildExportTab());
-        tabs.TabPages.Add(BuildProgressTab());
+        var mark = new Panel { Dock = DockStyle.Fill, BackColor = Accent, Margin = new Padding(0, 6, 8, 6) };
+        var minimize = CreateWindowButton("_");
+        minimize.Click += (_, _) => WindowState = FormWindowState.Minimized;
+        var maximize = CreateWindowButton("□");
+        maximize.Click += (_, _) => WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
+        var close = CreateWindowButton("X");
+        close.Click += (_, _) => Close();
 
-        root.Controls.Add(tabs, 0, 0);
-        root.Controls.Add(BuildActionPanel(), 0, 1);
+        title.Controls.Add(mark, 0, 0);
+        title.Controls.Add(minimize, 2, 0);
+        title.Controls.Add(maximize, 3, 0);
+        title.Controls.Add(close, 4, 0);
+        return title;
+
+        ThemedButton CreateWindowButton(string text)
+            => new() { Text = text, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 0), Padding = new Padding(0) };
+    }
+
+    private void DragWindow(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+        ReleaseCapture();
+        SendMessage(Handle, WmNclButtonDown, HtCaption, 0);
+    }
+
+    private Control BuildWorkspace()
+    {
+        var workspace = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Padding = new Padding(12, 10, 12, 8),
+            BackColor = DarkBack,
+        };
+        workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
+        workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+        workspace.Controls.Add(BuildWorkflowColumn(), 0, 0);
+        workspace.Controls.Add(BuildRunColumn(), 1, 0);
+        AttachPreviewEvents(workspace);
+        return workspace;
+    }
+
+    private Control BuildWorkflowColumn()
+    {
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = DarkBack, Padding = new Padding(0, 0, 8, 0) };
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 136));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 184));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 220));
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        panel.Controls.Add(BuildGamePanel(), 0, 0);
+        panel.Controls.Add(BuildPathPanel(), 0, 1);
+        panel.Controls.Add(BuildCoreAssetPanel(), 0, 2);
+        panel.Controls.Add(BuildAnimationPanel(), 0, 3);
+        return panel;
+    }
+
+    private Control BuildRunColumn()
+    {
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = DarkBack, Padding = new Padding(8, 0, 0, 0) };
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 194));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        panel.Controls.Add(BuildOutputPanel(), 0, 0);
+        panel.Controls.Add(BuildOptionsPanel(), 0, 1);
+        panel.Controls.Add(BuildLogPanel(), 0, 2);
+        return panel;
+    }
+
+    private Control BuildCoreAssetPanel()
+    {
+        var panel = CreateGroup("Assets");
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        panel.Controls.Add(grid);
+
+        var findMeshButton = CreateCompactButton("Find", 78);
+        tooltips.SetToolTip(findMeshButton, L("Search the saved game list for a primary mesh path."));
+        findMeshButton.Click += (_, _) => PickAssetFromList(meshText, AssetPickerKind.Mesh);
+        grid.Controls.Add(CreateWidePathRow("Primary mesh", meshText, () => BrowseFile(meshText, "RE Engine mesh|*.mesh*|All files|*.*"), findMeshButton), 0, 0);
+
+        var addMeshButton = CreateCompactButton("+", 48);
+        tooltips.SetToolTip(addMeshButton, L("Add an additional mesh from disk."));
+        addMeshButton.Click += (_, _) => AddAdditionalMesh();
+        var removeMeshButton = CreateCompactButton("-", 48);
+        tooltips.SetToolTip(removeMeshButton, L("Remove the selected additional mesh."));
+        removeMeshButton.Click += (_, _) => RemoveSelectedAdditionalMesh();
+        grid.Controls.Add(CreateWideListRow("Additional meshes", additionalMeshList, addMeshButton, removeMeshButton), 0, 1);
+        return panel;
+    }
+
+    private Control BuildAnimationPanel()
+    {
+        var panel = CreateGroup("Animation");
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        panel.Controls.Add(grid);
+
+        includeAnimationsCheck.CheckedChanged += (_, _) => UpdateAnimationSourceUi();
+        animationSourceCombo.Items.AddRange(["MOTLIST folder", "MOTLIST files", "MOT files"]);
+        animationSourceCombo.SelectedIndex = 0;
+        animationSourceCombo.SelectedIndexChanged += (_, _) => UpdateAnimationSourceUi();
+        grid.Controls.Add(CreateAnimationHeaderRow(), 0, 0);
+
+        var findMotlistButton = CreateCompactButton("Find", 78);
+        tooltips.SetToolTip(findMotlistButton, L("Search the saved game list for a MOTLIST folder."));
+        findMotlistButton.Click += (_, _) => PickAssetFromList(motlistDirText, AssetPickerKind.MotlistDirectory);
+        motlistDirRow = CreateWidePathRow("MOTLIST folder", motlistDirText, () => BrowseFolder(motlistDirText), findMotlistButton);
+        grid.Controls.Add(motlistDirRow, 0, 1);
+
+        var addAnimationFileButton = CreateCompactButton("+", 48);
+        tooltips.SetToolTip(addAnimationFileButton, L("Add a MOTLIST or MOT file from disk."));
+        addAnimationFileButton.Click += (_, _) => AddAnimationFileFromDisk();
+        var findAnimationFileButton = CreateCompactButton("Find", 78);
+        tooltips.SetToolTip(findAnimationFileButton, L("Search the saved game list for animation files."));
+        findAnimationFileButton.Click += (_, _) => PickAnimationFileFromList();
+        var removeAnimationFileButton = CreateCompactButton("-", 48);
+        tooltips.SetToolTip(removeAnimationFileButton, L("Remove the selected animation file."));
+        removeAnimationFileButton.Click += (_, _) => RemoveSelectedAnimationFile();
+        animationFileRow = CreateWideListRow("Animation files", animationFileList, addAnimationFileButton, findAnimationFileButton, removeAnimationFileButton);
+        grid.Controls.Add(animationFileRow, 0, 2);
+
+        grid.Controls.Add(CreateWidePathRow("Name filter", animationFilterText, () => { }), 0, 3);
+        var hint = new Label { Text = L("Optional. Maps to --animation-name <contains> and filters exported animation names after sources are selected."), Dock = DockStyle.Fill, ForeColor = MutedText, BackColor = DarkPanel, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
+        grid.Controls.Add(hint, 0, 4);
+        return panel;
+    }
+
+    private Control BuildOutputPanel()
+    {
+        var panel = CreateGroup("Output");
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        panel.Controls.Add(grid);
+
+        outputFormatCombo.Items.AddRange(["fbx", "glb"]);
+        outputFormatCombo.SelectedIndex = 0;
+        textureFormatCombo.Items.AddRange(["png", "dds"]);
+        textureFormatCombo.SelectedIndex = 0;
+        fbxScaleInput.DecimalPlaces = 2;
+        fbxScaleInput.Minimum = 0.01M;
+        fbxScaleInput.Maximum = 1000M;
+        fbxScaleInput.Value = 100M;
+
+        grid.Controls.Add(CreatePickerRow("Format", outputFormatCombo), 0, 0);
+        grid.Controls.Add(CreatePickerRow("Textures", textureFormatCombo), 0, 1);
+        grid.Controls.Add(CreateNumberRow("FBX scale", fbxScaleInput), 0, 2);
+        grid.Controls.Add(CreateWidePathRow("Output path", outputPathText, () => BrowseSaveOutput()), 0, 3);
+        return panel;
+    }
+
+    private Control BuildOptionsPanel()
+    {
+        var panel = CreateGroup("Options");
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        panel.Controls.Add(grid);
+
+        exportOptionsModeCombo.Items.AddRange(["Default", "Custom"]);
+        exportOptionsModeCombo.SelectedIndexChanged += (_, _) => OnExportOptionsModeChanged();
+        grid.Controls.Add(CreatePickerRow("Mode", exportOptionsModeCombo), 0, 0);
+        exportOptionChecksPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = false, WrapContents = true, BackColor = DarkPanel, Padding = new Padding(118, 4, 0, 0) };
+        exportOptionChecksPanel.Controls.AddRange([splitMotlistsCheck, splitAnimationsCheck, noTexturesCheck, includeLodsCheck, includeOcclusionCheck, noPlaceholderBonesCheck, allowMissingStreamingCheck]);
+        foreach (var checkBox in GetExportOptionCheckBoxes())
+        {
+            checkBox.Margin = new Padding(0, 0, 14, 8);
+            checkBox.CheckedChanged += (_, _) => OnExportOptionCheckChanged(checkBox);
+        }
+        grid.Controls.Add(exportOptionChecksPanel, 0, 1);
+        return panel;
+    }
+
+    private Button CreateCompactButton(string text, int width)
+        => new ThemedButton { Text = text, Width = width, Height = 34, Margin = new Padding(6, 4, 0, 4) };
+
+    private Label CreateFieldLabel(string text)
+        => new() { Text = L(text), Width = 112, Dock = DockStyle.Left, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DarkText, BackColor = DarkPanel };
+
+    private TableLayoutPanel CreateWidePathRow(string label, TextBox textBox, Action browse, params Button[] extraButtons)
+    {
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3 + extraButtons.Length, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52));
+        foreach (var _ in extraButtons) row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        textBox.Dock = DockStyle.Fill;
+        textBox.Margin = new Padding(0, 7, 6, 7);
+        var browseButton = CreateCompactButton("...", 46);
+        browseButton.Dock = DockStyle.Fill;
+        tooltips.SetToolTip(browseButton, L("Browse on disk."));
+        browseButton.Click += (_, _) => browse();
+
+        row.Controls.Add(CreateFieldLabel(label), 0, 0);
+        row.Controls.Add(textBox, 1, 0);
+        row.Controls.Add(browseButton, 2, 0);
+        for (var i = 0; i < extraButtons.Length; i++)
+        {
+            extraButtons[i].Dock = DockStyle.Fill;
+            row.Controls.Add(extraButtons[i], 3 + i, 0);
+        }
+        return row;
+    }
+
+    private TableLayoutPanel CreateWideListRow(string label, ListBox listBox, params Button[] buttons)
+    {
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Math.Max(116, buttons.Length * 58)));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        listBox.Dock = DockStyle.Fill;
+        listBox.Margin = new Padding(0, 7, 6, 7);
+        var buttonFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, BackColor = DarkPanel, Padding = new Padding(0, 5, 0, 0) };
+        buttonFlow.Controls.AddRange(buttons);
+
+        row.Controls.Add(CreateFieldLabel(label), 0, 0);
+        row.Controls.Add(listBox, 1, 0);
+        row.Controls.Add(buttonFlow, 2, 0);
+        return row;
+    }
+
+    private TableLayoutPanel CreatePickerRow(string label, ThemedComboBox picker)
+    {
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        picker.Dock = DockStyle.Fill;
+        picker.Margin = new Padding(0, 6, 0, 6);
+        row.Controls.Add(CreateFieldLabel(label), 0, 0);
+        row.Controls.Add(picker, 1, 0);
+        return row;
+    }
+
+    private TableLayoutPanel CreateNumberRow(string label, ThemedNumericUpDown number)
+    {
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        number.Dock = DockStyle.Left;
+        number.Width = 126;
+        number.Margin = new Padding(0, 6, 0, 6);
+        row.Controls.Add(CreateFieldLabel(label), 0, 0);
+        row.Controls.Add(number, 1, 0);
+        return row;
+    }
+
+    private TableLayoutPanel CreateAnimationHeaderRow()
+    {
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        includeAnimationsCheck.Dock = DockStyle.Fill;
+        includeAnimationsCheck.Margin = new Padding(0, 4, 8, 4);
+        animationSourceCombo.Dock = DockStyle.Fill;
+        animationSourceCombo.Margin = new Padding(0, 6, 0, 6);
+        row.Controls.Add(CreateFieldLabel("Include"), 0, 0);
+        row.Controls.Add(includeAnimationsCheck, 1, 0);
+        row.Controls.Add(CreateFieldLabel("Source"), 2, 0);
+        row.Controls.Add(animationSourceCombo, 3, 0);
+        return row;
+    }
+
+    private void AttachPreviewEvents(Control root)
+    {
+        foreach (Control control in EnumerateControls(root))
+        {
+            switch (control)
+            {
+                case TextBox textBox:
+                    textBox.TextChanged += (_, _) => UpdateCommandPreview();
+                    break;
+                case ThemedComboBox comboBox:
+                    comboBox.SelectedIndexChanged += (_, _) => UpdateCommandPreview();
+                    break;
+                case CheckBox checkBox:
+                    checkBox.CheckedChanged += (_, _) => UpdateCommandPreview();
+                    break;
+                case ThemedNumericUpDown numeric:
+                    numeric.ValueChanged += (_, _) => UpdateCommandPreview();
+                    break;
+            }
+        }
     }
 
     private TabPage BuildSetupTab()
     {
         var page = CreateTabPage("Setup");
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(10), BackColor = DarkBack };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(12), BackColor = DarkBack };
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 160));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 180));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -159,10 +489,10 @@ internal sealed class GuiWizardForm : Form
     private TabPage BuildExportTab()
     {
         var page = CreateTabPage("Export");
-        var scroller = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(10), BackColor = DarkBack };
+        var scroller = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(12), BackColor = DarkBack };
         var exportPanel = BuildExportPanel();
         exportPanel.Dock = DockStyle.Top;
-        exportPanel.Height = 760;
+        exportPanel.Height = 650;
         scroller.Controls.Add(exportPanel);
         page.Controls.Add(scroller);
         return page;
@@ -184,9 +514,13 @@ internal sealed class GuiWizardForm : Form
         if (sender is not TabControl tabs) return;
         var selected = e.Index == tabs.SelectedIndex;
         var bounds = e.Bounds;
-        using var back = new SolidBrush(selected ? DarkPanel : DarkBack);
-        using var text = new SolidBrush(selected ? DarkText : MutedText);
+        using var back = new SolidBrush(selected ? DarkPanelAlt : DarkBack);
         e.Graphics.FillRectangle(back, bounds);
+        if (selected)
+        {
+            using var accent = new Pen(Accent, 2);
+            e.Graphics.DrawLine(accent, bounds.Left + 14, bounds.Bottom - 3, bounds.Right - 14, bounds.Bottom - 3);
+        }
         TextRenderer.DrawText(e.Graphics, tabs.TabPages[e.Index].Text, tabs.Font, bounds, selected ? DarkText : MutedText, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
     }
 
@@ -211,10 +545,20 @@ internal sealed class GuiWizardForm : Form
         gameCombo.ValueMember = nameof(WizardGameDefinition.Id);
         gameCombo.Items.AddRange(WizardGames.Definitions.Cast<object>().ToArray());
         gameCombo.SelectedIndexChanged += (_, _) => UpdateCommandPreview();
+        savedGameValueLabel.AutoSize = false;
+        savedGameValueLabel.AutoEllipsis = true;
+        savedGameValueLabel.Dock = DockStyle.Fill;
+        savedGameValueLabel.Margin = gameCombo.Margin;
+        savedGameValueLabel.Padding = new Padding(6, 0, 6, 0);
+        savedGameValueLabel.TextAlign = ContentAlignment.MiddleLeft;
+        savedGameValueLabel.BorderStyle = BorderStyle.FixedSingle;
+        savedGameValueLabel.BackColor = DarkInput;
+        savedGameValueLabel.ForeColor = MutedText;
+        savedGameValueLabel.Visible = false;
 
-        saveGameButton = new Button { Text = "Set", Dock = DockStyle.Fill, Margin = new Padding(4, 3, 4, 3) };
+        saveGameButton = new ThemedButton { Text = "Set", Dock = DockStyle.Fill, Margin = new Padding(6, 4, 0, 4), AccentButton = true };
         saveGameButton.Click += async (_, _) => await SaveSelectedGameAsync();
-        changeGameButton = new Button { Text = "Edit", Dock = DockStyle.Fill, Margin = new Padding(4, 3, 4, 3) };
+        changeGameButton = new ThemedButton { Text = "Edit", Dock = DockStyle.Fill, Margin = new Padding(6, 4, 0, 4) };
         changeGameButton.Click += (_, _) => ClearSelectedGame();
 
         grid.Controls.Add(new Label { Text = "Current", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
@@ -224,6 +568,8 @@ internal sealed class GuiWizardForm : Form
         grid.Controls.Add(new Label { Text = "Select game", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
         grid.Controls.Add(gameCombo, 1, 1);
         grid.SetColumnSpan(gameCombo, 3);
+        grid.Controls.Add(savedGameValueLabel, 1, 1);
+        grid.SetColumnSpan(savedGameValueLabel, 3);
         return panel;
     }
 
@@ -254,22 +600,25 @@ internal sealed class GuiWizardForm : Form
             Padding = new Padding(2),
         };
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 102));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 132));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 104));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 122));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         panel.Controls.Add(grid);
 
         var findMeshButton = CreateCompactButton("Find", 58);
+        tooltips.SetToolTip(findMeshButton, L("Search the saved game list for a primary mesh path."));
         findMeshButton.Click += (_, _) => PickAssetFromList(meshText, AssetPickerKind.Mesh);
         grid.Controls.Add(CreatePathRow("Primary mesh", meshText, () => BrowseFile(meshText, "RE Engine mesh|*.mesh*|All files|*.*"), findMeshButton), 0, 0);
 
         var addMeshButton = CreateCompactButton("+", 44);
+        tooltips.SetToolTip(addMeshButton, L("Add an additional mesh from disk."));
         addMeshButton.Click += (_, _) => AddAdditionalMesh();
         var removeMeshButton = CreateCompactButton("-", 44);
+        tooltips.SetToolTip(removeMeshButton, L("Remove the selected additional mesh."));
         removeMeshButton.Click += (_, _) => RemoveSelectedAdditionalMesh();
         grid.Controls.Add(CreateListRow("Additional meshes", additionalMeshList, addMeshButton, removeMeshButton), 0, 1);
 
@@ -281,15 +630,19 @@ internal sealed class GuiWizardForm : Form
         grid.Controls.Add(CreateAnimationSourceRow(), 0, 2);
 
         var findMotlistButton = CreateCompactButton("Find", 58);
+        tooltips.SetToolTip(findMotlistButton, L("Search the saved game list for a MOTLIST folder."));
         findMotlistButton.Click += (_, _) => PickAssetFromList(motlistDirText, AssetPickerKind.MotlistDirectory);
         motlistDirRow = CreatePathRow("MOTLIST folder", motlistDirText, () => BrowseFolder(motlistDirText), findMotlistButton);
         grid.Controls.Add(motlistDirRow, 0, 3);
 
         var addAnimationFileButton = CreateCompactButton("+", 44);
+        tooltips.SetToolTip(addAnimationFileButton, L("Add a MOTLIST or MOT file from disk."));
         addAnimationFileButton.Click += (_, _) => AddAnimationFileFromDisk();
         var findAnimationFileButton = CreateCompactButton("Find", 58);
+        tooltips.SetToolTip(findAnimationFileButton, L("Search the saved game list for animation files."));
         findAnimationFileButton.Click += (_, _) => PickAnimationFileFromList();
         var removeAnimationFileButton = CreateCompactButton("-", 44);
+        tooltips.SetToolTip(removeAnimationFileButton, L("Remove the selected animation file."));
         removeAnimationFileButton.Click += (_, _) => RemoveSelectedAnimationFile();
         animationFileRow = CreateListRow("Animation files", animationFileList, addAnimationFileButton, findAnimationFileButton, removeAnimationFileButton);
         grid.Controls.Add(animationFileRow, 0, 4);
@@ -317,13 +670,13 @@ internal sealed class GuiWizardForm : Form
                 case TextBox textBox:
                     textBox.TextChanged += (_, _) => UpdateCommandPreview();
                     break;
-                case ComboBox comboBox:
+                case ThemedComboBox comboBox:
                     comboBox.SelectedIndexChanged += (_, _) => UpdateCommandPreview();
                     break;
                 case CheckBox checkBox:
                     checkBox.CheckedChanged += (_, _) => UpdateCommandPreview();
                     break;
-                case NumericUpDown numeric:
+                case ThemedNumericUpDown numeric:
                     numeric.ValueChanged += (_, _) => UpdateCommandPreview();
                     break;
             }
@@ -333,7 +686,7 @@ internal sealed class GuiWizardForm : Form
         return panel;
 
         Button CreateCompactButton(string text, int width)
-            => new() { Text = text, Width = width, Height = 34, Margin = new Padding(4, 3, 0, 3) };
+            => new ThemedButton() { Text = text, Width = width, Height = 36, Margin = new Padding(6, 4, 0, 4) };
 
         Label CreateRowLabel(string text)
             => new() { Text = text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 8, 0) };
@@ -344,13 +697,14 @@ internal sealed class GuiWizardForm : Form
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 54));
-            foreach (var _ in extraButtons) row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
+            foreach (var _ in extraButtons) row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
             row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             textBox.Dock = DockStyle.Fill;
             textBox.Margin = new Padding(0, 5, 6, 5);
             var browseButton = CreateCompactButton("...", 46);
             browseButton.Dock = DockStyle.Fill;
+            tooltips.SetToolTip(browseButton, L("Browse on disk."));
             browseButton.Click += (_, _) => browse();
 
             row.Controls.Add(CreateRowLabel(label), 0, 0);
@@ -369,11 +723,11 @@ internal sealed class GuiWizardForm : Form
             var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = DarkPanel };
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Math.Max(150, buttons.Length * 80)));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Math.Max(190, buttons.Length * 86)));
             row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             listBox.Dock = DockStyle.Fill;
             listBox.Margin = new Padding(0, 5, 6, 5);
-            var buttonFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, BackColor = DarkPanel };
+            var buttonFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = DarkPanel, Padding = new Padding(0, 4, 0, 0) };
             buttonFlow.Controls.AddRange(buttons);
 
             row.Controls.Add(CreateRowLabel(label), 0, 0);
@@ -418,7 +772,7 @@ internal sealed class GuiWizardForm : Form
             row.Controls.Add(animationNameFilterLabel, 0, 0);
             row.Controls.Add(animationFilterText, 1, 0);
 
-            var optionFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = false, WrapContents = false, BackColor = DarkPanel };
+            var optionFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = false, WrapContents = false, BackColor = DarkPanel, Padding = new Padding(0, 6, 0, 0) };
             outputFormatCombo.Width = 90;
             textureFormatCombo.Width = 90;
             fbxScaleInput.Width = 90;
@@ -449,7 +803,7 @@ internal sealed class GuiWizardForm : Form
             exportOptionsModeCombo.Margin = new Padding(0, 5, 0, 5);
             exportOptionsModeCombo.SelectedIndexChanged += (_, _) => OnExportOptionsModeChanged();
 
-            exportOptionChecksPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = false, WrapContents = true, BackColor = DarkPanel };
+            exportOptionChecksPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = false, WrapContents = true, BackColor = DarkPanel, Padding = new Padding(0, 8, 0, 0) };
             exportOptionChecksPanel.Controls.AddRange([splitMotlistsCheck, splitAnimationsCheck, noTexturesCheck, includeLodsCheck, includeOcclusionCheck, noPlaceholderBonesCheck, allowMissingStreamingCheck]);
             foreach (var checkBox in GetExportOptionCheckBoxes())
             {
@@ -489,12 +843,12 @@ internal sealed class GuiWizardForm : Form
         commandPreviewText.Dock = DockStyle.Fill;
         commandPreviewText.Multiline = true;
         commandPreviewText.ReadOnly = true;
-        commandPreviewText.ScrollBars = ScrollBars.Vertical;
+        commandPreviewText.ScrollBars = ScrollBars.None;
         logText.Dock = DockStyle.Fill;
         logText.Multiline = true;
         logText.ReadOnly = true;
-        logText.ScrollBars = ScrollBars.Both;
-        logText.WordWrap = false;
+        logText.ScrollBars = ScrollBars.None;
+        logText.WordWrap = true;
 
         grid.Controls.Add(progressRow, 0, 0);
         grid.Controls.Add(commandPreviewText, 0, 1);
@@ -530,10 +884,10 @@ internal sealed class GuiWizardForm : Form
         ConfigureActionButton(cancelButton, leftMargin: 6);
         runButton.Click += async (_, _) => await RunExportAsync();
         cancelButton.Click += (_, _) => CancelExport();
-        savePathsButton = new FooterActionButton { Text = "Save Paths" };
+        savePathsButton = new ThemedButton { Text = "Save Paths" };
         ConfigureActionButton(savePathsButton, leftMargin: 0);
         savePathsButton.Click += (_, _) => SavePathConfig();
-        copyCommandButton = new FooterActionButton { Text = "Copy Command" };
+        copyCommandButton = new ThemedButton { Text = "Copy Command" };
         ConfigureActionButton(copyCommandButton, leftMargin: 6);
         copyCommandButton.Click += (_, _) => Clipboard.SetText(commandPreviewText.Text);
         actions.Controls.Add(savePathsButton, 1, 0);
@@ -553,20 +907,73 @@ internal sealed class GuiWizardForm : Form
         }
     }
 
-    private sealed class FooterActionButton : Button
+    private sealed class ThemedButton : Button
     {
-        public FooterActionButton()
+        private bool hover;
+        private bool pressed;
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool AccentButton { get; init; }
+
+        public ThemedButton()
         {
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            FlatStyle = FlatStyle.Flat;
+            FlatAppearance.BorderSize = 0;
+            Cursor = Cursors.Hand;
+            BackColor = ButtonBase;
+            ForeColor = DarkText;
+            MinimumSize = new Size(0, 32);
+            Padding = new Padding(10, 0, 10, 0);
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            hover = true;
+            Invalidate();
+            base.OnMouseEnter(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            hover = false;
+            pressed = false;
+            Invalidate();
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            pressed = true;
+            Invalidate();
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            pressed = false;
+            Invalidate();
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnEnabledChanged(EventArgs e)
+        {
+            base.OnEnabledChanged(e);
+            Cursor = Enabled ? Cursors.Hand : Cursors.Default;
+            Invalidate();
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            var back = Enabled ? BackColor : Color.FromArgb(42, 47, 57);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            var back = ResolveBackColor();
+            using var path = RoundedRect(rect, 8);
             using var fill = new SolidBrush(back);
-            e.Graphics.FillRectangle(fill, ClientRectangle);
-            using var border = new Pen(Accent);
-            e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+            e.Graphics.FillPath(fill, path);
+            using var border = new Pen(Enabled ? (AccentButton ? AccentHover : Accent) : DarkBorder, AccentButton ? 1.7f : 1.2f);
+            e.Graphics.DrawPath(border, path);
             var textColor = Enabled ? ForeColor : MutedText;
             TextRenderer.DrawText(
                 e.Graphics,
@@ -576,10 +983,431 @@ internal sealed class GuiWizardForm : Form
                 textColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         }
+
+        private Color ResolveBackColor()
+        {
+            if (!Enabled) return DisabledBack;
+            if (pressed) return AccentButton ? ButtonPressed : Color.FromArgb(50, 45, 40);
+            if (hover) return AccentButton ? AccentHover : ButtonHover;
+            return AccentButton ? Accent : ButtonBase;
+        }
+    }
+
+    private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
+    {
+        var diameter = radius * 2;
+        var path = new GraphicsPath();
+        path.AddArc(bounds.Left, bounds.Top, diameter, diameter, 180, 90);
+        path.AddArc(bounds.Right - diameter, bounds.Top, diameter, diameter, 270, 90);
+        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    private sealed class ThemedProgressBar : Control
+    {
+        private int minimum;
+        private int maximum = 100;
+        private int value;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int Minimum
+        {
+            get => minimum;
+            set
+            {
+                minimum = value;
+                if (maximum < minimum) maximum = minimum;
+                Value = Math.Clamp(this.value, minimum, maximum);
+                Invalidate();
+            }
+        }
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int Maximum
+        {
+            get => maximum;
+            set
+            {
+                maximum = Math.Max(value, minimum);
+                Value = Math.Clamp(this.value, minimum, maximum);
+                Invalidate();
+            }
+        }
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int Value
+        {
+            get => value;
+            set
+            {
+                this.value = Math.Clamp(value, minimum, maximum);
+                Invalidate();
+            }
+        }
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public ProgressBarStyle Style { get; set; } = ProgressBarStyle.Blocks;
+
+        public ThemedProgressBar()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            BackColor = DarkInput;
+            ForeColor = Accent;
+            MinimumSize = new Size(0, 18);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using var backPath = RoundedRect(rect, 7);
+            using var back = new SolidBrush(DarkInput);
+            using var border = new Pen(DarkBorder);
+            e.Graphics.FillPath(back, backPath);
+            e.Graphics.DrawPath(border, backPath);
+
+            var range = Math.Max(1, maximum - minimum);
+            var fillWidth = (int)Math.Round((Width - 4) * ((value - minimum) / (double)range));
+            if (fillWidth <= 0) return;
+            var fillRect = new Rectangle(2, 2, Math.Min(fillWidth, Width - 4), Math.Max(1, Height - 4));
+            using var fillPath = RoundedRect(fillRect, 6);
+            using var fill = new LinearGradientBrush(fillRect, Accent, AccentHover, LinearGradientMode.Horizontal);
+            e.Graphics.FillPath(fill, fillPath);
+        }
+    }
+
+    private sealed class ThemedComboBox : Control
+    {
+        private int selectedIndex = -1;
+
+        public event EventHandler? SelectedIndexChanged;
+        public ThemedComboBoxItemCollection Items { get; } = new();
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string DisplayMember { get; set; } = "";
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ValueMember { get; set; } = "";
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public ComboBoxStyle DropDownStyle { get; set; } = ComboBoxStyle.DropDownList;
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public FlatStyle FlatStyle { get; set; } = FlatStyle.Flat;
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int ItemHeight { get; set; } = 22;
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int SelectedIndex
+        {
+            get => selectedIndex;
+            set
+            {
+                var next = Items.Count == 0 ? -1 : Math.Clamp(value, -1, Items.Count - 1);
+                if (selectedIndex == next) return;
+                selectedIndex = next;
+                Text = SelectedItem == null ? "" : GetItemText(SelectedItem);
+                Invalidate();
+                SelectedIndexChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public object? SelectedItem
+        {
+            get => selectedIndex >= 0 && selectedIndex < Items.Count ? Items[selectedIndex] : null;
+            set
+            {
+                if (value == null)
+                {
+                    SelectedIndex = -1;
+                    return;
+                }
+
+                for (var i = 0; i < Items.Count; i++)
+                {
+                    if (ReferenceEquals(Items[i], value) || string.Equals(GetItemText(Items[i]), value.ToString(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        SelectedIndex = i;
+                        return;
+                    }
+                }
+            }
+        }
+
+        public ThemedComboBox()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+            BackColor = DarkInput;
+            ForeColor = DarkText;
+            Height = 32;
+            Cursor = Cursors.Hand;
+        }
+
+        public void BeginUpdate()
+        {
+        }
+
+        public void EndUpdate()
+        {
+            Invalidate();
+        }
+
+        public string GetItemText(object item)
+        {
+            if (item == null) return "";
+            if (!string.IsNullOrWhiteSpace(DisplayMember))
+            {
+                var property = item.GetType().GetProperty(DisplayMember);
+                if (property?.GetValue(item) is { } value) return value.ToString() ?? "";
+            }
+            return item.ToString() ?? "";
+        }
+
+        protected override void OnClick(EventArgs e)
+        {
+            base.OnClick(e);
+            if (!Enabled || Items.Count == 0) return;
+            using var menu = new ContextMenuStrip
+            {
+                BackColor = DarkPanelAlt,
+                ForeColor = DarkText,
+                Renderer = new DarkMenuRenderer(),
+                ShowImageMargin = false,
+            };
+            for (var i = 0; i < Items.Count; i++)
+            {
+                var index = i;
+                var item = new ToolStripMenuItem(GetItemText(Items[i])) { Checked = i == selectedIndex };
+                item.Click += (_, _) => SelectedIndex = index;
+                menu.Items.Add(item);
+            }
+            menu.Show(this, new Point(0, Height + 2));
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using var back = new SolidBrush(Enabled ? DarkInput : DisabledBack);
+            using var border = new Pen(Enabled ? DarkBorder : Color.FromArgb(48, 52, 60));
+            e.Graphics.FillRectangle(back, rect);
+            e.Graphics.DrawRectangle(border, rect);
+            var arrowRect = new Rectangle(Width - 28, 1, 26, Height - 2);
+            using var arrowBack = new SolidBrush(Enabled ? DarkPanelAlt : DisabledBack);
+            e.Graphics.FillRectangle(arrowBack, arrowRect);
+            DrawArrow(e.Graphics, arrowRect, Enabled ? DarkText : MutedText);
+            var textRect = new Rectangle(8, 1, Math.Max(1, Width - 38), Height - 2);
+            TextRenderer.DrawText(e.Graphics, Text, Font, textRect, Enabled ? DarkText : MutedText, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+
+        private static void DrawArrow(Graphics graphics, Rectangle rect, Color color)
+        {
+            var midX = rect.Left + rect.Width / 2;
+            var midY = rect.Top + rect.Height / 2 + 1;
+            using var brush = new SolidBrush(color);
+            graphics.FillPolygon(brush, [new Point(midX - 4, midY - 2), new Point(midX + 4, midY - 2), new Point(midX, midY + 3)]);
+        }
+
+        public sealed class ThemedComboBoxItemCollection : List<object>
+        {
+            public void AddRange(params object[] items) => base.AddRange(items);
+        }
+
+        private sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
+        {
+            protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+            {
+                var selected = e.Item.Selected || (e.Item is ToolStripMenuItem { Checked: true });
+                using var brush = new SolidBrush(selected ? ButtonHover : DarkPanelAlt);
+                e.Graphics.FillRectangle(brush, new Rectangle(Point.Empty, e.Item.Size));
+            }
+
+            protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+            {
+                using var pen = new Pen(DarkBorder);
+                e.Graphics.DrawRectangle(pen, 0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
+            }
+        }
+    }
+
+    private sealed class ThemedCheckBox : CheckBox
+    {
+        public ThemedCheckBox()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            AutoSize = true;
+            BackColor = DarkPanel;
+            ForeColor = DarkText;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(BackColor);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var box = new Rectangle(1, Math.Max(1, (Height - 17) / 2), 16, 16);
+            using var boxBack = new SolidBrush(Enabled ? DarkInput : DisabledBack);
+            using var border = new Pen(Enabled ? Accent : DarkBorder, 1.4f);
+            e.Graphics.FillRectangle(boxBack, box);
+            e.Graphics.DrawRectangle(border, box);
+            if (Checked)
+            {
+                using var check = new Pen(Enabled ? AccentHover : MutedText, 2f);
+                e.Graphics.DrawLines(check, [new Point(box.Left + 3, box.Top + 8), new Point(box.Left + 7, box.Top + 12), new Point(box.Right - 3, box.Top + 4)]);
+            }
+            var textRect = new Rectangle(24, 0, Math.Max(1, Width - 24), Height);
+            TextRenderer.DrawText(e.Graphics, Text, Font, textRect, Enabled ? ForeColor : MutedText, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+    }
+
+    private sealed class ThemedNumericUpDown : Control
+    {
+        private decimal minimum;
+        private decimal maximum = 100;
+        private decimal value;
+
+        public event EventHandler? ValueChanged;
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int DecimalPlaces { get; set; }
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public decimal Minimum
+        {
+            get => minimum;
+            set
+            {
+                minimum = value;
+                if (maximum < minimum) maximum = minimum;
+                Value = Math.Clamp(this.value, minimum, maximum);
+            }
+        }
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public decimal Maximum
+        {
+            get => maximum;
+            set
+            {
+                maximum = Math.Max(value, minimum);
+                Value = Math.Clamp(this.value, minimum, maximum);
+            }
+        }
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public decimal Value
+        {
+            get => value;
+            set
+            {
+                var next = Math.Clamp(value, minimum, maximum);
+                if (this.value == next) return;
+                this.value = next;
+                Invalidate();
+                ValueChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public ThemedNumericUpDown()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+            BackColor = DarkInput;
+            ForeColor = DarkText;
+            Cursor = Cursors.Hand;
+            Height = 32;
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            Step(e.Delta > 0 ? 1 : -1);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            Focus();
+            var buttonRect = new Rectangle(Width - 26, 1, 25, Height - 2);
+            if (!buttonRect.Contains(e.Location)) return;
+            Step(e.Y < Height / 2 ? 1 : -1);
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            if (e.KeyCode == Keys.Up) Step(1);
+            if (e.KeyCode == Keys.Down) Step(-1);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using var back = new SolidBrush(DarkInput);
+            using var border = new Pen(DarkBorder);
+            e.Graphics.FillRectangle(back, rect);
+            e.Graphics.DrawRectangle(border, rect);
+            var textRect = new Rectangle(8, 1, Math.Max(1, Width - 34), Height - 2);
+            TextRenderer.DrawText(e.Graphics, Value.ToString(DecimalPlaces == 0 ? "0" : "0." + new string('0', DecimalPlaces)), Font, textRect, DarkText, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+            var buttonRect = new Rectangle(Width - 26, 1, 25, Height - 2);
+            using var buttonBack = new SolidBrush(DarkPanelAlt);
+            e.Graphics.FillRectangle(buttonBack, buttonRect);
+            DrawSpinner(e.Graphics, buttonRect);
+        }
+
+        private void Step(int direction)
+        {
+            var increment = DecimalPlaces <= 0 ? 1M : 1M / (decimal)Math.Pow(10, DecimalPlaces);
+            Value += increment * direction;
+        }
+
+        private static void DrawSpinner(Graphics g, Rectangle rect)
+        {
+            var topY = rect.Top + rect.Height / 3;
+            var bottomY = rect.Top + (rect.Height * 2 / 3) + 1;
+            var midX = rect.Left + rect.Width / 2;
+            using var brush = new SolidBrush(DarkText);
+            g.FillPolygon(brush, [new Point(midX, topY - 3), new Point(midX - 4, topY + 2), new Point(midX + 4, topY + 2)]);
+            g.FillPolygon(brush, [new Point(midX, bottomY + 3), new Point(midX - 4, bottomY - 2), new Point(midX + 4, bottomY - 2)]);
+        }
     }
 
     private static GroupBox CreateGroup(string title)
-        => new() { Text = title, Dock = DockStyle.Fill, Padding = new Padding(10) };
+        => new ThemedGroupBox { Text = title, Dock = DockStyle.Fill, Padding = new Padding(12, 14, 12, 10) };
+
+    private sealed class ThemedGroupBox : GroupBox
+    {
+        public ThemedGroupBox()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            BackColor = DarkPanel;
+            ForeColor = DarkText;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.Clear(BackColor);
+            var textSize = TextRenderer.MeasureText(Text, Font);
+            var textRect = new Rectangle(10, 0, textSize.Width + 8, textSize.Height);
+            var borderRect = new Rectangle(0, textSize.Height / 2, Width - 1, Height - textSize.Height / 2 - 1);
+            using var border = new Pen(Color.FromArgb(78, 84, 96));
+            e.Graphics.DrawRectangle(border, borderRect);
+            using var titleBack = new SolidBrush(BackColor);
+            e.Graphics.FillRectangle(titleBack, textRect);
+            TextRenderer.DrawText(e.Graphics, Text, Font, textRect, ForeColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+        }
+    }
 
     private static TableLayoutPanel CreateGrid(int rows)
     {
@@ -590,7 +1418,7 @@ internal sealed class GuiWizardForm : Form
 
     private static void ApplyDarkTheme(Control root)
     {
-        root.BackColor = root is TextBoxBase or ListBox or ComboBox ? DarkInput : root is GroupBox ? DarkPanel : root.BackColor == SystemColors.Control ? DarkBack : root.BackColor;
+        root.BackColor = root is TextBoxBase or ListBox or ThemedComboBox or ThemedNumericUpDown ? DarkInput : root is GroupBox ? DarkPanel : root.BackColor == SystemColors.Control ? DarkBack : root.BackColor;
         root.ForeColor = root.Enabled ? DarkText : MutedText;
 
         switch (root)
@@ -609,17 +1437,24 @@ internal sealed class GuiWizardForm : Form
                 listBox.ForeColor = DarkText;
                 listBox.BorderStyle = BorderStyle.FixedSingle;
                 break;
-            case ComboBox comboBox:
+            case ThemedComboBox comboBox:
                 comboBox.BackColor = DarkInput;
                 comboBox.ForeColor = DarkText;
-                comboBox.FlatStyle = FlatStyle.Flat;
+                break;
+            case ThemedNumericUpDown numeric:
+                numeric.BackColor = DarkInput;
+                numeric.ForeColor = DarkText;
                 break;
             case Button button:
-                button.BackColor = DarkBorder;
+                button.BackColor = button is ThemedButton ? button.BackColor : ButtonBase;
                 button.ForeColor = DarkText;
-                button.FlatStyle = FlatStyle.Flat;
-                button.FlatAppearance.BorderColor = Accent;
-                button.FlatAppearance.MouseOverBackColor = Color.FromArgb(54, 65, 82);
+                if (button is not ThemedButton)
+                {
+                    button.FlatStyle = FlatStyle.Flat;
+                    button.FlatAppearance.BorderColor = Accent;
+                    button.FlatAppearance.MouseOverBackColor = ButtonHover;
+                    button.FlatAppearance.MouseDownBackColor = ButtonPressed;
+                }
                 button.UseCompatibleTextRendering = false;
                 button.TextAlign = ContentAlignment.MiddleCenter;
                 button.MinimumSize = new Size(0, 32);
@@ -665,7 +1500,7 @@ internal sealed class GuiWizardForm : Form
     {
         textBox.Dock = DockStyle.Fill;
         textBox.Margin = new Padding(0, 4, 6, 4);
-        var browseButton = new Button { Text = "...", Dock = DockStyle.Fill, Margin = new Padding(4, 3, 4, 3) };
+        var browseButton = new ThemedButton { Text = "...", Dock = DockStyle.Fill, Margin = new Padding(6, 4, 0, 4) };
         browseButton.Click += (_, _) => browse();
         grid.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left }, startColumn, row);
         grid.Controls.Add(textBox, startColumn + 1, row);
@@ -711,6 +1546,9 @@ internal sealed class GuiWizardForm : Form
             currentGameLabel.Text = IsKorean()
                 ? $"{game.DisplayName} ({game.Id}). 변경하려면 config.json의 game 줄을 삭제하거나 편집을 누르세요."
                 : $"{game.DisplayName} ({game.Id}). Delete the config.json game line or click Edit to change.";
+            savedGameValueLabel.Text = game.DisplayName;
+            savedGameValueLabel.Visible = true;
+            gameCombo.Visible = false;
             gameCombo.Enabled = false;
             if (saveGameButton != null) saveGameButton.Enabled = false;
             if (changeGameButton != null) changeGameButton.Enabled = true;
@@ -720,6 +1558,9 @@ internal sealed class GuiWizardForm : Form
             currentGameLabel.Text = IsKorean()
                 ? $"지원하지 않는 저장 게임: {config.Game}. 편집을 누르거나 config.json의 game 줄을 삭제하세요."
                 : $"Unsupported saved game: {config.Game}. Click Edit or delete the config.json game line.";
+            savedGameValueLabel.Text = config.Game;
+            savedGameValueLabel.Visible = true;
+            gameCombo.Visible = false;
             gameCombo.Enabled = false;
             if (saveGameButton != null) saveGameButton.Enabled = false;
             if (changeGameButton != null) changeGameButton.Enabled = true;
@@ -727,6 +1568,8 @@ internal sealed class GuiWizardForm : Form
         else
         {
             currentGameLabel.Text = L("No game saved. Select a game, then click Set.");
+            savedGameValueLabel.Visible = false;
+            gameCombo.Visible = true;
             gameCombo.Enabled = true;
             if (saveGameButton != null) saveGameButton.Enabled = true;
             if (changeGameButton != null) changeGameButton.Enabled = false;
@@ -922,14 +1765,14 @@ internal sealed class GuiWizardForm : Form
 
     private void LocalizeControlTree(Control root)
     {
-        if (root is not ComboBox && !string.IsNullOrWhiteSpace(root.Text))
+        if (root is not ThemedComboBox && !string.IsNullOrWhiteSpace(root.Text))
         {
             root.Text = L(root.Text);
         }
         foreach (Control child in root.Controls) LocalizeControlTree(child);
     }
 
-    private static void UpdateComboItems(ComboBox comboBox, string[] englishItems, string[] localizedItems)
+    private static void UpdateComboItems(ThemedComboBox comboBox, string[] englishItems, string[] localizedItems)
     {
         var selected = Math.Max(0, comboBox.SelectedIndex);
         comboBox.BeginUpdate();
@@ -941,13 +1784,55 @@ internal sealed class GuiWizardForm : Form
 
     private void ApplyTooltips()
     {
+        tooltips.AutoPopDelay = 20000;
+        tooltips.InitialDelay = 250;
+        tooltips.ReshowDelay = 80;
+        tooltips.ShowAlways = true;
+
         tooltips.SetToolTip(languageCombo, L("Choose the GUI language. The setting is saved immediately."));
         tooltips.SetToolTip(exportOptionsModeCombo, L("Default uses the legacy CLI wizard preferences. Custom enables and saves these checkboxes."));
         tooltips.SetToolTip(animationFilterText, L("Optional. Maps to --animation-name <contains> and filters exported animation names after sources are selected."));
+        SetPathPreviewTooltip(extractRootText, L("Extract root"));
+        SetPathPreviewTooltip(exportRootText, L("Export folder"));
+        SetPathPreviewTooltip(blenderPathText, L("Blender 4.5.9"));
+        SetPathPreviewTooltip(meshText, L("Primary mesh"));
+        SetPathPreviewTooltip(motlistDirText, L("MOTLIST folder"));
+        SetPathPreviewTooltip(outputPathText, L("Output path"));
+        SetListPreviewTooltip(additionalMeshList, L("Additional meshes"));
+        SetListPreviewTooltip(animationFileList, L("Animation files"));
         if (savePathsButton != null) tooltips.SetToolTip(savePathsButton, L("Save extract, export, Blender, texture, language, and GUI option settings."));
         if (copyCommandButton != null) tooltips.SetToolTip(copyCommandButton, L("Copy the generated CLI command preview to the clipboard."));
         tooltips.SetToolTip(cancelButton, L("Cancel the running export process."));
         tooltips.SetToolTip(runButton, L("Run the export with the current GUI settings."));
+    }
+
+    private void SetPathPreviewTooltip(TextBox textBox, string label)
+    {
+        void Refresh()
+        {
+            var value = string.IsNullOrWhiteSpace(textBox.Text) ? L("No path selected.") : textBox.Text.Trim();
+            tooltips.SetToolTip(textBox, $"{label}: {value}");
+        }
+
+        Refresh();
+        textBox.TextChanged += (_, _) => Refresh();
+        textBox.MouseEnter += (_, _) => Refresh();
+    }
+
+    private void SetListPreviewTooltip(ListBox listBox, string label)
+    {
+        listBox.MouseMove += (_, e) =>
+        {
+            var index = listBox.IndexFromPoint(e.Location);
+            if (index >= 0 && index < listBox.Items.Count)
+            {
+                tooltips.SetToolTip(listBox, $"{label}: {listBox.Items[index]}");
+            }
+            else
+            {
+                tooltips.SetToolTip(listBox, label);
+            }
+        };
     }
 
     private string L(string text)
@@ -1008,7 +1893,17 @@ internal sealed class GuiWizardForm : Form
         ["Run Export"] = "내보내기 실행",
         ["Find"] = "찾기",
         ["Choose"] = "선택",
+        ["Search"] = "검색",
         ["Type part of a filename or path"] = "파일 이름 또는 경로 일부 입력",
+        ["No path selected."] = "선택된 경로가 없습니다.",
+        ["Search the saved game list for a primary mesh path."] = "저장된 게임 목록에서 기본 메시 경로를 검색합니다.",
+        ["Search the saved game list for a MOTLIST folder."] = "저장된 게임 목록에서 MOTLIST 폴더를 검색합니다.",
+        ["Search the saved game list for animation files."] = "저장된 게임 목록에서 애니메이션 파일을 검색합니다.",
+        ["Add an additional mesh from disk."] = "디스크에서 추가 메시를 더합니다.",
+        ["Remove the selected additional mesh."] = "선택한 추가 메시를 제거합니다.",
+        ["Add a MOTLIST or MOT file from disk."] = "디스크에서 MOTLIST 또는 MOT 파일을 더합니다.",
+        ["Remove the selected animation file."] = "선택한 애니메이션 파일을 제거합니다.",
+        ["Browse on disk."] = "디스크에서 찾아봅니다.",
         ["No game saved. Select a game, then click Set."] = "저장된 게임이 없습니다. 게임을 선택한 뒤 설정을 누르세요.",
         ["Cleared game configuration. Select a game and click Set."] = "게임 구성을 지웠습니다. 게임을 선택한 뒤 설정을 누르세요.",
         ["Saved path and texture settings."] = "경로 및 텍스처 설정을 저장했습니다.",
@@ -1322,7 +2217,19 @@ internal sealed class GuiWizardForm : Form
     private static void SetControlTreeEnabled(Control? root, bool enabled)
     {
         if (root == null) return;
-        root.Enabled = enabled;
+        if (root is Label label)
+        {
+            label.Enabled = true;
+            label.ForeColor = enabled ? DarkText : MutedText;
+        }
+        else if (root is Panel or TableLayoutPanel or FlowLayoutPanel)
+        {
+            root.Enabled = true;
+        }
+        else
+        {
+            root.Enabled = enabled;
+        }
         foreach (Control child in root.Controls) SetControlTreeEnabled(child, enabled);
     }
 
@@ -1436,6 +2343,16 @@ internal sealed class GuiWizardForm : Form
     private void AppendLog(string line)
     {
         logText.AppendText(line + Environment.NewLine);
+        UpdateLogScrollbars();
+    }
+
+    private void UpdateLogScrollbars()
+    {
+        if (logText.ClientSize.Height <= 0) return;
+        var visibleLines = Math.Max(1, logText.ClientSize.Height / Math.Max(1, logText.Font.Height));
+        var needsScroll = logText.Lines.Length > visibleLines;
+        var desired = needsScroll ? ScrollBars.Vertical : ScrollBars.None;
+        if (logText.ScrollBars != desired) logText.ScrollBars = desired;
     }
 
     private void UpdateProgressFromLine(string line)
@@ -1510,12 +2427,29 @@ internal enum GuiAnimationSourceMode
 
 internal sealed class AssetPickerForm : Form
 {
+    private static readonly Color DarkBack = Color.FromArgb(18, 20, 24);
+    private static readonly Color DarkPanel = Color.FromArgb(28, 31, 37);
+    private static readonly Color DarkInput = Color.FromArgb(13, 15, 18);
+    private static readonly Color DarkBorder = Color.FromArgb(70, 72, 78);
+    private static readonly Color DarkText = Color.FromArgb(240, 242, 245);
+    private static readonly Color MutedText = Color.FromArgb(166, 171, 181);
+    private static readonly Color Accent = Color.FromArgb(154, 207, 255);
+    private static readonly Color AccentHover = Color.FromArgb(190, 226, 255);
+    private static readonly Color ButtonBase = Color.FromArgb(43, 47, 55);
+    private static readonly Color ButtonHover = Color.FromArgb(48, 59, 70);
+    private static readonly Color ButtonPressed = Color.FromArgb(54, 86, 116);
+    private static readonly Color DisabledBack = Color.FromArgb(35, 38, 44);
+
     private readonly IReadOnlyList<string> entries;
     private readonly string extractRoot;
     private readonly AssetPickerKind kind;
     private readonly bool korean;
     private readonly TextBox searchText = new();
     private readonly ListBox resultList = new();
+    private readonly Label selectedPathLabel = new();
+    private readonly Label resultCountLabel = new();
+    private readonly ToolTip tooltips = new();
+    private string lastHoverPath = "";
 
     public string SelectedPath { get; private set; } = "";
 
@@ -1533,39 +2467,84 @@ internal sealed class AssetPickerForm : Form
             _ => L("Find MOTLIST folder"),
         };
         StartPosition = FormStartPosition.CenterParent;
-        MinimumSize = new Size(960, 640);
-        Size = new Size(1180, 760);
+        MinimumSize = new Size(1040, 760);
+        Size = new Size(1220, 860);
+        BackColor = DarkBack;
+        ForeColor = DarkText;
+        Font = new Font("Segoe UI", 9F);
         BuildLayout();
         RefreshResults();
     }
 
     private void BuildLayout()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(12) };
+        tooltips.AutoPopDelay = 20000;
+        tooltips.InitialDelay = 250;
+        tooltips.ReshowDelay = 80;
+        tooltips.ShowAlways = true;
+
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(16), BackColor = DarkBack };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
         Controls.Add(root);
 
+        var searchRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkBack };
+        searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
+        searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var searchLabel = new Label { Text = L("Search"), Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DarkText, BackColor = DarkBack };
         searchText.Dock = DockStyle.Fill;
+        searchText.Margin = new Padding(0, 4, 0, 6);
         searchText.PlaceholderText = L("Type part of a filename or path");
+        searchText.BackColor = DarkInput;
+        searchText.ForeColor = DarkText;
+        searchText.BorderStyle = BorderStyle.FixedSingle;
         searchText.TextChanged += (_, _) => RefreshResults();
+        tooltips.SetToolTip(searchText, L("Type part of a filename or path"));
+        searchRow.Controls.Add(searchLabel, 0, 0);
+        searchRow.Controls.Add(searchText, 1, 0);
+
+        selectedPathLabel.Dock = DockStyle.Fill;
+        selectedPathLabel.AutoEllipsis = true;
+        selectedPathLabel.TextAlign = ContentAlignment.MiddleLeft;
+        selectedPathLabel.ForeColor = MutedText;
+        selectedPathLabel.BackColor = DarkPanel;
+        selectedPathLabel.Padding = new Padding(10, 0, 10, 0);
+        selectedPathLabel.Margin = new Padding(0, 0, 0, 8);
+
         resultList.Dock = DockStyle.Fill;
+        resultList.BackColor = DarkInput;
+        resultList.ForeColor = DarkText;
+        resultList.BorderStyle = BorderStyle.FixedSingle;
         resultList.HorizontalScrollbar = true;
         resultList.IntegralHeight = false;
         resultList.DoubleClick += (_, _) => AcceptSelection();
+        resultList.SelectedIndexChanged += (_, _) => UpdateSelectedPathPreview();
+        resultList.MouseMove += (_, e) => UpdateHoverTooltip(e.Location);
 
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
-        var choose = new Button { Text = L("Choose"), Width = 100 };
+        var actions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = DarkBack, Padding = new Padding(0, 8, 0, 12) };
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        resultCountLabel.Dock = DockStyle.Fill;
+        resultCountLabel.TextAlign = ContentAlignment.MiddleLeft;
+        resultCountLabel.ForeColor = MutedText;
+        resultCountLabel.BackColor = DarkBack;
+        var choose = new PickerButton { Text = L("Choose"), Width = 112, Height = 42, Anchor = AnchorStyles.Top | AnchorStyles.Right, AccentButton = true, Margin = new Padding(6, 0, 0, 0) };
         choose.Click += (_, _) => AcceptSelection();
-        var cancel = new Button { Text = L("Cancel"), Width = 100 };
+        var cancel = new PickerButton { Text = L("Cancel"), Width = 112, Height = 42, Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = new Padding(6, 0, 0, 0) };
         cancel.Click += (_, _) => DialogResult = DialogResult.Cancel;
-        actions.Controls.Add(choose);
-        actions.Controls.Add(cancel);
+        actions.Controls.Add(resultCountLabel, 0, 0);
+        actions.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = DarkBack }, 1, 0);
+        actions.Controls.Add(cancel, 2, 0);
+        actions.Controls.Add(choose, 3, 0);
 
-        root.Controls.Add(searchText, 0, 0);
-        root.Controls.Add(resultList, 0, 1);
-        root.Controls.Add(actions, 0, 2);
+        root.Controls.Add(searchRow, 0, 0);
+        root.Controls.Add(selectedPathLabel, 0, 1);
+        root.Controls.Add(resultList, 0, 2);
+        root.Controls.Add(actions, 0, 3);
     }
 
     private void RefreshResults()
@@ -1585,6 +2564,37 @@ internal sealed class AssetPickerForm : Form
             ? 0
             : matches.Max(match => TextRenderer.MeasureText(match, resultList.Font).Width) + 32;
         resultList.EndUpdate();
+        resultCountLabel.Text = string.Format(System.Globalization.CultureInfo.InvariantCulture, L("{0} result(s)"), matches.Count);
+        UpdateSelectedPathPreview();
+    }
+
+    private void UpdateSelectedPathPreview()
+    {
+        var selected = resultList.SelectedItem?.ToString();
+        selectedPathLabel.Text = string.IsNullOrWhiteSpace(selected)
+            ? L("Hover or select a result to preview the full path.")
+            : selected;
+        tooltips.SetToolTip(selectedPathLabel, selectedPathLabel.Text);
+    }
+
+    private void UpdateHoverTooltip(Point location)
+    {
+        var index = resultList.IndexFromPoint(location);
+        var path = index >= 0 && index < resultList.Items.Count
+            ? resultList.Items[index]?.ToString() ?? ""
+            : "";
+        if (string.Equals(path, lastHoverPath, StringComparison.Ordinal)) return;
+        lastHoverPath = path;
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            selectedPathLabel.Text = path;
+            tooltips.SetToolTip(resultList, path);
+            tooltips.SetToolTip(selectedPathLabel, path);
+        }
+        else
+        {
+            tooltips.SetToolTip(resultList, L("Hover over a result to preview the full path."));
+        }
     }
 
     private bool MatchesKind(string entry)
@@ -1653,9 +2663,89 @@ internal sealed class AssetPickerForm : Form
             "Find MOT file" => "MOT 파일 찾기",
             "Find MOTLIST file" => "MOTLIST 파일 찾기",
             "Find MOTLIST folder" => "MOTLIST 폴더 찾기",
+            "Search" => "검색",
             "Type part of a filename or path" => "파일 이름 또는 경로 일부 입력",
+            "Hover or select a result to preview the full path." => "결과 위에 마우스를 올리거나 선택하면 전체 경로를 미리 볼 수 있습니다.",
+            "Hover over a result to preview the full path." => "결과 위에 마우스를 올리면 전체 경로를 미리 볼 수 있습니다.",
+            "{0} result(s)" => "{0}개 결과",
             "Choose" => "선택",
             "Cancel" => "취소",
             _ => text,
         };
+
+    private sealed class PickerButton : Button
+    {
+        private bool hover;
+        private bool pressed;
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool AccentButton { get; init; }
+
+        public PickerButton()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            FlatStyle = FlatStyle.Flat;
+            FlatAppearance.BorderSize = 0;
+            Cursor = Cursors.Hand;
+            BackColor = ButtonBase;
+            ForeColor = DarkText;
+            MinimumSize = new Size(0, 34);
+            Padding = new Padding(10, 0, 10, 0);
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            hover = true;
+            Invalidate();
+            base.OnMouseEnter(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            hover = false;
+            pressed = false;
+            Invalidate();
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            pressed = true;
+            Invalidate();
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            pressed = false;
+            Invalidate();
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            var back = !Enabled ? DisabledBack : pressed ? (AccentButton ? ButtonPressed : Color.FromArgb(50, 45, 40)) : hover ? (AccentButton ? AccentHover : ButtonHover) : AccentButton ? Accent : ButtonBase;
+            using var path = RoundedRect(rect, 8);
+            using var fill = new SolidBrush(back);
+            using var border = new Pen(Enabled ? (AccentButton ? AccentHover : Accent) : DarkBorder, AccentButton ? 1.7f : 1.2f);
+            e.Graphics.FillPath(fill, path);
+            e.Graphics.DrawPath(border, path);
+            TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, Enabled ? ForeColor : MutedText, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+    }
+
+    private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
+    {
+        var diameter = radius * 2;
+        var path = new GraphicsPath();
+        path.AddArc(bounds.Left, bounds.Top, diameter, diameter, 180, 90);
+        path.AddArc(bounds.Right - diameter, bounds.Top, diameter, diameter, 270, 90);
+        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
 }
