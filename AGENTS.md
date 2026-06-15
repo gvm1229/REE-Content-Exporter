@@ -188,6 +188,8 @@ When exporting MOT rotations to FBX/GLB, normalize quaternion rotation keys and 
 - Do not leave sparse FBX rotation gaps for downstream importers to solve differently. If a source MOT has keys at frames 24 and 26, FBX output should include the sampled frame 25 rotation.
 - Guard against zero-length quaternions by reusing the previous valid key, or identity for the first key.
 - This is an export representation fix, not a MOT data edit. Do not mutate the source `MotFile` track arrays just to make FBX interpolation safer.
+- The same rotation-continuity rule applies to standalone MOT and MOTLIST entries because both become exported animation channels through the shared Assimp scene path. A MOTLIST animation that plays correctly in REE-Content-Editor can still show FBX/Unreal flukes if sparse quaternion channels are not normalized, hemisphere-continuous, and baked at integer frames.
+- When validating a suspected MOTLIST rotation fluke, prefer a scoped single-animation export, then audit both the source FBX and Blender re-exported FBX for the expected action, expected frame range, dense integer-frame animated rotation keys, and zero adjacent rotation jumps greater than pi radians.
 
 ## Intermediate source FBX handling
 

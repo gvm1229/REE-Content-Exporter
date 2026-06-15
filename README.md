@@ -118,3 +118,4 @@ GUI는 어두운 테마와 옅은 파란색 강조색의 둥근 버튼을 사용
 
 Standalone MOT bone-loading correction details are documented in [docs/standalone_mot_loading_fix.md](docs/standalone_mot_loading_fix.md).
 MOT quaternion continuity and FBX rotation anomaly handling are documented in [docs/animation_quaternion_continuity.md](docs/animation_quaternion_continuity.md).
+The scoped MOTLIST verification for `ch0100_Other_5215_Turn_Walk_L180` is documented in [docs/ch0100_other_5215_rotation_continuity_verification.md](docs/ch0100_other_5215_rotation_continuity_verification.md).
