@@ -2257,7 +2257,6 @@ if (includeAnimations)
         using var motHandler = new FileHandler(motPath);
         var mot = new MotFile(motHandler);
         if (!mot.Read()) throw new Exception("REE-Lib failed to read mot");
-        mot.ReadBones(null);
         if (string.IsNullOrWhiteSpace(animationFilter) || mot.Name.Contains(animationFilter, StringComparison.OrdinalIgnoreCase))
             motions.Add((PathUtils.GetFilenameWithoutExtensionOrVersion(motPath).ToString(), mot));
         Console.WriteLine($"Loaded mot {mot.Name}");

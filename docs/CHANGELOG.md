@@ -1,4 +1,15 @@
-# CHANGELOG
+﻿# CHANGELOG
+
+## Unreleased - MOT loading and FBX rotation continuity
+
+### Changed
+
+- Rotation keys exported from MOT animation tracks are normalized and made quaternion-hemisphere continuous before they are handed to Assimp. FBX rotation tracks are also baked at integer source MOT frames using REE-Content-Editor's shortest-path quaternion interpolation, so downstream importers do not invent their own sparse-key interpolation at frames such as `_05_03` frame 25 in `sm39_033_Close`.
+- Added `docs/animation_quaternion_continuity.md` to document the cause, fix, and verification workflow for MOT rotation anomalies such as `sm39_033_Close` bone `_06_03` at frame 22 and bone `_05_03` at frames 25-26.
+- Standalone `--mot` loading now matches REE-Content-Editor's direct MOT loader by relying on `MotFile.Read()` for the MOT bone table.
+- Removed the exporter's extra `ReadBones(null)` pass for standalone MOT files, which could duplicate MOT bone/rest-pose data before FBX/GLB animation export.
+- Added `docs/standalone_mot_loading_fix.md` to capture the cause, affected behavior, comparison against REE-Content-Editor, and verification commands.
+- Verified the change with a scoped `sm39_033_00.mesh.251121828` plus `sm39_033_close.mot.993` FBX export.
 
 ## 0.5.0 - GUI wizard
 

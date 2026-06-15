@@ -1,4 +1,4 @@
-# REE-Content-Exporter
+﻿# REE-Content-Exporter
 
 | GUI wizard | Legacy CLI wizard |
 | --- | --- |
@@ -115,3 +115,6 @@ GUI는 어두운 테마와 옅은 파란색 강조색의 둥근 버튼을 사용
 ### 자세한 참고 문서
 
 전체 명령줄 참고, 게임 ID 표, 릴리스 패키징 메모, AI 에이전트 작업 세부사항은 [docs/ai_cli_reference.md](docs/ai_cli_reference.md)로 이동했습니다. 사람도 읽을 수 있지만, 내용이 복잡하기 때문에 주된 대상은 AI 에이전트와 고급 유지보수 작업입니다.
+
+Standalone MOT bone-loading correction details are documented in [docs/standalone_mot_loading_fix.md](docs/standalone_mot_loading_fix.md).
+MOT quaternion continuity and FBX rotation anomaly handling are documented in [docs/animation_quaternion_continuity.md](docs/animation_quaternion_continuity.md).

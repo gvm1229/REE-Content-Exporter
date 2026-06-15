@@ -33,6 +33,15 @@ Minimum expectations:
   ```
 - Unreal-ready FBX export currently depends on Blender, not just the C# exporter.
 
+## Git boundary rules
+
+All git activity is strictly limited to this `REE-Content-Exporter` repository.
+
+- Do not run `git status`, `git diff`, `git add`, `git commit`, `git push`, branch operations, log inspection, or any other git command in sibling repositories, parent directories, submodules, dependency checkouts, or source-reference checkouts.
+- `REE-Content-Editor` and `RE-Engine-Lib` are sources of truth and dependency/reference code only. They may be read for comparison and implementation guidance, but their git state must not be inspected, modified, staged, committed, pushed, cleaned, reset, or otherwise managed from this exporter repo session.
+- If a required fix appears to belong upstream, document the needed upstream change in this repository and ask the user how to proceed instead of performing git operations outside this repository.
+- Git commands are allowed only when the working directory is the `REE-Content-Exporter` repository root or a path inside it.
+
 ## Release artifact dependency rules
 
 Released builds must be functional immediately after download/extraction.
@@ -160,6 +169,25 @@ Rules:
   ```
 
 Do not treat zero-action MOTLISTs as fatal unless the user specifically asks to debug that MOTLIST.
+
+## Standalone MOT loading rules
+
+When loading individual `.mot.*` files through `--mot`, rely on REE-Lib's `MotFile.Read()` to load the standalone MOT bone table.
+
+- Do not call `ReadBones(null)` again after `MotFile.Read()` for a normal standalone `.mot.*` path.
+- `ReadBones(headerMot)` is only appropriate for embedded MOT entries that inherit or share bones from a MOTLIST/MOTPACK header MOT.
+- Double-reading standalone MOT bones can duplicate bone/rest-pose data and make exported animation behavior diverge from REE-Content-Editor's direct MOT loader.
+
+## Quaternion animation continuity rules
+
+When exporting MOT rotations to FBX/GLB, normalize quaternion rotation keys and keep each bone channel on a continuous quaternion hemisphere before passing keys to Assimp. For FBX output, bake sparse MOT rotation tracks at integer source frames using the same shortest-path quaternion interpolation behavior as REE-Content-Editor playback.
+
+- Adjacent quaternion keys that represent nearly identical poses can still have opposite signs because `q` and `-q` are the same rotation.
+- Some downstream FBX importers can interpret that sign discontinuity as the long arc around the sphere, producing one-frame or two-frame rotation flukes even when REE-Content-Editor playback is smooth.
+- Use the previous exported key for the same bone channel as the continuity reference; if `Quaternion.Dot(previous, current) < 0`, negate the current key before writing it.
+- Do not leave sparse FBX rotation gaps for downstream importers to solve differently. If a source MOT has keys at frames 24 and 26, FBX output should include the sampled frame 25 rotation.
+- Guard against zero-length quaternions by reusing the previous valid key, or identity for the first key.
+- This is an export representation fix, not a MOT data edit. Do not mutate the source `MotFile` track arrays just to make FBX interpolation safer.
 
 ## Intermediate source FBX handling
 
