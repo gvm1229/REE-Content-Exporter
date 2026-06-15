@@ -2031,7 +2031,7 @@ internal sealed class GuiWizardForm : Form
         var url = ReePakToolProjectsRawBaseUrl + Uri.EscapeDataString(game.ListFileName);
         AppendLog($"Downloading {game.ListFileName}");
         using var http = new HttpClient();
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("REE-Content-Exporter/0.5");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("REE-Content-Exporter/0.6");
         var bytes = await http.GetByteArrayAsync(url);
         if (bytes.Length == 0) throw new InvalidOperationException($"Downloaded list was empty: {url}");
         await File.WriteAllBytesAsync(targetPath, bytes);

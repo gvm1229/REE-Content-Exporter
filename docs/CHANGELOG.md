@@ -1,6 +1,6 @@
 ﻿# CHANGELOG
 
-## Unreleased - MOT loading and FBX rotation continuity
+## 0.6 - MOT loading and FBX rotation continuity
 
 ### Changed
 

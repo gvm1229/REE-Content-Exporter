@@ -6,7 +6,7 @@
 
 REE-Content-Exporter is a small export wizard built on top of REE-Content-Editor / RE-Engine-Lib. It helps move supported RE Engine meshes, materials, textures, skeletons, and animations into Blender, Unreal, or other DCC/game-engine workflows.
 
-Version 0.5 opens as a Windows GUI wizard by default. The tool remains game-configurable and is no longer a PRAGMATA-only workflow.
+Version 0.6 opens as a Windows GUI wizard by default. The tool remains game-configurable and is no longer a PRAGMATA-only workflow.
 
 ## English
 
