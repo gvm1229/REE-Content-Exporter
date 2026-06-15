@@ -1,0 +1,39 @@
+# ch0100 Selected Other Animation Names
+
+This note records the `ch0100` animation asset filenames found under:
+
+```text
+D:\UnrealProjects\Pragmata_2P\Content\Character\Diana\Animations
+```
+
+These were the target filenames for the focused `ch0100_selected_unreal.fbx` attempt. That FBX imported into Unreal with animations stuck in a single pose, so this file is a record of the target animation names only, not a validated export workflow.
+
+## Target filenames
+
+Count: 25
+
+- `ch0100_Other_unreal_Armature_ch0100_Other_8931_AA_Drawing_Loop_VerB.uasset`
+- `ch0100_Other_unreal_Armature_ch2500_Other_9032_AA_InsectNet_Loop_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_ch2500_Other_9037_AA_InsectNet_End_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_105_00_Other_9011_AA_Basketball_Loop_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_105_00_Other_9016_AA_Basketball_End_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_106_Other_9021_AA_Radicon_Loop_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_106_Other_9025_AA_Radicon_End_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_107_Other_9053_AA_Skateboard_Loop_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_107_Other_9058_AA_Skateboard_End_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_123_Other_9031_AA_InsectNet_Loop_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_123_Other_9036_AA_InsectNet_End_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_124_Other_9061_AA_WaterGun_Loop_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_124_Other_9066_AA_WaterGun_End_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_153_01_Other_9040_AA_Corolla_Loop_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_153_Other_9046_AA_Corolla_End_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_154_00_Other_8910_AA_Drawing_Loop_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_154_00_Other_8911_AA_Drawing_Loop_VerB_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_154_00_Other_9005_AA_Drawing_End_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_155_00_Other_8900_AA_Drawing_Loop_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_155_00_Other_8900_AA_Drawing_Loop_VerA_v002_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_155_00_Other_8901_AA_Drawing_Loop_VerB_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_155_00_Other_9005_AA_Drawing_End_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_156_00_Other_8920_AA_Drawing_Loop_VerA_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_156_00_Other_8921_AA_Drawing_Loop_VerB_.uasset`
+- `ch0100_Other_unreal_Armature_sm75_156_01_Other_8930_AA_Drawing_Loop_VerA_.uasset`

@@ -11,6 +11,7 @@
 - Added `docs/standalone_mot_loading_fix.md` to capture the cause, affected behavior, comparison against REE-Content-Editor, and verification commands.
 - Verified the change with a scoped `sm39_033_00.mesh.251121828` plus `sm39_033_close.mot.993` FBX export.
 - Verified the same rotation-continuity and integer-frame FBX baking fix on the MOTLIST path with `ch0100_other.motlist.1057`, animation `ch0100_Other_5215_Turn_Walk_L180`, and documented the scoped export plus Blender source/final FBX audits in `docs/ch0100_other_5215_rotation_continuity_verification.md`.
+- Added `docs/ch0100_selected_other_animation_names.md` as a record of the target Unreal animation asset names from the earlier unvalidated `ch0100_selected_unreal.fbx` attempt.
 
 ## 0.5.0 - GUI wizard
 
