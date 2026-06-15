@@ -229,6 +229,7 @@ Options can be passed in any order. Options marked as repeatable can be supplied
 | `--no-animations` | Flag | Disables animation loading/export even if MOT/MOTLIST options are supplied. | Mesh-only export with skeleton and mesh data but no animation stacks. | Use for skeletal mesh tests: `--no-animations`. |
 
 For the cause and fix behind the standalone MOT bone-loading correction, see `docs/standalone_mot_loading_fix.md`.
+For MOT quaternion continuity and one-frame rotation anomaly handling, see `docs/animation_quaternion_continuity.md`.
 
 #### Animation splitting and batching flags
 
