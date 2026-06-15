@@ -33,6 +33,15 @@ Minimum expectations:
   ```
 - Unreal-ready FBX export currently depends on Blender, not just the C# exporter.
 
+## Git boundary rules
+
+All git activity is strictly limited to this `REE-Content-Exporter` repository.
+
+- Do not run `git status`, `git diff`, `git add`, `git commit`, `git push`, branch operations, log inspection, or any other git command in sibling repositories, parent directories, submodules, dependency checkouts, or source-reference checkouts.
+- `REE-Content-Editor` and `RE-Engine-Lib` are sources of truth and dependency/reference code only. They may be read for comparison and implementation guidance, but their git state must not be inspected, modified, staged, committed, pushed, cleaned, reset, or otherwise managed from this exporter repo session.
+- If a required fix appears to belong upstream, document the needed upstream change in this repository and ask the user how to proceed instead of performing git operations outside this repository.
+- Git commands are allowed only when the working directory is the `REE-Content-Exporter` repository root or a path inside it.
+
 ## Release artifact dependency rules
 
 Released builds must be functional immediately after download/extraction.
