@@ -224,9 +224,11 @@ Options can be passed in any order. Options marked as repeatable can be supplied
 | --- | --- | --- | --- | --- |
 | `--motlist` | Path to a `.motlist.*` file. Repeatable. | Reads one MOTLIST and all MOT files referenced by it. | Selected animations from each supplied MOTLIST are exported. | Use once for one MOTLIST or repeat for several: `--motlist "<extract>\...\ch0100_attack.motlist.1057"`. |
 | `--motlist-dir` | Folder path | Recursively finds `*.motlist*` files under the folder. | All MOTLIST files in the folder become animation sources. Empty/no-selected MOTLISTs are skipped in `--split-motlists` mode and documented in `skipped-motlists.md`. | Use for full character animation coverage: `--motlist-dir "<extract>\character\animation\ch\ch01\ch0100\motlist"`. |
-| `--mot` | Path to a `.mot.*` file. Repeatable. | Reads individual MOT files directly without a MOTLIST. | Supplied MOT animations are exported. | Use for targeted tests when a raw MOT path is known: `--mot "<extract>\...\motion.mot.78"`. |
+| `--mot` | Path to a `.mot.*` file. Repeatable. | Reads individual MOT files directly without a MOTLIST. Standalone MOT bone data is loaded by REE-Lib's `MotFile.Read()` path, matching REE-Content-Editor's MOT loader. | Supplied MOT animations are exported without rereading their bone table a second time. | Use for targeted tests when a raw MOT path is known: `--mot "<extract>\...\motion.mot.78"`. |
 | `--animation-name` | Case-insensitive substring | Filters MOT/MOTLIST animations by name. | Only animations whose names contain the substring are selected. In split mode, MOTLISTs with zero selected animations are skipped. | Use to export a smaller test set: `--animation-name 0110_Hacking_Loop` or `--animation-name Attack`. |
 | `--no-animations` | Flag | Disables animation loading/export even if MOT/MOTLIST options are supplied. | Mesh-only export with skeleton and mesh data but no animation stacks. | Use for skeletal mesh tests: `--no-animations`. |
+
+For the cause and fix behind the standalone MOT bone-loading correction, see `docs/standalone_mot_loading_fix.md`.
 
 #### Animation splitting and batching flags
 

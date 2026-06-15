@@ -161,6 +161,14 @@ Rules:
 
 Do not treat zero-action MOTLISTs as fatal unless the user specifically asks to debug that MOTLIST.
 
+## Standalone MOT loading rules
+
+When loading individual `.mot.*` files through `--mot`, rely on REE-Lib's `MotFile.Read()` to load the standalone MOT bone table.
+
+- Do not call `ReadBones(null)` again after `MotFile.Read()` for a normal standalone `.mot.*` path.
+- `ReadBones(headerMot)` is only appropriate for embedded MOT entries that inherit or share bones from a MOTLIST/MOTPACK header MOT.
+- Double-reading standalone MOT bones can duplicate bone/rest-pose data and make exported animation behavior diverge from REE-Content-Editor's direct MOT loader.
+
 ## Intermediate source FBX handling
 
 The scripts intentionally produce a temporary/source FBX first, then Blender re-exports the final Unreal-ready FBX.

@@ -1,9 +1,13 @@
 # CHANGELOG
 
-## Unreleased - self-contained PNG texture export hardening
+## Unreleased - standalone MOT bone loading and PNG texture export hardening
 
 ### Changed
 
+- Standalone `--mot` loading now matches REE-Content-Editor's direct MOT loader by relying on `MotFile.Read()` for the MOT bone table.
+- Removed the exporter's extra `ReadBones(null)` pass for standalone MOT files, which could duplicate MOT bone/rest-pose data before FBX/GLB animation export.
+- Added `docs/standalone_mot_loading_fix.md` to capture the cause, affected behavior, comparison against REE-Content-Editor, and verification commands.
+- Verified the change with a scoped `sm39_033_00.mesh.251121828` plus `sm39_033_close.mot.993` FBX export.
 - Release build and publish outputs now include `texconv.exe` beside `REE-Content-Exporter.exe` so downloaded packages can export PNG textures without a separate DirectXTex install.
 - Release build/publish now fails if `texconv.exe` cannot be found on the build machine or supplied with `-p:TexconvPath="<path>\texconv.exe"`.
 - Runtime PNG conversion now prefers the bundled `texconv.exe` before checking `PATH` or the developer WinGet package cache.
