@@ -178,6 +178,19 @@ When loading individual `.mot.*` files through `--mot`, rely on REE-Lib's `MotFi
 - `ReadBones(headerMot)` is only appropriate for embedded MOT entries that inherit or share bones from a MOTLIST/MOTPACK header MOT.
 - Double-reading standalone MOT bones can duplicate bone/rest-pose data and make exported animation behavior diverge from REE-Content-Editor's direct MOT loader.
 
+## GUI/CLI logic parity rules
+
+Exporter behavior changes must be checked across every user-facing trigger that can reach that behavior.
+
+- The Windows GUI must remain a trigger for the shared CLI/export pipeline, not a separate MOT, MOTLIST, mesh, texture, or FBX implementation.
+- When changing CLI flags, export defaults, MOT/MOTLIST loading, animation filtering, missing-bone policy, streaming handling, texture behavior, or output naming, inspect and update all relevant argument builders:
+  - GUI command construction in `GuiWizard.cs`
+  - legacy console wizard and generated scripts in `Program.cs`
+  - direct CLI parsing and execution in `Program.cs`
+- Prefer refactoring shared command/option construction into common functions when the same behavior would otherwise be copied between GUI and CLI wizard paths.
+- Before calling a logic fix complete, verify that the GUI trigger either invokes the same fixed CLI/export path or has been explicitly updated to preserve parity.
+- For MOT and MOTLIST fixes specifically, confirm that GUI modes for MOTLIST folders, MOTLIST files, and raw MOT files produce the same CLI arguments that were used in focused CLI verification.
+
 ## Quaternion animation continuity rules
 
 When exporting MOT rotations to FBX/GLB, normalize quaternion rotation keys and keep each bone channel on a continuous quaternion hemisphere before passing keys to Assimp. For FBX output, bake sparse MOT rotation tracks at integer source frames using the same shortest-path quaternion interpolation behavior as REE-Content-Editor playback.
@@ -229,6 +242,8 @@ skipped-motlists.md
 skipped-blender-motlists.md
 *.skipped-animation-bones.md
 ```
+
+GUI exports must also write a persistent per-run debug log file. Do not leave the GUI's in-window log as the only record of an export. The GUI log should be created when the run starts, include the invoked CLI command and streamed exporter output, and end with an outcome-visible filename such as `*-GUI-SUCCESS__<timestamp>.log` or `*-GUI-FAIL__<timestamp>.log`.
 
 ## Progress output rules
 

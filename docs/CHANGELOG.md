@@ -1,5 +1,12 @@
 ﻿# CHANGELOG
 
+## Unreleased - GUI export log files
+
+### Changed
+
+- GUI exports now write an explicit per-run debug log beside the requested output path, with `GUI-SUCCESS` or `GUI-FAIL` in the final filename.
+- Added a GUI/CLI logic parity rule to `AGENTS.md` requiring future export behavior changes to check GUI command construction, legacy wizard/generated scripts, and direct CLI execution together.
+
 ## 0.6 - MOT loading and FBX rotation continuity
 
 ### Changed

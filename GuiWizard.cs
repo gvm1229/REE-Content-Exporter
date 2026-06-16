@@ -54,6 +54,7 @@ internal sealed class GuiWizardForm : Form
     private readonly string configPath;
     private WizardConfig config;
     private Process? runningProcess;
+    private string? currentGuiLogPath;
 
     private readonly Label currentGameLabel = new();
     private readonly Label savedGameValueLabel = new();
@@ -2353,6 +2354,7 @@ internal sealed class GuiWizardForm : Form
 
     private async Task RunExportAsync()
     {
+        var success = false;
         try
         {
             SavePathConfig();
@@ -2360,11 +2362,13 @@ internal sealed class GuiWizardForm : Form
             outputPathText.Text = ResolveOutputPath();
             UpdateRunningState(true);
             logText.Clear();
+            StartGuiExportLog(outputPathText.Text, args);
             SetProgress(0);
             AppendLog(L("Starting export"));
             await RunExporterProcessAsync(args);
             SetProgress(100);
             AppendLog(L("Export completed."));
+            success = true;
         }
         catch (Exception ex)
         {
@@ -2373,6 +2377,7 @@ internal sealed class GuiWizardForm : Form
         }
         finally
         {
+            CompleteGuiExportLog(success);
             UpdateRunningState(false);
         }
     }
@@ -2432,7 +2437,97 @@ internal sealed class GuiWizardForm : Form
     private void AppendLog(string line)
     {
         logText.AppendText(line + Environment.NewLine);
+        if (!string.IsNullOrWhiteSpace(currentGuiLogPath))
+        {
+            try
+            {
+                File.AppendAllText(currentGuiLogPath, line + Environment.NewLine, Encoding.UTF8);
+            }
+            catch
+            {
+                currentGuiLogPath = null;
+            }
+        }
         UpdateLogScrollbars();
+    }
+
+    private void StartGuiExportLog(string outputPath, IReadOnlyList<string> args)
+    {
+        currentGuiLogPath = null;
+        var logDirectory = ResolveGuiLogDirectory(outputPath);
+        Directory.CreateDirectory(logDirectory);
+        var baseName = ResolveGuiLogBaseName(outputPath);
+        var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+        currentGuiLogPath = MakeUniquePath(Path.Combine(logDirectory, $"{baseName}-GUI-RUN__{stamp}.log"));
+        var exe = ResolveCliExecutablePath();
+        var lines = new[]
+        {
+            "REE-Content-Exporter GUI export log",
+            $"Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss zzz}",
+            $"Executable: {exe}",
+            $"Command: {Quote(exe)} {string.Join(" ", args.Select(Quote))}",
+            $"Requested output: {outputPath}",
+            "",
+        };
+        File.WriteAllLines(currentGuiLogPath, lines, Encoding.UTF8);
+        AppendLog($"GUI_LOG={currentGuiLogPath}");
+    }
+
+    private void CompleteGuiExportLog(bool success)
+    {
+        if (string.IsNullOrWhiteSpace(currentGuiLogPath)) return;
+        var source = currentGuiLogPath;
+        var final = source.Replace("-GUI-RUN__", success ? "-GUI-SUCCESS__" : "-GUI-FAIL__");
+        final = MakeUniquePath(final);
+        try
+        {
+            File.AppendAllText(source, $"{Environment.NewLine}Finished: {DateTime.Now:yyyy-MM-dd HH:mm:ss zzz}{Environment.NewLine}Status: {(success ? "SUCCESS" : "FAIL")}{Environment.NewLine}", Encoding.UTF8);
+            if (!source.Equals(final, StringComparison.OrdinalIgnoreCase))
+            {
+                File.Move(source, final);
+            }
+            currentGuiLogPath = final;
+            AppendLog($"GUI_LOG_FINAL={final}");
+        }
+        finally
+        {
+            currentGuiLogPath = null;
+        }
+    }
+
+    private static string ResolveGuiLogDirectory(string outputPath)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath)) return Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        var extension = Path.GetExtension(outputPath);
+        if (extension.Equals(".fbx", StringComparison.OrdinalIgnoreCase) || extension.Equals(".glb", StringComparison.OrdinalIgnoreCase))
+        {
+            return Path.GetDirectoryName(Path.GetFullPath(outputPath)) ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        }
+        return Path.GetFullPath(outputPath);
+    }
+
+    private static string ResolveGuiLogBaseName(string outputPath)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath)) return "gui-export";
+        var extension = Path.GetExtension(outputPath);
+        if (extension.Equals(".fbx", StringComparison.OrdinalIgnoreCase) || extension.Equals(".glb", StringComparison.OrdinalIgnoreCase))
+        {
+            return SanitizeFileName(Path.GetFileNameWithoutExtension(outputPath));
+        }
+        return "gui-export";
+    }
+
+    private static string MakeUniquePath(string path)
+    {
+        if (!File.Exists(path)) return path;
+        var directory = Path.GetDirectoryName(path) ?? ".";
+        var stem = Path.GetFileNameWithoutExtension(path);
+        var extension = Path.GetExtension(path);
+        for (var i = 2; ; i++)
+        {
+            var candidate = Path.Combine(directory, $"{stem}_{i}{extension}");
+            if (!File.Exists(candidate)) return candidate;
+        }
     }
 
     private void UpdateLogScrollbars()
