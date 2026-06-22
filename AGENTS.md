@@ -202,6 +202,7 @@ When exporting MOT rotations to FBX/GLB, normalize quaternion rotation keys and 
 - Guard against zero-length quaternions by reusing the previous valid key, or identity for the first key.
 - This is an export representation fix, not a MOT data edit. Do not mutate the source `MotFile` track arrays just to make FBX interpolation safer.
 - The same rotation-continuity rule applies to standalone MOT and MOTLIST entries because both become exported animation channels through the shared Assimp scene path. A MOTLIST animation that plays correctly in REE-Content-Editor can still show FBX/Unreal flukes if sparse quaternion channels are not normalized, hemisphere-continuous, and baked at integer frames.
+- After updating or rebasing REE-Content-Editor or RE-Engine-Lib, explicitly re-check `ContentEditor.App\CustomizedFileLoaders\MeshConversion\AssimpMeshExport.cs`: `AddMotToScene` must not write raw `clip.Rotation.rotations[i]` values directly to Assimp rotation keys for FBX export.
 - When validating a suspected MOTLIST rotation fluke, prefer a scoped single-animation export, then audit both the source FBX and Blender re-exported FBX for the expected action, expected frame range, dense integer-frame animated rotation keys, and zero adjacent rotation jumps greater than pi radians.
 
 ## Intermediate source FBX handling
@@ -217,6 +218,7 @@ Rules:
 - Intermediate source FBXs should be removed by default after successful Blender re-export.
 - If a zero-action MOTLIST is skipped by Blender, remove its source FBX by default as well.
 - Keep intermediate source FBXs only when the user passes `-KeepSourceFbx`.
+- For current CLI/GUI exports, final Unreal-ready FBX means `--unreal-ready-fbx` produced `*_unreal.fbx`; do not treat a remaining `*_all_animations.fbx` or `*_source.fbx` as the golden Unreal import artifact unless the user explicitly asked for an intermediate.
 
 This avoids confusion between the direct source FBX and the Unreal-ready Blender FBX.
 

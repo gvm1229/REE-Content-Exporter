@@ -6,6 +6,13 @@
 
 - GUI exports now write an explicit per-run debug log beside the requested output path, with `GUI-SUCCESS` or `GUI-FAIL` in the final filename.
 - Added a GUI/CLI logic parity rule to `AGENTS.md` requiring future export behavior changes to check GUI command construction, legacy wizard/generated scripts, and direct CLI execution together.
+- Updated local REE dependencies for verification builds to REE-Content-Editor `711c509affb0362c7af1e5343e8c57d32a1ad27d` and RE-Engine-Lib `867daf1b0361a67e24bc82ef1391e01cc33d524a`, with the exporter bridge patch recorded by SHA-256.
+- Added `REE-Content-Exporter-CLI --dependency-versions` so local builds can report the exact REE dependency commits and bridge patch hash used to produce test exports.
+- Restored the MOT/MOTLIST quaternion-continuity bridge patch on top of the latest REE dependencies so FBX exports normalize rotation keys, preserve continuous quaternion hemispheres, and bake sparse FBX rotation tracks at integer source frames.
+- Documented the latest REE dependency quaternion-continuity regression, final bridge patch hash, local build path, focused `ch0100_other` verification, and `gamedemo\minidemo\md*` filtered MOTLIST regression export in `docs/latest_ree_quaternion_continuity_regression.md`.
+- Added `--unreal-ready-fbx`, `--blender`, and `--keep-source-fbx` so current GUI/CLI FBX animation exports can run the June 7 Blender finalization path and produce final `*_unreal.fbx` files instead of leaving source `*_all_animations.fbx` files as the apparent output.
+- Scoped the REE bridge rotation bake so direct source FBX exports keep quaternion-continuity protection, while Unreal-ready Blender staging can preserve the sparse source rotation tracks used by the June 7 golden path.
+- Documented the `ch0100_Attack_628_Clean_Up_Release_Lv1` golden-path recovery in `docs/ch0100_attack_unreal_ready_golden_recovery.md`.
 
 ## 0.6 - MOT loading and FBX rotation continuity
 

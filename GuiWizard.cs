@@ -2215,6 +2215,14 @@ internal sealed class GuiWizardForm : Form
             args.Add("--animation-name");
             args.Add(animationFilterText.Text.Trim());
         }
+        if (includeAnimationsCheck.Checked
+            && string.Equals(outputFormatCombo.SelectedItem?.ToString(), "fbx", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(blenderPathText.Text))
+        {
+            args.Add("--unreal-ready-fbx");
+            args.Add("--blender");
+            args.Add(blenderPathText.Text.Trim());
+        }
         if (noTexturesCheck.Checked) args.Add("--no-textures");
         if (includeLodsCheck.Checked) args.Add("--include-lods");
         if (includeOcclusionCheck.Checked) args.Add("--include-occlusion");

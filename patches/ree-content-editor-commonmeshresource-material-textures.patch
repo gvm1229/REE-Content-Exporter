@@ -1,8 +1,8 @@
 ﻿diff --git a/ContentEditor.App/Configuration/AppConfig.cs b/ContentEditor.App/Configuration/AppConfig.cs
-index ef4e503..5139b4c 100644
+index 0265b4e..c8a7074 100644
 --- a/ContentEditor.App/Configuration/AppConfig.cs
 +++ b/ContentEditor.App/Configuration/AppConfig.cs
-@@ -127,7 +127,15 @@ public class AppConfig : Singleton<AppConfig>
+@@ -135,7 +135,15 @@ public class AppConfig : Singleton<AppConfig>
      private const string IniFilename = "ce_config.ini";
      private const string JsonFilename = "ce_config.json";
  
@@ -20,10 +20,10 @@ index ef4e503..5139b4c 100644
  
      #if DEBUG
 diff --git a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
-index 4de3931..d48ad7b 100644
+index 4de3931..03a365c 100644
 --- a/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
 +++ b/ContentEditor.App/CustomizedFileLoaders/CommonMeshResource.cs
-@@ -18,6 +18,31 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -18,6 +18,32 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
      public List<Graphics.Mesh>? OcclusionMeshes { get; set; }
  
      public MaterialGroupWrapper? ImportedMaterials { get; private set; }
@@ -33,6 +33,7 @@ index 4de3931..d48ad7b 100644
 +    public bool ExportStripMeshNamePrefix { get; set; }
 +    public bool ExportSkipMotionsWithMissingBones { get; set; }
 +    public bool ExportNoPlaceholderAnimationBones { get; set; }
++    public bool ExportBakeFbxRotationTracks { get; set; } = true;
 +    public List<string> ExportSkippedAnimations { get; } = new();
 +    public List<string> ExportSkippedAnimationBoneChannels { get; } = new();
 +    public Action<int, int, string>? ExportAnimationProgress { get; set; }
@@ -55,7 +56,7 @@ index 4de3931..d48ad7b 100644
  
      public MeshImportWarnings importWarnings;
  
-@@ -102,8 +127,9 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -102,8 +128,9 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
              mdf.Materials.Add(matData);
          }
  
@@ -67,7 +68,7 @@ index 4de3931..d48ad7b 100644
      }
  
      private string? LoadAssimpTexture(Assimp.Scene scene, TextureSlot texture)
-@@ -142,6 +168,8 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -142,6 +169,8 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
      )
      {
          using AssimpContext context = new AssimpContext();
@@ -76,7 +77,7 @@ index 4de3931..d48ad7b 100644
  
          var ext = PathUtils.GetExtensionWithoutPeriod(filepath);
          string exportFormat = context.GetFormatIDFromExtension(ext);
-@@ -151,9 +179,10 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -151,9 +180,10 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
              format = exportFormat,
              includeShapeKeys = exportFormat == "glb",
              includeOcclusion = includeOcc,
@@ -88,7 +89,7 @@ index 4de3931..d48ad7b 100644
  
          PrepareSkeleton(exportCtx, NativeMesh);
          foreach (var add in additionalMeshes ?? []) {
-@@ -173,10 +202,17 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -173,10 +203,17 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
              }
          }
          if (mots != null) {
@@ -106,11 +107,11 @@ index 4de3931..d48ad7b 100644
 +                        Logger.Warn($"Skipping animation {mm.Name} because it references bones that the exported mesh skeleton does not contain: {string.Join(", ", missingBoneHashes)}");
 +                        continue;
 +                    }
-+                    AddMotToScene(exportCtx.scene, mm, ext, ExportNoPlaceholderAnimationBones, ExportSkippedAnimationBoneChannels);
++                    AddMotToScene(exportCtx.scene, mm, ext, ExportNoPlaceholderAnimationBones, ExportSkippedAnimationBoneChannels, ExportBakeFbxRotationTracks);
              }
          }
          void PrintTree(Node node, int depth)
-@@ -192,7 +228,48 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
+@@ -192,7 +229,48 @@ public partial class CommonMeshResource(string name, Workspace workspace) : IRes
          //     System.Numerics.Matrix4x4.Invert(System.Numerics.Matrix4x4.Transpose(bone.OffsetMatrix), out var boneGlobal);
          //     Logger.Info(bone.Name + " | Bone: " + boneGlobal.Translation + " | Node: " + System.Numerics.Matrix4x4.Transpose(node.Transform).Translation);
          // }
@@ -161,10 +162,18 @@ index 4de3931..d48ad7b 100644
  
      internal void PreloadMeshBuffers()
 diff --git a/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs b/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
-index d8fe794..40911d1 100644
+index d8fe794..71f0cd7 100644
 --- a/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
 +++ b/ContentEditor.App/CustomizedFileLoaders/MeshConversion/AssimpMeshExport.cs
-@@ -24,6 +24,7 @@ public partial class CommonMeshResource : IResourceFile
+@@ -5,6 +5,7 @@ using ContentPatcher;
+ using ReeLib;
+ using ReeLib.Common;
+ using ReeLib.Mesh;
++using ReeLib.Mot;
+ using ReeLib.via;
+ 
+ namespace ContentEditor.App.FileLoaders;
+@@ -24,6 +25,7 @@ public partial class CommonMeshResource : IResourceFile
          public bool includeShadows;
          public bool includeOcclusion;
          public bool includeShapeKeys;
@@ -172,7 +181,7 @@ index d8fe794..40911d1 100644
          public FbxSkelFile? skeleton;
          public string? rootBoneName;
          public Dictionary<string, (Node node, bool? deforming, Matrix4x4 inverseTransform)> bonesLookup = new();
-@@ -81,7 +82,35 @@ public partial class CommonMeshResource : IResourceFile
+@@ -81,7 +83,35 @@ public partial class CommonMeshResource : IResourceFile
          return nodeDict;
      }
  
@@ -205,11 +214,11 @@ index d8fe794..40911d1 100644
 +        return missingBoneHashes.Count > 0;
 +    }
 +
-+    private static void AddMotToScene(Assimp.Scene scene, MotFile mot, string exportFormat, bool skipMissingBoneChannels = false, List<string>? skippedMissingBoneChannels = null)
++    private static void AddMotToScene(Assimp.Scene scene, MotFile mot, string exportFormat, bool skipMissingBoneChannels = false, List<string>? skippedMissingBoneChannels = null, bool bakeFbxRotationTracks = true)
      {
          var isFbx = exportFormat == "fbx";
          var scale = GetExportScale(exportFormat);
-@@ -111,6 +140,13 @@ public partial class CommonMeshResource : IResourceFile
+@@ -111,6 +141,13 @@ public partial class CommonMeshResource : IResourceFile
                  ?? boneNode?.Name;
  
              if (boneNode == null || channel.NodeName == null) {
@@ -223,7 +232,137 @@ index d8fe794..40911d1 100644
                  // not a known bone for our mesh - add placeholder bone nodes and hope they fit
                  boneNode ??= new Node(header.boneName ?? $"_hash{header.boneHash}");
                  channel.NodeName = boneNode.Name;
-@@ -298,25 +334,28 @@ public partial class CommonMeshResource : IResourceFile
+@@ -164,18 +201,12 @@ public partial class CommonMeshResource : IResourceFile
+                 channel.PositionKeys.Add(new VectorKey(0, rest));
+             }
+             if (clip.HasRotation) {
+-                if (clip.Rotation!.frameIndexes == null) {
+-                    if (clip.Rotation.rotations?.Length > 0) channel.RotationKeys.Add(new QuaternionKey(0, clip.Rotation.rotations[0]));
+-                } else {
+-                    for (int i = 0; i < clip.Rotation!.frameIndexes!.Length; ++i) {
+-                        channel.RotationKeys.Add(new QuaternionKey(clip.Rotation!.frameIndexes![i] * timescale, clip.Rotation!.rotations![i]));
+-                    }
+-                }
++                AddRotationKeys(channel, clip.Rotation!, isFbx && bakeFbxRotationTracks, mot.Header.endFrame, timescale);
+             } else {
+                 // some blender fbx importer versions don't work unless we also add at least one rotation key to everything
+                 // unsure if the assimp exporter does something weird or blender's importer being bad
+                 var rest = mot.GetBoneByHash(header.boneHash)?.quaternion ?? Quaternion.CreateFromRotationMatrix(Matrix4x4.Transpose(boneNode.Transform));
+-                channel.RotationKeys.Add(new QuaternionKey(0, rest));
++                channel.RotationKeys.Add(new QuaternionKey(0, NormalizeExportRotation(rest, null)));
+             }
+             if (clip.HasScale) {
+                 if (clip.Scale!.frameIndexes == null) {
+@@ -191,6 +222,108 @@ public partial class CommonMeshResource : IResourceFile
+         scene.Animations.Add(anim);
+     }
+ 
++    private static void AddRotationKeys(NodeAnimationChannel channel, Track rotationTrack, bool isFbx, float endFrame, float timescale)
++    {
++        if (rotationTrack.rotations == null || rotationTrack.rotations.Length == 0) return;
++
++        Quaternion? previous = null;
++        void AddKey(double time, Quaternion rotation)
++        {
++            var normalized = NormalizeExportRotation(rotation, previous);
++            channel.RotationKeys.Add(new QuaternionKey(time, normalized));
++            previous = normalized;
++        }
++
++        var keyframes = rotationTrack.frameIndexes;
++        if (keyframes == null || keyframes.Length == 0)
++        {
++            AddKey(0, rotationTrack.rotations[0]);
++            return;
++        }
++
++        if (!isFbx)
++        {
++            for (int i = 0; i < keyframes.Length && i < rotationTrack.rotations.Length; ++i)
++            {
++                AddKey(keyframes[i] * timescale, rotationTrack.rotations[i]);
++            }
++            return;
++        }
++
++        var lastFrame = Math.Max(0, (int)MathF.Ceiling(endFrame));
++        for (int frame = 0; frame <= lastFrame; ++frame)
++        {
++            var sampled = SampleRotation(rotationTrack, frame);
++            if (sampled.HasValue)
++            {
++                AddKey(frame * timescale, sampled.Value);
++            }
++        }
++    }
++
++    private static Quaternion? SampleRotation(Track rotationTrack, float frame)
++    {
++        if (rotationTrack.rotations == null || rotationTrack.rotations.Length == 0) return null;
++
++        var (first, second, interpolation) = FindTrackFrames(rotationTrack, frame);
++        if (first < 0) return null;
++        if (first >= rotationTrack.rotations.Length) first = rotationTrack.rotations.Length - 1;
++        if (second >= rotationTrack.rotations.Length) second = first;
++
++        return Quaternion.Lerp(rotationTrack.rotations[first], rotationTrack.rotations[second], interpolation);
++    }
++
++    private static (int first, int second, float interpolation) FindTrackFrames(Track track, float frame)
++    {
++        var keyframes = track.frameIndexes;
++        if (keyframes == null) return track.rotations?.Length > 0 ? (0, 0, 0) : (-1, -1, 0);
++
++        var len = keyframes.Length;
++        if (len == 0) return (-1, -1, 0);
++
++        int t2 = -1;
++        for (int i = 0; i < len; ++i)
++        {
++            var val = keyframes[i];
++            if (val > frame)
++            {
++                t2 = i;
++                break;
++            }
++        }
++        if (t2 <= 0) return keyframes.Length > 0 && frame >= keyframes[^1] ? (keyframes.Length - 1, 0, 0) : (0, 0, 0);
++
++        var t1 = t2 - 1;
++
++        var f1 = keyframes[t1];
++        var f2 = keyframes[t2];
++        var w = (frame - f1) / (f2 - f1);
++
++        return (t1, t2, w);
++    }
++
++    private static Quaternion NormalizeExportRotation(Quaternion rotation, Quaternion? previous)
++    {
++        if (!IsFinite(rotation) || rotation.LengthSquared() < 1e-12f)
++        {
++            return previous ?? Quaternion.Identity;
++        }
++
++        rotation = Quaternion.Normalize(rotation);
++        if (previous.HasValue && Quaternion.Dot(previous.Value, rotation) < 0)
++        {
++            rotation = new Quaternion(-rotation.X, -rotation.Y, -rotation.Z, -rotation.W);
++        }
++
++        return rotation;
++    }
++
++    private static bool IsFinite(Quaternion rotation)
++        => float.IsFinite(rotation.X)
++            && float.IsFinite(rotation.Y)
++            && float.IsFinite(rotation.Z)
++            && float.IsFinite(rotation.W);
++
+     internal static void PrepareSkeleton(ExportContext context, MeshFile mesh)
+     {
+         var scale = GetExportScale(context.format);
+@@ -298,25 +431,28 @@ public partial class CommonMeshResource : IResourceFile
          if (file.MeshData != null) {
              for (int i = 0; i < file.MeshData.LODs.Count; i++) {
                  var lod = file.MeshData.LODs[i];

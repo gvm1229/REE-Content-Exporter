@@ -29,6 +29,14 @@ REE-Content-Exporter is a wrapper around, and depends on, these upstream project
 
 Release packages bundle the required runtime files beside the executables: `texconv.exe`, `DirectXTex.dll`, `libGDeflate.dll`, and `assimp.dll`.
 
+Local verification builds can print the exact REE dependency snapshot they were built against:
+
+```powershell
+.\REE-Content-Exporter-CLI.exe --dependency-versions
+```
+
+This reports the REE-Content-Editor commit, RE-Engine-Lib commit, and exporter bridge patch hash used by that build.
+
 ### First Run
 
 Open `REE-Content-Exporter-GUI.exe`.
@@ -123,3 +131,5 @@ GUI는 어두운 테마와 옅은 파란색 강조색의 둥근 버튼을 사용
 Standalone MOT bone-loading correction details are documented in [docs/standalone_mot_loading_fix.md](docs/standalone_mot_loading_fix.md).
 MOT quaternion continuity and FBX rotation anomaly handling are documented in [docs/animation_quaternion_continuity.md](docs/animation_quaternion_continuity.md).
 The scoped MOTLIST verification for `ch0100_Other_5215_Turn_Walk_L180` is documented in [docs/ch0100_other_5215_rotation_continuity_verification.md](docs/ch0100_other_5215_rotation_continuity_verification.md).
+The latest REE dependency update regression and restored MOT/MOTLIST quaternion-continuity bridge patch are documented in [docs/latest_ree_quaternion_continuity_regression.md](docs/latest_ree_quaternion_continuity_regression.md).
+The `ch0100_Attack` June 7 golden Unreal-ready FBX recovery is documented in [docs/ch0100_attack_unreal_ready_golden_recovery.md](docs/ch0100_attack_unreal_ready_golden_recovery.md).

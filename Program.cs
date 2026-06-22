@@ -43,7 +43,8 @@ static void PrintUsage()
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
     Console.WriteLine("  REE-Content-Exporter-GUI [--gui|--wizard] [--reset-config] [--config <path>]");
-    Console.WriteLine("  REE-Content-Exporter-CLI --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter-CLI --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--unreal-ready-fbx --blender <blender.exe> [--keep-source-fbx]] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter-CLI --dependency-versions");
 }
 
 static Dictionary<string, string> ParseAdditionalStreamingArgs(IEnumerable<string> values)
@@ -2158,6 +2159,11 @@ if (HasFlag(args, "--help"))
     PrintUsage();
     return;
 }
+if (HasFlag(args, "--dependency-versions"))
+{
+    DependencyVersions.Print(Console.Out);
+    return;
+}
 if (args.Length == 0 && isCliExecutable)
 {
     PrintUsage();
@@ -2209,6 +2215,9 @@ var noPlaceholderAnimationBones = HasFlag(args, "--no-placeholder-animation-bone
 var includeLods = HasFlag(args, "--include-lods");
 var includeOcc = HasFlag(args, "--include-occlusion");
 var allowMissingStreaming = HasFlag(args, "--allow-missing-streaming");
+var unrealReadyFbx = HasFlag(args, "--unreal-ready-fbx");
+var keepSourceFbx = HasFlag(args, "--keep-source-fbx");
+var blenderPath = GetArg(args, "--blender") ?? LoadWizardConfig(ResolveWizardConfigPath(wizardConfigPath))?.BlenderPath;
 
 Console.WriteLine("REE Content Editor native export path");
 Console.WriteLine($"Mesh: {meshPath}");
@@ -2220,6 +2229,8 @@ Console.WriteLine($"Motlists: {(motlistPaths.Count == 0 ? "-" : string.Join("; "
 Console.WriteLine($"Mots: {(motPaths.Count == 0 ? "-" : string.Join("; ", motPaths))}");
 Console.WriteLine($"Output: {outputPath}");
 Console.WriteLine($"Game: {exportGame}");
+Console.WriteLine($"Unreal-ready FBX: {(unrealReadyFbx ? "yes" : "no")}");
+if (unrealReadyFbx) Console.WriteLine($"Blender: {blenderPath}");
 
 var unknownAdditionalStreamingKeys = additionalStreamingByMesh.Keys
     .Where(key => !additionalMeshPaths.Contains(key, StringComparer.OrdinalIgnoreCase))
@@ -2229,6 +2240,12 @@ if (unknownAdditionalStreamingKeys.Count != 0)
     throw new ArgumentException("--additional-streaming keys must match a supplied --additional-mesh path. Unknown key(s): " + string.Join("; ", unknownAdditionalStreamingKeys));
 }
 ValidateExportInputs(meshPath, additionalMeshPaths, streamingPath, additionalStreamingByMesh, mdfPath, motlistPaths, motPaths, outputPath);
+if (unrealReadyFbx)
+{
+    if (!Path.GetExtension(outputPath).Equals(".fbx", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(Path.GetExtension(outputPath)))
+        throw new ArgumentException("--unreal-ready-fbx requires an FBX output path or output folder.");
+    ValidateBlenderForUnrealExport(blenderPath);
+}
 
 var mesh = LoadMesh(meshPath, streamingPath, allowMissingStreaming);
 
@@ -2283,6 +2300,7 @@ var resource = new CommonMeshResource(name, null!)
     ExportStripMeshNamePrefix = true,
     ExportSkipMotionsWithMissingBones = skipMissingAnimationBones,
     ExportNoPlaceholderAnimationBones = noPlaceholderAnimationBones,
+    ExportBakeFbxRotationTracks = !unrealReadyFbx,
 };
 var additionalResources = new List<CommonMeshResource>();
 foreach (var additionalMeshPath in additionalMeshPaths)
@@ -2348,6 +2366,8 @@ if (includeTextures)
     }
 }
 
+var exportedSourceFbxFiles = new List<string>();
+
 if (splitMotlists)
 {
     if (motlistGroups.Count == 0) throw new ArgumentException("--split-motlists requires --motlist-dir or at least one --motlist.");
@@ -2374,6 +2394,7 @@ if (splitMotlists)
         var safe = SanitizeFileName(string.IsNullOrWhiteSpace(group.SourceName) ? $"motlist_{i:0000}" : group.SourceName);
         var target = Path.Combine(jobDir, $"{i:0000}_{safe}_all_animations{outExt}");
         ExportOne(resource, target, includeLods, includeOcc, group.Motions, materialWrappers, includeTextures && i == 0, additionalResources, progress, i + 1, nonEmptyMotlistGroups.Count, safe);
+        exportedSourceFbxFiles.Add(target);
         progress.WriteLine($"[{i + 1}/{nonEmptyMotlistGroups.Count}] {target}");
     }
 }
@@ -2394,6 +2415,7 @@ else if (exportSeparateAnimationFiles)
         var targetBase = Path.Combine(outDir, $"{index:0000}_{sourcePrefix}{safe}{outExt}");
         var target = ResolveExportJobOutputPath(targetBase, meshPath, BuildSourceFiles(meshPath, additionalMeshPaths, [source], []), safe);
         ExportOne(resource, target, includeLods, includeOcc, [motion], materialWrappers, includeTextures, additionalResources, progress, index + 1, motions.Count, safe);
+        exportedSourceFbxFiles.Add(target);
         progress.WriteLine($"[{index + 1}/{motions.Count}] {target}");
         index++;
     }
@@ -2402,6 +2424,16 @@ else
 {
     var singleOutputPath = ResolveSingleOutputPath(outputPath, meshPath, name, BuildSourceFiles(meshPath, additionalMeshPaths, motlistPaths, motPaths), animationFilter);
     ExportOne(resource, singleOutputPath, includeLods, includeOcc, motions.Select(m => m.Motion), materialWrappers, includeTextures, additionalResources, progress);
+    exportedSourceFbxFiles.Add(singleOutputPath);
+}
+
+if (unrealReadyFbx)
+{
+    var fbxSources = exportedSourceFbxFiles
+        .Where(path => Path.GetExtension(path).Equals(".fbx", StringComparison.OrdinalIgnoreCase))
+        .ToList();
+    if (fbxSources.Count == 0) throw new ArgumentException("--unreal-ready-fbx did not produce any source FBX files.");
+    ReexportUnrealReadyFbxFiles(fbxSources, blenderPath!, keepSourceFbx, progress);
 }
 
 progress.WriteLine("DONE");
@@ -2559,6 +2591,318 @@ static void ExportOne(
     }
     progress.WriteLine($"Exported {target} bytes={new FileInfo(target).Length}");
 }
+
+static void ValidateBlenderForUnrealExport(string? blenderPath)
+{
+    if (string.IsNullOrWhiteSpace(blenderPath))
+        throw new ArgumentException("--unreal-ready-fbx requires --blender <path> or a saved Blender path in config.json.");
+    RequireExistingFile(blenderPath, "--blender");
+
+    var psi = new ProcessStartInfo
+    {
+        FileName = blenderPath,
+        UseShellExecute = false,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+    };
+    psi.ArgumentList.Add("--version");
+    using var process = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start Blender: {blenderPath}");
+    var firstLine = process.StandardOutput.ReadLine() ?? process.StandardError.ReadLine() ?? "";
+    process.WaitForExit();
+    if (process.ExitCode != 0)
+        throw new InvalidOperationException($"Could not query Blender version from: {blenderPath}");
+    if (!firstLine.Contains("Blender 4.5.9", StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException($"Expected Blender 4.5.9 LTS, but found: {firstLine}");
+}
+
+static void ReexportUnrealReadyFbxFiles(IReadOnlyList<string> sourceFbxFiles, string blenderPath, bool keepSourceFbx, ProgressStatus progress)
+{
+    var scriptPath = Path.Combine(Path.GetTempPath(), $"ree_unreal_fbx_reexport_{Guid.NewGuid():N}.py");
+    File.WriteAllText(scriptPath, GetUnrealReadyBlenderScript(), Encoding.UTF8);
+    var skipped = new List<(string Source, string Target, string Reason, int ActionCount)>();
+    string? reportDir = null;
+    try
+    {
+        for (var i = 0; i < sourceFbxFiles.Count; i++)
+        {
+            var source = sourceFbxFiles[i];
+            var target = ResolveUnrealReadyFbxTarget(source);
+            reportDir ??= Path.GetDirectoryName(source);
+            var statusPath = Path.Combine(Path.GetTempPath(), $"ree_unreal_fbx_status_{Guid.NewGuid():N}.txt");
+            progress.WriteLine($"SOURCE_FBX={source}");
+            progress.WriteLine($"BLENDER_TARGET={target}");
+            RunBlenderReexport(blenderPath, scriptPath, source, target, statusPath, i + 1, sourceFbxFiles.Count, progress);
+            var status = ReadBlenderStatus(statusPath);
+            File.Delete(statusPath);
+
+            if (status.Status.Equals("SKIPPED", StringComparison.OrdinalIgnoreCase))
+            {
+                skipped.Add((source, target, status.Reason, status.ActionCount));
+                progress.WriteLine($"BLENDER_SKIPPED_SOURCE={source}");
+                if (!keepSourceFbx) RemoveIntermediateSource(source, progress);
+                continue;
+            }
+            if (!status.Status.Equals("EXPORTED", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(status.Reason) ? $"Unexpected Blender status: {status.Status}" : status.Reason);
+            if (!File.Exists(target) || new FileInfo(target).Length == 0)
+                throw new IOException($"Missing Blender output: {target}");
+
+            MoveSkippedBoneReport(source, target, progress);
+            if (!keepSourceFbx) RemoveIntermediateSource(source, progress);
+            progress.WriteLine($"BLENDER_FBX={target}");
+        }
+
+        if (skipped.Count > 0 && reportDir != null)
+            WriteSkippedBlenderMotlistsReport(reportDir, skipped, progress);
+    }
+    finally
+    {
+        try { File.Delete(scriptPath); } catch { }
+    }
+}
+
+static void RunBlenderReexport(string blenderPath, string scriptPath, string source, string target, string statusPath, int index, int total, ProgressStatus progress)
+{
+    var psi = new ProcessStartInfo
+    {
+        FileName = blenderPath,
+        UseShellExecute = false,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+    };
+    psi.ArgumentList.Add("--background");
+    psi.ArgumentList.Add("--factory-startup");
+    psi.ArgumentList.Add("--python");
+    psi.ArgumentList.Add(scriptPath);
+    psi.ArgumentList.Add("--");
+    psi.ArgumentList.Add(source);
+    psi.ArgumentList.Add(target);
+    psi.ArgumentList.Add(statusPath);
+    psi.ArgumentList.Add(index.ToString(CultureInfo.InvariantCulture));
+    psi.ArgumentList.Add(total.ToString(CultureInfo.InvariantCulture));
+
+    using var process = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start Blender: {blenderPath}");
+    process.OutputDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) progress.WriteLine(e.Data); };
+    process.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) progress.WriteLine(e.Data); };
+    process.BeginOutputReadLine();
+    process.BeginErrorReadLine();
+    process.WaitForExit();
+    if (process.ExitCode != 0)
+        throw new InvalidOperationException($"Blender re-export failed with exit code {process.ExitCode}: {source}");
+    if (!File.Exists(statusPath))
+        throw new IOException($"Missing Blender status file: {statusPath}");
+}
+
+static (string Status, string Reason, int ActionCount) ReadBlenderStatus(string statusPath)
+{
+    var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var line in File.ReadAllLines(statusPath))
+    {
+        var parts = line.Split('=', 2);
+        if (parts.Length == 2) values[parts[0]] = parts[1];
+    }
+    values.TryGetValue("STATUS", out var status);
+    values.TryGetValue("REASON", out var reason);
+    var actionCount = 0;
+    if (values.TryGetValue("ACTION_COUNT", out var rawCount))
+        int.TryParse(rawCount, NumberStyles.Integer, CultureInfo.InvariantCulture, out actionCount);
+    return (status ?? "", reason ?? "", actionCount);
+}
+
+static string ResolveUnrealReadyFbxTarget(string source)
+{
+    var directory = Path.GetDirectoryName(source) ?? ".";
+    var name = Path.GetFileNameWithoutExtension(source);
+    if (name.Length > 5
+        && name[4] == '_'
+        && name.Take(4).All(char.IsDigit))
+    {
+        name = name[5..];
+    }
+    if (name.EndsWith("_all_animations", StringComparison.OrdinalIgnoreCase))
+        name = name[..^"_all_animations".Length];
+    if (name.EndsWith("_source", StringComparison.OrdinalIgnoreCase))
+        name = name[..^"_source".Length];
+    return Path.Combine(directory, $"{name}_unreal.fbx");
+}
+
+static void MoveSkippedBoneReport(string source, string target, ProgressStatus progress)
+{
+    var sourceReport = Path.Combine(Path.GetDirectoryName(source) ?? ".", Path.GetFileNameWithoutExtension(source) + ".skipped-animation-bones.md");
+    if (!File.Exists(sourceReport)) return;
+
+    var targetReport = Path.Combine(Path.GetDirectoryName(target) ?? ".", Path.GetFileNameWithoutExtension(target) + ".skipped-animation-bones.md");
+    File.Move(sourceReport, targetReport, overwrite: true);
+    progress.WriteLine($"SKIPPED_BONE_REPORT={targetReport}");
+}
+
+static void RemoveIntermediateSource(string source, ProgressStatus progress)
+{
+    if (File.Exists(source))
+    {
+        File.Delete(source);
+        progress.WriteLine($"SOURCE_FBX_REMOVED={source}");
+    }
+
+    var sourceReport = Path.Combine(Path.GetDirectoryName(source) ?? ".", Path.GetFileNameWithoutExtension(source) + ".skipped-animation-bones.md");
+    if (File.Exists(sourceReport))
+    {
+        File.Delete(sourceReport);
+        progress.WriteLine($"SOURCE_SKIPPED_BONE_REPORT_REMOVED={sourceReport}");
+    }
+}
+
+static void WriteSkippedBlenderMotlistsReport(string directory, IReadOnlyList<(string Source, string Target, string Reason, int ActionCount)> skipped, ProgressStatus progress)
+{
+    var reportPath = Path.Combine(directory, "skipped-blender-motlists.md");
+    using var writer = new StreamWriter(reportPath, append: false, Encoding.UTF8);
+    writer.WriteLine("# Skipped Blender MOTLIST Re-exports");
+    writer.WriteLine();
+    writer.WriteLine("This report lists source FBX files that were created by REE-Content-Exporter but intentionally skipped during the Blender Unreal-ready re-export phase.");
+    writer.WriteLine();
+    writer.WriteLine("| Source FBX | Intended Unreal FBX | Reason | Imported Actions |");
+    writer.WriteLine("| --- | --- | --- | --- |");
+    foreach (var item in skipped)
+    {
+        writer.WriteLine($"| {Path.GetFileName(item.Source)} | {Path.GetFileName(item.Target)} | {item.Reason.Replace("|", "/")} | {item.ActionCount} |");
+    }
+    progress.WriteLine($"BLENDER_SKIPPED_MOTLIST_REPORT={reportPath}");
+}
+
+static string GetUnrealReadyBlenderScript() => """
+import bpy
+import builtins
+import sys
+from pathlib import Path
+
+src = Path(sys.argv[-5])
+out = Path(sys.argv[-4])
+status_path = Path(sys.argv[-3])
+index = int(sys.argv[-2])
+total = int(sys.argv[-1])
+
+def write_status(status, reason='', action_count=0):
+    status_path.write_text(f'STATUS={status}\nREASON={reason}\nACTION_COUNT={action_count}\n', encoding='utf-8')
+
+def log(message):
+    print(f'BLENDER_PROGRESS {message}', flush=True)
+
+def install_fbx_pose_progress(action_names):
+    real_print = builtins.print
+    state = {'pose_count': 0}
+    total_actions = max(1, len(action_names))
+    def progress_print(*args, **kwargs):
+        if len(args) == 1 and isinstance(args[0], tuple) and len(args[0]) >= 2 and args[0][1] == 'POSE':
+            state['pose_count'] += 1
+            pose_index = state['pose_count']
+            if pose_index <= len(action_names):
+                real_print(f'BLENDER_PROGRESS File {index}/{total} exporting animation {pose_index}/{total_actions}: {action_names[pose_index - 1]}', flush=True)
+            else:
+                real_print(f'BLENDER_PROGRESS File {index}/{total} exporting additional FBX pose data: event {pose_index}', flush=True)
+            return
+        real_print(*args, **kwargs)
+    builtins.print = progress_print
+    return real_print
+
+log(f'File {index}/{total} 1/6 clearing scene')
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete()
+for datablocks in (bpy.data.actions, bpy.data.armatures, bpy.data.meshes):
+    for datablock in list(datablocks):
+        datablocks.remove(datablock, do_unlink=True)
+
+bpy.context.scene.unit_settings.system = 'METRIC'
+bpy.context.scene.unit_settings.scale_length = 0.01
+
+log(f'File {index}/{total} 2/6 importing source FBX')
+bpy.ops.import_scene.fbx(filepath=str(src), use_anim=True, automatic_bone_orientation=False, ignore_leaf_bones=False, force_connect_children=False)
+armatures = [o for o in bpy.context.scene.objects if o.type == 'ARMATURE']
+meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
+actions = list(bpy.data.actions)
+print(f'IMPORTED file={index}/{total} armatures={len(armatures)} meshes={len(meshes)} actions={len(actions)}')
+if not armatures:
+    write_status('FAILED', 'No armature imported from animated source FBX', len(actions))
+    raise RuntimeError('No armature imported from animated source FBX')
+if not actions:
+    write_status('SKIPPED', 'No actions imported from source FBX', 0)
+    raise SystemExit(0)
+if not meshes and not armatures:
+    write_status('FAILED', 'No mesh or armature imported from source FBX', len(actions))
+    raise RuntimeError('No mesh or armature imported from source FBX')
+
+for arm_index, arm in enumerate(armatures, start=1):
+    log(f'File {index}/{total} 3/6 applying armature transform {arm_index}/{len(armatures)}: {arm.name}')
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True, properties=True)
+
+for arm in armatures:
+    arm.animation_data_create()
+    arm.animation_data.action = None
+    for track in list(arm.animation_data.nla_tracks):
+        arm.animation_data.nla_tracks.remove(track)
+    for action_index, action in enumerate(actions, start=1):
+        log(f'File {index}/{total} 4/6 preparing NLA strip {action_index}/{len(actions)}: {action.name}')
+        start, end = action.frame_range
+        track = arm.animation_data.nla_tracks.new()
+        track.name = action.name
+        strip = track.strips.new(action.name, 0, action)
+        strip.name = action.name
+        strip.action_frame_start = start
+        strip.action_frame_end = end
+        strip.frame_start = 0
+        strip.frame_end = max(1, end - start)
+        strip.blend_type = 'REPLACE'
+        strip.extrapolation = 'NOTHING'
+
+for action in bpy.data.actions:
+    action.use_fake_user = True
+max_frame = 1
+for action in bpy.data.actions:
+    if action.frame_range:
+        max_frame = max(max_frame, int(action.frame_range[1] - action.frame_range[0]))
+bpy.context.scene.frame_start = 0
+bpy.context.scene.frame_end = max_frame
+bpy.context.scene.render.fps = 60
+
+log(f'File {index}/{total} 5/6 exporting Unreal FBX')
+real_print = install_fbx_pose_progress([action.name for action in actions])
+try:
+    bpy.ops.export_scene.fbx(
+        filepath=str(out),
+        check_existing=False,
+        use_selection=False,
+        object_types={'MESH', 'ARMATURE'},
+        use_mesh_modifiers=True,
+        add_leaf_bones=False,
+        primary_bone_axis='Y',
+        secondary_bone_axis='X',
+        use_armature_deform_only=False,
+        bake_anim=True,
+        bake_anim_use_all_bones=True,
+        bake_anim_use_all_actions=False,
+        bake_anim_use_nla_strips=True,
+        bake_anim_force_startend_keying=True,
+        bake_anim_step=1.0,
+        bake_anim_simplify_factor=0.0,
+        axis_forward='-Z',
+        axis_up='Y',
+        global_scale=1.0,
+        apply_unit_scale=True,
+        apply_scale_options='FBX_SCALE_ALL',
+        use_space_transform=True,
+        bake_space_transform=False,
+        path_mode='AUTO',
+        embed_textures=False,
+    )
+finally:
+    builtins.print = real_print
+
+log(f'File {index}/{total} 6/6 done')
+write_status('EXPORTED', '', len(actions))
+print(f'EXPORTED {out} size={out.stat().st_size if out.exists() else 0}')
+""";
 
 static string FormatExportProgress(string message, int? exportIndex, int? exportTotal, string? exportLabel)
 {

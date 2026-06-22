@@ -178,6 +178,9 @@ Core options:
 | `--no-textures` | Disables texture export. |
 | `--texture-format png|dds` | Texture output format. Default is `png`. |
 | `--fbx-scale <scale>` | Source FBX scale. Unreal-ready scripts use `100`. |
+| `--unreal-ready-fbx` | Runs Blender 4.5.9 after source FBX export and writes final `*_unreal.fbx` files. |
+| `--blender <path>` | Blender executable for `--unreal-ready-fbx`; the GUI passes the saved Blender path automatically. |
+| `--keep-source-fbx` | Keeps intermediate source FBX files after successful Unreal-ready Blender re-export. |
 | `--include-lods` | Includes LOD geometry where supported. |
 | `--include-occlusion` | Includes occlusion geometry where supported. |
 | `--allow-missing-streaming` | Diagnostic-only escape hatch for missing required streaming buffers. |
