@@ -18,6 +18,7 @@
 - Added opt-in Blender-stage bone-spacing repair flags so scene MOTLIST actions with bad non-root local translation curves can be clamped to a golden reference FBX action without changing rotations or normal exports.
 - Verified the md10015 ch0100 spacing repair against the golden `ch0100_General_unreal.fbx` reference with a one-off Blender post-process output, then wired the same repair into reusable CLI flags for future exports.
 - Added GUI controls for scene MOTLIST actor filtering, including `Scene actor` and the diagnostic `Allow mixed scene actors` checkbox.
+- Added GUI controls for the opt-in Blender-stage bone-spacing repair, including reference FBX, reference action filter, and allowed translation bones.
 
 ## 0.6 - MOT loading and FBX rotation continuity
 

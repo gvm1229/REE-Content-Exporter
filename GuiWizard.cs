@@ -74,6 +74,10 @@ internal sealed class GuiWizardForm : Form
     private readonly ThemedComboBox outputFormatCombo = new();
     private readonly ThemedComboBox textureFormatCombo = new();
     private readonly ThemedNumericUpDown fbxScaleInput = new();
+    private readonly CheckBox boneSpacingRepairCheck = new ThemedCheckBox() { Text = "Bone spacing repair" };
+    private readonly TextBox boneSpacingReferenceFbxText = new();
+    private readonly TextBox boneSpacingReferenceActionText = new();
+    private readonly TextBox boneSpacingAllowTranslationText = new();
     private readonly ThemedComboBox exportOptionsModeCombo = new();
     private readonly ThemedComboBox languageCombo = new();
     private readonly CheckBox splitMotlistsCheck = new ThemedCheckBox() { Text = "Split by MOTLIST" };
@@ -99,6 +103,8 @@ internal sealed class GuiWizardForm : Form
     private Control? motlistDirRow;
     private Control? animationFileRow;
     private Control? sceneActorRow;
+    private Control? boneSpacingReferenceRow;
+    private Control? boneSpacingOptionsRow;
     private bool suppressExportOptionPersistence;
     private bool suppressLanguagePersistence;
     private bool initializing = true;
@@ -238,7 +244,7 @@ internal sealed class GuiWizardForm : Form
     private Control BuildRunColumn()
     {
         var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = DarkBack, Padding = new Padding(8, 0, 0, 0) };
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, GroupPanelHeight(4)));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, GroupPanelHeight(6)));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, Math.Max(GroupPanelHeight(2), 152)));
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         panel.Controls.Add(BuildOutputPanel(), 0, 0);
@@ -336,7 +342,9 @@ internal sealed class GuiWizardForm : Form
     private Control BuildOutputPanel()
     {
         var panel = CreateGroup("Output");
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
@@ -345,18 +353,73 @@ internal sealed class GuiWizardForm : Form
 
         outputFormatCombo.Items.AddRange(["fbx", "glb"]);
         outputFormatCombo.SelectedIndex = 0;
+        outputFormatCombo.SelectedIndexChanged += (_, _) => UpdateBoneSpacingUi();
         textureFormatCombo.Items.AddRange(["png", "dds"]);
         textureFormatCombo.SelectedIndex = 0;
         fbxScaleInput.DecimalPlaces = 2;
         fbxScaleInput.Minimum = 0.01M;
         fbxScaleInput.Maximum = 1000M;
         fbxScaleInput.Value = 100M;
+        boneSpacingReferenceActionText.Text = "ch0100_General_0100_Stan_Loop";
+        boneSpacingAllowTranslationText.Text = "root,Hip,Null_Offset";
+        boneSpacingRepairCheck.CheckedChanged += (_, _) => UpdateBoneSpacingUi();
 
         grid.Controls.Add(CreatePickerRow("Format", outputFormatCombo), 0, 0);
         grid.Controls.Add(CreatePickerRow("Textures", textureFormatCombo), 0, 1);
         grid.Controls.Add(CreateNumberRow("FBX scale", fbxScaleInput), 0, 2);
         grid.Controls.Add(CreateWidePathRow("Output path", outputPathText, () => BrowseSaveOutput()), 0, 3);
+        boneSpacingReferenceRow = CreateBoneSpacingReferenceRow();
+        boneSpacingOptionsRow = CreateBoneSpacingOptionsRow();
+        grid.Controls.Add(boneSpacingReferenceRow, 0, 4);
+        grid.Controls.Add(boneSpacingOptionsRow, 0, 5);
+        UpdateBoneSpacingUi();
         return panel;
+    }
+
+    private TableLayoutPanel CreateBoneSpacingReferenceRow()
+    {
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        boneSpacingRepairCheck.AutoSize = true;
+        boneSpacingRepairCheck.Margin = new Padding(0, 10, 12, 0);
+        boneSpacingReferenceFbxText.Dock = DockStyle.Fill;
+        boneSpacingReferenceFbxText.Margin = new Padding(0, 7, 6, 7);
+        var browseButton = CreateCompactButton("...", 46);
+        browseButton.Dock = DockStyle.Fill;
+        tooltips.SetToolTip(browseButton, L("Browse on disk."));
+        browseButton.Click += (_, _) => BrowseFile(boneSpacingReferenceFbxText, "FBX|*.fbx|All files|*.*");
+
+        row.Controls.Add(CreateFieldLabel("Bone reference"), 0, 0);
+        row.Controls.Add(boneSpacingRepairCheck, 1, 0);
+        row.Controls.Add(boneSpacingReferenceFbxText, 2, 0);
+        row.Controls.Add(browseButton, 3, 0);
+        return row;
+    }
+
+    private TableLayoutPanel CreateBoneSpacingOptionsRow()
+    {
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        boneSpacingReferenceActionText.Dock = DockStyle.Fill;
+        boneSpacingReferenceActionText.Margin = new Padding(0, 7, 12, 7);
+        boneSpacingAllowTranslationText.Dock = DockStyle.Fill;
+        boneSpacingAllowTranslationText.Margin = new Padding(0, 7, 0, 7);
+
+        row.Controls.Add(CreateFieldLabel("Reference action"), 0, 0);
+        row.Controls.Add(boneSpacingReferenceActionText, 1, 0);
+        row.Controls.Add(CreateFieldLabel("Allow translate"), 2, 0);
+        row.Controls.Add(boneSpacingAllowTranslationText, 3, 0);
+        return row;
     }
 
     private Control BuildOptionsPanel()
@@ -1902,6 +1965,10 @@ internal sealed class GuiWizardForm : Form
         tooltips.SetToolTip(animationFilterText, L("Optional. Maps to --animation-name <contains> and filters exported animation names after sources are selected."));
         tooltips.SetToolTip(sceneActorText, L("Optional. Maps to --scene-actor <actor-id>, for example ch0100 or ch0000."));
         tooltips.SetToolTip(allowMixedSceneAnimationsCheck, L("Diagnostic only. Maps to --allow-mixed-scene-animations and allows multiple scene actors on one armature."));
+        tooltips.SetToolTip(boneSpacingRepairCheck, L("Opt-in scene animation repair. Requires animated FBX output and Blender."));
+        tooltips.SetToolTip(boneSpacingReferenceFbxText, L("Reference Unreal-ready FBX used to clamp non-allowlisted local bone translations."));
+        tooltips.SetToolTip(boneSpacingReferenceActionText, L("Optional reference action name filter for the bone-spacing reference FBX."));
+        tooltips.SetToolTip(boneSpacingAllowTranslationText, L("Comma-separated bones allowed to keep local translation curves, such as root,Hip,Null_Offset."));
         SetPathPreviewTooltip(extractRootText, L("Extract root"));
         SetPathPreviewTooltip(exportRootText, L("Export folder"));
         SetPathPreviewTooltip(blenderPathText, L("Blender 4.5.9"));
@@ -1991,6 +2058,10 @@ internal sealed class GuiWizardForm : Form
         ["Format"] = "형식",
         ["Textures"] = "텍스처",
         ["FBX scale"] = "FBX 스케일",
+        ["Bone reference"] = "본 기준",
+        ["Bone spacing repair"] = "본 간격 복구",
+        ["Reference action"] = "기준 액션",
+        ["Allow translate"] = "이동 허용",
         ["Options"] = "옵션",
         ["Mode"] = "모드",
         ["Export options"] = "내보내기 옵션",
@@ -2032,6 +2103,10 @@ internal sealed class GuiWizardForm : Form
         ["Optional. Maps to --animation-name <contains> and filters exported animation names after sources are selected."] = "선택 사항입니다. --animation-name <contains>에 대응하며 소스 선택 후 내보낼 애니메이션 이름을 필터링합니다.",
         ["Optional. Maps to --scene-actor <actor-id>, for example ch0100 or ch0000."] = "선택 사항입니다. --scene-actor <actor-id>에 대응합니다. 예: ch0100 또는 ch0000.",
         ["Diagnostic only. Maps to --allow-mixed-scene-animations and allows multiple scene actors on one armature."] = "진단 전용입니다. --allow-mixed-scene-animations에 대응하며 여러 씬 액터를 하나의 아마추어에 허용합니다.",
+        ["Opt-in scene animation repair. Requires animated FBX output and Blender."] = "선택식 씬 애니메이션 복구입니다. 애니메이션 FBX 출력과 Blender가 필요합니다.",
+        ["Reference Unreal-ready FBX used to clamp non-allowlisted local bone translations."] = "허용 목록 밖의 로컬 본 이동을 고정하는 데 쓰는 Unreal-ready 기준 FBX입니다.",
+        ["Optional reference action name filter for the bone-spacing reference FBX."] = "본 간격 기준 FBX에서 사용할 기준 액션 이름 필터입니다.",
+        ["Comma-separated bones allowed to keep local translation curves, such as root,Hip,Null_Offset."] = "로컬 이동 커브를 유지할 본을 쉼표로 구분합니다. 예: root,Hip,Null_Offset.",
         ["Save extract, export, Blender, texture, language, and GUI option settings."] = "추출, 내보내기, Blender, 텍스처, 언어, GUI 옵션 설정을 저장합니다.",
         ["Copy the generated CLI command preview to the clipboard."] = "생성된 CLI 명령 미리보기를 클립보드에 복사합니다.",
         ["Cancel the running export process."] = "실행 중인 내보내기 프로세스를 취소합니다.",
@@ -2263,6 +2338,29 @@ internal sealed class GuiWizardForm : Form
             args.Add("--blender");
             args.Add(blenderPathText.Text.Trim());
         }
+        if (boneSpacingRepairCheck.Checked)
+        {
+            if (!includeAnimationsCheck.Checked)
+                throw new InvalidOperationException("Bone spacing repair requires animations.");
+            if (!string.Equals(outputFormatCombo.SelectedItem?.ToString(), "fbx", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Bone spacing repair requires FBX output.");
+            if (string.IsNullOrWhiteSpace(blenderPathText.Text))
+                throw new InvalidOperationException("Bone spacing repair requires Blender 4.5.9.");
+            if (string.IsNullOrWhiteSpace(boneSpacingReferenceFbxText.Text))
+                throw new InvalidOperationException("Select a bone spacing reference FBX.");
+            args.Add("--bone-spacing-reference-fbx");
+            args.Add(boneSpacingReferenceFbxText.Text.Trim());
+            if (!string.IsNullOrWhiteSpace(boneSpacingReferenceActionText.Text))
+            {
+                args.Add("--bone-spacing-reference-action");
+                args.Add(boneSpacingReferenceActionText.Text.Trim());
+            }
+            if (!string.IsNullOrWhiteSpace(boneSpacingAllowTranslationText.Text))
+            {
+                args.Add("--bone-spacing-allow-translation");
+                args.Add(boneSpacingAllowTranslationText.Text.Trim());
+            }
+        }
         if (noTexturesCheck.Checked) args.Add("--no-textures");
         if (includeLodsCheck.Checked) args.Add("--include-lods");
         if (includeOcclusionCheck.Checked) args.Add("--include-occlusion");
@@ -2304,6 +2402,7 @@ internal sealed class GuiWizardForm : Form
         animationSourceCombo.Enabled = enabled;
         animationFilterText.Enabled = enabled;
         SetControlTreeEnabled(sceneActorRow, enabled);
+        UpdateBoneSpacingUi();
         SetControlTreeEnabled(motlistDirRow, motlistDirEnabled);
         SetControlTreeEnabled(animationFileRow, animationFilesEnabled);
         if (!customOptions)
@@ -2331,6 +2430,20 @@ internal sealed class GuiWizardForm : Form
             suppressExportOptionPersistence = false;
         }
         if (customOptions && !suppressExportOptionPersistence && !initializing) SaveCustomExportOptions();
+        UpdateCommandPreview();
+    }
+
+    private void UpdateBoneSpacingUi()
+    {
+        var fbxOutput = string.Equals(outputFormatCombo.SelectedItem?.ToString(), "fbx", StringComparison.OrdinalIgnoreCase);
+        var canEnable = includeAnimationsCheck.Checked && fbxOutput;
+        if (!canEnable && boneSpacingRepairCheck.Checked)
+        {
+            boneSpacingRepairCheck.Checked = false;
+        }
+        SetCheckEnabled(boneSpacingRepairCheck, canEnable);
+        SetControlTreeEnabled(boneSpacingReferenceRow, canEnable && boneSpacingRepairCheck.Checked);
+        SetControlTreeEnabled(boneSpacingOptionsRow, canEnable && boneSpacingRepairCheck.Checked);
         UpdateCommandPreview();
     }
 
