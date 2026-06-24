@@ -678,6 +678,7 @@ internal sealed class GuiWizardForm : Form
         AddPathRow(grid, 0, "Extract root", extractRootText, () => BrowseFolder(extractRootText));
         AddPathRow(grid, 1, "Export folder", exportRootText, () => BrowseFolder(exportRootText));
         AddPathRow(grid, 2, "Blender 4.5.9", blenderPathText, () => BrowseFile(blenderPathText, "blender.exe|blender.exe|Executable|*.exe|All files|*.*"));
+        blenderPathText.TextChanged += (_, _) => UpdateBoneSpacingUi();
         return panel;
     }
 
@@ -2436,7 +2437,7 @@ internal sealed class GuiWizardForm : Form
     private void UpdateBoneSpacingUi()
     {
         var fbxOutput = string.Equals(outputFormatCombo.SelectedItem?.ToString(), "fbx", StringComparison.OrdinalIgnoreCase);
-        var canEnable = includeAnimationsCheck.Checked && fbxOutput;
+        var canEnable = includeAnimationsCheck.Checked && fbxOutput && !string.IsNullOrWhiteSpace(blenderPathText.Text);
         if (!canEnable && boneSpacingRepairCheck.Checked)
         {
             boneSpacingRepairCheck.Checked = false;

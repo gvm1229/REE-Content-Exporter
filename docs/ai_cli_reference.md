@@ -74,7 +74,7 @@ The GUI field labeled `Animation name filter` maps to `--animation-name <contain
 
 The GUI field labeled `Scene actor` maps to `--scene-actor <actor-id>`. The `Allow mixed scene actors` checkbox maps to `--allow-mixed-scene-animations` and should be used only for diagnostics.
 
-The GUI `Bone spacing repair` controls are enabled for animated FBX exports. They map to `--bone-spacing-reference-fbx`, `--bone-spacing-reference-action`, and `--bone-spacing-allow-translation`; Blender must be configured because the repair runs during Unreal-ready FBX finalization.
+The GUI `Bone spacing repair` controls are enabled for animated FBX exports after a Blender path is configured. They map to `--bone-spacing-reference-fbx`, `--bone-spacing-reference-action`, and `--bone-spacing-allow-translation`; Blender must be configured because the repair runs during Unreal-ready FBX finalization.
 
 Scene/minidemo MOTLIST files whose action names look like `<motlist>_<actor>_*` are actor-filtered by the direct CLI. When multiple actor prefixes are selected, the exporter infers the actor from the primary mesh name, or users can pass `--scene-actor <actor-id>`.
 
