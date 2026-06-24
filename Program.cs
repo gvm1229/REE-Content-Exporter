@@ -44,7 +44,7 @@ static void PrintUsage()
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
     Console.WriteLine("  REE-Content-Exporter-GUI [--gui|--wizard] [--reset-config] [--config <path>]");
-    Console.WriteLine("  REE-Content-Exporter-CLI --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--scene-actor <actor-id>] [--allow-mixed-scene-animations] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--unreal-ready-fbx --blender <blender.exe> [--keep-source-fbx]] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter-CLI --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--scene-actor <actor-id>] [--allow-mixed-scene-animations] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--unreal-ready-fbx --blender <blender.exe> [--keep-source-fbx] [--bone-spacing-reference-fbx <fbx> [--bone-spacing-reference-action <contains>] [--bone-spacing-allow-translation <bones>]]] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     Console.WriteLine("  REE-Content-Exporter-CLI --dependency-versions");
 }
 
@@ -2222,6 +2222,9 @@ var unrealReadyFbx = HasFlag(args, "--unreal-ready-fbx");
 var keepSourceFbx = HasFlag(args, "--keep-source-fbx");
 var allowMixedSceneAnimations = HasFlag(args, "--allow-mixed-scene-animations");
 var blenderPath = GetArg(args, "--blender") ?? LoadWizardConfig(ResolveWizardConfigPath(wizardConfigPath))?.BlenderPath;
+var boneSpacingReferenceFbx = GetArg(args, "--bone-spacing-reference-fbx");
+var boneSpacingReferenceAction = GetArg(args, "--bone-spacing-reference-action") ?? "ch0100_General_0100_Stan_Loop";
+var boneSpacingAllowTranslation = ParseBoneSpacingAllowTranslation(GetArg(args, "--bone-spacing-allow-translation"));
 
 Console.WriteLine("REE Content Editor native export path");
 Console.WriteLine($"Mesh: {meshPath}");
@@ -2236,6 +2239,12 @@ Console.WriteLine($"Game: {exportGame}");
 Console.WriteLine($"Scene actor: {explicitSceneActor ?? inferredSceneActor ?? "-"}{(explicitSceneActor != null ? " (explicit)" : inferredSceneActor != null ? " (inferred)" : "")}");
 Console.WriteLine($"Unreal-ready FBX: {(unrealReadyFbx ? "yes" : "no")}");
 if (unrealReadyFbx) Console.WriteLine($"Blender: {blenderPath}");
+if (!string.IsNullOrWhiteSpace(boneSpacingReferenceFbx))
+{
+    Console.WriteLine($"Bone spacing reference FBX: {boneSpacingReferenceFbx}");
+    Console.WriteLine($"Bone spacing reference action: {boneSpacingReferenceAction}");
+    Console.WriteLine($"Bone spacing translation allowlist: {string.Join(", ", boneSpacingAllowTranslation)}");
+}
 
 var unknownAdditionalStreamingKeys = additionalStreamingByMesh.Keys
     .Where(key => !additionalMeshPaths.Contains(key, StringComparer.OrdinalIgnoreCase))
@@ -2250,6 +2259,12 @@ if (unrealReadyFbx)
     if (!Path.GetExtension(outputPath).Equals(".fbx", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(Path.GetExtension(outputPath)))
         throw new ArgumentException("--unreal-ready-fbx requires an FBX output path or output folder.");
     ValidateBlenderForUnrealExport(blenderPath);
+}
+if (!string.IsNullOrWhiteSpace(boneSpacingReferenceFbx))
+{
+    if (!unrealReadyFbx)
+        throw new ArgumentException("--bone-spacing-reference-fbx requires --unreal-ready-fbx because spacing repair runs in the Blender finalization stage.");
+    RequireExistingFile(boneSpacingReferenceFbx, "--bone-spacing-reference-fbx");
 }
 
 var mesh = LoadMesh(meshPath, streamingPath, allowMissingStreaming);
@@ -2439,7 +2454,7 @@ if (unrealReadyFbx)
         .Where(path => Path.GetExtension(path).Equals(".fbx", StringComparison.OrdinalIgnoreCase))
         .ToList();
     if (fbxSources.Count == 0) throw new ArgumentException("--unreal-ready-fbx did not produce any source FBX files.");
-    ReexportUnrealReadyFbxFiles(fbxSources, blenderPath!, keepSourceFbx, progress);
+    ReexportUnrealReadyFbxFiles(fbxSources, blenderPath!, keepSourceFbx, boneSpacingReferenceFbx, boneSpacingReferenceAction, boneSpacingAllowTranslation, progress);
 }
 
 progress.WriteLine("DONE");
@@ -2610,6 +2625,24 @@ static bool IsSceneActorToken(string value)
     && char.IsAsciiDigit(value[3])
     && char.IsAsciiDigit(value[4])
     && char.IsAsciiDigit(value[5]);
+
+static IReadOnlyList<string> ParseBoneSpacingAllowTranslation(string? raw)
+{
+    var values = string.IsNullOrWhiteSpace(raw)
+        ? new[] { "root", "Hip", "Null_Offset" }
+        : raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    var result = new List<string>();
+    foreach (var value in values)
+    {
+        if (string.IsNullOrWhiteSpace(value)) continue;
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
+            throw new ArgumentException("--bone-spacing-allow-translation contains an invalid bone name.");
+        if (!result.Contains(value, StringComparer.OrdinalIgnoreCase))
+            result.Add(value);
+    }
+    return result;
+}
+
 static void RequireExistingFile(string path, string optionName)
 {
     if (string.IsNullOrWhiteSpace(path))
@@ -2700,7 +2733,14 @@ static void ValidateBlenderForUnrealExport(string? blenderPath)
         throw new InvalidOperationException($"Expected Blender 4.5.9 LTS, but found: {firstLine}");
 }
 
-static void ReexportUnrealReadyFbxFiles(IReadOnlyList<string> sourceFbxFiles, string blenderPath, bool keepSourceFbx, ProgressStatus progress)
+static void ReexportUnrealReadyFbxFiles(
+    IReadOnlyList<string> sourceFbxFiles,
+    string blenderPath,
+    bool keepSourceFbx,
+    string? boneSpacingReferenceFbx,
+    string boneSpacingReferenceAction,
+    IReadOnlyList<string> boneSpacingAllowTranslation,
+    ProgressStatus progress)
 {
     var scriptPath = Path.Combine(Path.GetTempPath(), $"ree_unreal_fbx_reexport_{Guid.NewGuid():N}.py");
     File.WriteAllText(scriptPath, GetUnrealReadyBlenderScript(), Encoding.UTF8);
@@ -2716,7 +2756,18 @@ static void ReexportUnrealReadyFbxFiles(IReadOnlyList<string> sourceFbxFiles, st
             var statusPath = Path.Combine(Path.GetTempPath(), $"ree_unreal_fbx_status_{Guid.NewGuid():N}.txt");
             progress.WriteLine($"SOURCE_FBX={source}");
             progress.WriteLine($"BLENDER_TARGET={target}");
-            RunBlenderReexport(blenderPath, scriptPath, source, target, statusPath, i + 1, sourceFbxFiles.Count, progress);
+            RunBlenderReexport(
+                blenderPath,
+                scriptPath,
+                source,
+                target,
+                statusPath,
+                i + 1,
+                sourceFbxFiles.Count,
+                boneSpacingReferenceFbx,
+                boneSpacingReferenceAction,
+                boneSpacingAllowTranslation,
+                progress);
             var status = ReadBlenderStatus(statusPath);
             File.Delete(statusPath);
 
@@ -2746,7 +2797,18 @@ static void ReexportUnrealReadyFbxFiles(IReadOnlyList<string> sourceFbxFiles, st
     }
 }
 
-static void RunBlenderReexport(string blenderPath, string scriptPath, string source, string target, string statusPath, int index, int total, ProgressStatus progress)
+static void RunBlenderReexport(
+    string blenderPath,
+    string scriptPath,
+    string source,
+    string target,
+    string statusPath,
+    int index,
+    int total,
+    string? boneSpacingReferenceFbx,
+    string boneSpacingReferenceAction,
+    IReadOnlyList<string> boneSpacingAllowTranslation,
+    ProgressStatus progress)
 {
     var psi = new ProcessStartInfo
     {
@@ -2765,6 +2827,9 @@ static void RunBlenderReexport(string blenderPath, string scriptPath, string sou
     psi.ArgumentList.Add(statusPath);
     psi.ArgumentList.Add(index.ToString(CultureInfo.InvariantCulture));
     psi.ArgumentList.Add(total.ToString(CultureInfo.InvariantCulture));
+    psi.ArgumentList.Add(boneSpacingReferenceFbx ?? "");
+    psi.ArgumentList.Add(boneSpacingReferenceAction);
+    psi.ArgumentList.Add(string.Join(",", boneSpacingAllowTranslation));
 
     using var process = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start Blender: {blenderPath}");
     process.OutputDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) progress.WriteLine(e.Data); };
@@ -2860,17 +2925,105 @@ import builtins
 import sys
 from pathlib import Path
 
-src = Path(sys.argv[-5])
-out = Path(sys.argv[-4])
-status_path = Path(sys.argv[-3])
-index = int(sys.argv[-2])
-total = int(sys.argv[-1])
+argv = sys.argv[sys.argv.index('--') + 1:]
+src = Path(argv[0])
+out = Path(argv[1])
+status_path = Path(argv[2])
+index = int(argv[3])
+total = int(argv[4])
+reference_fbx = Path(argv[5]) if len(argv) > 5 and argv[5] else None
+reference_action_filter = argv[6] if len(argv) > 6 else ''
+translation_allowlist = {part.strip().lower() for part in (argv[7] if len(argv) > 7 else '').split(',') if part.strip()}
 
 def write_status(status, reason='', action_count=0):
     status_path.write_text(f'STATUS={status}\nREASON={reason}\nACTION_COUNT={action_count}\n', encoding='utf-8')
 
 def log(message):
     print(f'BLENDER_PROGRESS {message}', flush=True)
+
+def clear_scene():
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete()
+    for datablocks in (bpy.data.actions, bpy.data.armatures, bpy.data.meshes):
+        for datablock in list(datablocks):
+            datablocks.remove(datablock, do_unlink=True)
+
+def get_pose_bone_name(data_path):
+    prefix = 'pose.bones["'
+    if not data_path.startswith(prefix):
+        return None
+    tail = data_path[len(prefix):]
+    end = tail.find('"]')
+    if end < 0:
+        return None
+    return tail[:end]
+
+def find_reference_action(actions, action_filter):
+    if action_filter:
+        for action in actions:
+            if action_filter.lower() in action.name.lower():
+                return action
+    return actions[0] if actions else None
+
+def read_reference_locations(path, action_filter):
+    log(f'File {index}/{total} reading bone spacing reference: {path}')
+    bpy.ops.import_scene.fbx(filepath=str(path), use_anim=True, automatic_bone_orientation=False, ignore_leaf_bones=False, force_connect_children=False)
+    ref_actions = list(bpy.data.actions)
+    ref_action = find_reference_action(ref_actions, action_filter)
+    if ref_action is None:
+        raise RuntimeError(f'Bone spacing reference FBX has no actions: {path}')
+    frame = int(ref_action.frame_range[0]) if ref_action.frame_range else 1
+    grouped = {}
+    for curve in ref_action.fcurves:
+        if not curve.data_path.endswith('.location'):
+            continue
+        bone = get_pose_bone_name(curve.data_path)
+        if not bone:
+            continue
+        grouped.setdefault(bone, {})[curve.array_index] = curve
+    locations = {}
+    for bone, curves in grouped.items():
+        if all(axis in curves for axis in range(3)):
+            locations[bone] = tuple(curves[axis].evaluate(frame) for axis in range(3))
+    if not locations:
+        raise RuntimeError(f'Bone spacing reference action has no pose-bone location curves: {ref_action.name}')
+    print(f'BONE_SPACING_REFERENCE action={ref_action.name} frame={frame} bones={len(locations)} allow_translation={",".join(sorted(translation_allowlist))}', flush=True)
+    return locations
+
+def replace_curve_with_constant(action, bone, axis, value, start, end):
+    data_path = f'pose.bones["{bone}"].location'
+    curve = action.fcurves.find(data_path, index=axis)
+    if curve is None:
+        curve = action.fcurves.new(data_path=data_path, index=axis)
+    while len(curve.keyframe_points) > 0:
+        curve.keyframe_points.remove(curve.keyframe_points[-1], fast=True)
+    curve.keyframe_points.insert(start, value, options={'FAST'})
+    if end != start:
+        curve.keyframe_points.insert(end, value, options={'FAST'})
+    for key in curve.keyframe_points:
+        key.interpolation = 'LINEAR'
+    curve.update()
+
+def apply_bone_spacing_reference(actions, reference_locations):
+    if not reference_locations:
+        return
+    allow = translation_allowlist
+    total_bones = 0
+    total_curves = 0
+    for action in actions:
+        start = int(action.frame_range[0]) if action.frame_range else 1
+        end = int(action.frame_range[1]) if action.frame_range else start
+        action_bones = 0
+        for bone, values in reference_locations.items():
+            if bone.lower() in allow:
+                continue
+            action_bones += 1
+            for axis, value in enumerate(values):
+                replace_curve_with_constant(action, bone, axis, value, start, end)
+                total_curves += 1
+        total_bones += action_bones
+        print(f'BONE_SPACING_REPAIR action={action.name} clamped_bones={action_bones} allow_translation={",".join(sorted(allow))}', flush=True)
+    print(f'BONE_SPACING_REPAIR_TOTAL actions={len(actions)} clamped_bones={total_bones} clamped_curves={total_curves}', flush=True)
 
 def install_fbx_pose_progress(action_names):
     real_print = builtins.print
@@ -2890,14 +3043,15 @@ def install_fbx_pose_progress(action_names):
     return real_print
 
 log(f'File {index}/{total} 1/6 clearing scene')
-bpy.ops.object.select_all(action='SELECT')
-bpy.ops.object.delete()
-for datablocks in (bpy.data.actions, bpy.data.armatures, bpy.data.meshes):
-    for datablock in list(datablocks):
-        datablocks.remove(datablock, do_unlink=True)
+clear_scene()
 
 bpy.context.scene.unit_settings.system = 'METRIC'
 bpy.context.scene.unit_settings.scale_length = 0.01
+
+reference_locations = {}
+if reference_fbx is not None:
+    reference_locations = read_reference_locations(reference_fbx, reference_action_filter)
+    clear_scene()
 
 log(f'File {index}/{total} 2/6 importing source FBX')
 bpy.ops.import_scene.fbx(filepath=str(src), use_anim=True, automatic_bone_orientation=False, ignore_leaf_bones=False, force_connect_children=False)
@@ -2921,6 +3075,8 @@ for arm_index, arm in enumerate(armatures, start=1):
     bpy.context.view_layer.objects.active = arm
     arm.select_set(True)
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True, properties=True)
+
+apply_bone_spacing_reference(actions, reference_locations)
 
 for arm in armatures:
     arm.animation_data_create()

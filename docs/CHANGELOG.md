@@ -1,4 +1,4 @@
-# CHANGELOG
+﻿# CHANGELOG
 
 ## Unreleased - GUI export log files
 
@@ -14,6 +14,9 @@
 - Scoped the REE bridge rotation bake so direct source FBX exports keep quaternion-continuity protection, while Unreal-ready Blender staging can preserve the sparse source rotation tracks used by the June 7 golden path.
 - Documented the `ch0100_Attack_628_Clean_Up_Release_Lv1` golden-path recovery in `docs/ch0100_attack_unreal_ready_golden_recovery.md`.
 - Added scene/minidemo MOTLIST actor filtering with `--scene-actor` and `--allow-mixed-scene-animations`, so mixed files such as `md10015.motlist.1057` no longer silently export `ch0000`, `ch0100`, and `wp0900` actions onto one character skeleton.
+- Documented the `md10015` mixed-actor cause, the four unresolved ch0100 helper/control hashes, and the corrected ch0100/ch0000 scene export workflow in `docs/md10015_scene_motlist_actor_filter.md`.
+- Added opt-in Blender-stage bone-spacing repair flags so scene MOTLIST actions with bad non-root local translation curves can be clamped to a golden reference FBX action without changing rotations or normal exports.
+- Verified the md10015 ch0100 spacing repair against the golden `ch0100_General_unreal.fbx` reference with a one-off Blender post-process output, then wired the same repair into reusable CLI flags for future exports.
 
 ## 0.6 - MOT loading and FBX rotation continuity
 

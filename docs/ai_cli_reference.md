@@ -185,6 +185,9 @@ Core options:
 | `--unreal-ready-fbx` | Runs Blender 4.5.9 after source FBX export and writes final `*_unreal.fbx` files. |
 | `--blender <path>` | Blender executable for `--unreal-ready-fbx`; the GUI passes the saved Blender path automatically. |
 | `--keep-source-fbx` | Keeps intermediate source FBX files after successful Unreal-ready Blender re-export. |
+| `--bone-spacing-reference-fbx <path>` | Opt-in Blender-stage repair that clamps non-allowlisted pose-bone local translations to a reference FBX action. Requires `--unreal-ready-fbx`; intended for scene MOTLISTs such as `md10015` where the source animation stretches the rig by animating bone spacing. |
+| `--bone-spacing-reference-action <text>` | Reference action name filter for `--bone-spacing-reference-fbx`. Defaults to `ch0100_General_0100_Stan_Loop`. |
+| `--bone-spacing-allow-translation <bones>` | Comma-separated local-translation allowlist for spacing repair. Defaults to `root,Hip,Null_Offset`, preserving root/character motion while freezing normal bone spacing to the reference. |
 | `--include-lods` | Includes LOD geometry where supported. |
 | `--include-occlusion` | Includes occlusion geometry where supported. |
 | `--allow-missing-streaming` | Diagnostic-only escape hatch for missing required streaming buffers. |

@@ -133,3 +133,4 @@ MOT quaternion continuity and FBX rotation anomaly handling are documented in [d
 The scoped MOTLIST verification for `ch0100_Other_5215_Turn_Walk_L180` is documented in [docs/ch0100_other_5215_rotation_continuity_verification.md](docs/ch0100_other_5215_rotation_continuity_verification.md).
 The latest REE dependency update regression and restored MOT/MOTLIST quaternion-continuity bridge patch are documented in [docs/latest_ree_quaternion_continuity_regression.md](docs/latest_ree_quaternion_continuity_regression.md).
 The `ch0100_Attack` June 7 golden Unreal-ready FBX recovery is documented in [docs/ch0100_attack_unreal_ready_golden_recovery.md](docs/ch0100_attack_unreal_ready_golden_recovery.md).
+Scene/minidemo MOTLIST actor filtering and md10015 bone-spacing repair are documented in [docs/md10015_scene_motlist_actor_filter.md](docs/md10015_scene_motlist_actor_filter.md).

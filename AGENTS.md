@@ -1,4 +1,4 @@
-# AGENTS.md
+﻿# AGENTS.md
 
 Operational rules for future AI agent sessions working in this repository.
 
@@ -179,6 +179,9 @@ Do not treat zero-action MOTLISTs as fatal unless the user specifically asks to 
 - If no `--scene-actor` is supplied, the CLI may infer the actor from the primary mesh name and filter mixed scene MOTLIST selections automatically.
 - Use `--allow-mixed-scene-animations` only for diagnostics until a true multi-armature scene export path exists.
 - If a filtered ch0100 scene export still reports only hashes `2184993242`, `3724475523`, `573179932`, and `386343545`, treat them as unresolved unnamed scene/helper/control channels, not as proof that the normal ch0100 body mesh set is missing parts.
+- If filtered scene actions still look stretched, audit pose-bone `.location` curves before touching quaternion logic. `md10015_ch0100_Reinforce_Start` was found to animate local translations on hundreds of bones, while golden `ch0100_General_0100_Stan_Loop` only had meaningful local translation on `Hip`.
+- Use `--bone-spacing-reference-fbx` only as an opt-in repair for this local-translation spacing problem. It should preserve rotations and clamp non-allowlisted local translation curves to the golden reference action.
+
 ## Standalone MOT loading rules
 
 When loading individual `.mot.*` files through `--mot`, rely on REE-Lib's `MotFile.Read()` to load the standalone MOT bone table.
