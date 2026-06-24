@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.ComponentModel;
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -35,21 +37,27 @@ internal static class GuiWizardApplication
 internal sealed class GuiWizardForm : Form
 {
     private const string ReePakToolProjectsRawBaseUrl = "https://raw.githubusercontent.com/Ekey/REE.PAK.Tool/refs/heads/main/Projects/";
-    private const int WmNclButtonDown = 0x00A1;
-    private const int HtCaption = 0x02;
-    private static readonly Color DarkBack = Color.FromArgb(18, 20, 24);
-    private static readonly Color DarkPanel = Color.FromArgb(28, 31, 37);
-    private static readonly Color DarkPanelAlt = Color.FromArgb(34, 38, 46);
-    private static readonly Color DarkInput = Color.FromArgb(13, 15, 18);
-    private static readonly Color DarkBorder = Color.FromArgb(70, 72, 78);
-    private static readonly Color DarkText = Color.FromArgb(240, 242, 245);
-    private static readonly Color MutedText = Color.FromArgb(166, 171, 181);
-    private static readonly Color Accent = Color.FromArgb(154, 207, 255);
-    private static readonly Color AccentHover = Color.FromArgb(190, 226, 255);
-    private static readonly Color ButtonBase = Color.FromArgb(43, 47, 55);
-    private static readonly Color ButtonHover = Color.FromArgb(48, 59, 70);
-    private static readonly Color ButtonPressed = Color.FromArgb(54, 86, 116);
-    private static readonly Color DisabledBack = Color.FromArgb(35, 38, 44);
+    private const int DwmwaUseImmersiveDarkMode = 20;
+    private const int DwmwaWindowCornerPreference = 33;
+    private const int DwmwaSystemBackdropType = 38;
+    private static readonly Color DarkBack = Color.FromArgb(11, 13, 17);
+    private static readonly Color DarkPanel = Color.FromArgb(24, 28, 35);
+    private static readonly Color DarkPanelAlt = Color.FromArgb(31, 36, 45);
+    private static readonly Color DarkInput = Color.FromArgb(14, 17, 22);
+    private static readonly Color DarkBorder = Color.FromArgb(62, 70, 84);
+    private static readonly Color DarkText = Color.FromArgb(244, 247, 251);
+    private static readonly Color MutedText = Color.FromArgb(158, 166, 181);
+    private static readonly Color Accent = Color.FromArgb(118, 185, 255);
+    private static readonly Color AccentHover = Color.FromArgb(164, 210, 255);
+    private static readonly Color Success = Color.FromArgb(111, 220, 165);
+    private static readonly Color Warning = Color.FromArgb(255, 204, 102);
+    private static readonly Color Danger = Color.FromArgb(255, 128, 128);
+    private static readonly Color ButtonBase = Color.FromArgb(36, 43, 54);
+    private static readonly Color ButtonHover = Color.FromArgb(49, 61, 77);
+    private static readonly Color ButtonPressed = Color.FromArgb(57, 95, 133);
+    private static readonly List<GCHandle> PinnedFontHandles = new();
+    private static readonly Color DisabledBack = Color.FromArgb(34, 38, 45);
+    private static readonly PrivateFontCollection AppFonts = LoadAppFonts();
 
     private readonly string configPath;
     private WizardConfig config;
@@ -92,6 +100,8 @@ internal sealed class GuiWizardForm : Form
     private readonly TextBox logText = new();
     private readonly ThemedProgressBar progressBar = new();
     private readonly Label progressPercentLabel = new() { Text = "0%", TextAlign = ContentAlignment.MiddleRight };
+    private readonly Label readinessLabel = new();
+    private readonly Label readinessDetailLabel = new();
     private readonly ToolTip tooltips = new();
     private readonly Button runButton = new ThemedButton() { Text = "Run Export", AccentButton = true };
     private readonly Button cancelButton = new ThemedButton() { Text = "Cancel", Enabled = false };
@@ -109,15 +119,17 @@ internal sealed class GuiWizardForm : Form
     private bool suppressLanguagePersistence;
     private bool initializing = true;
 
-    private int FieldRowHeight => Math.Max(46, Font.Height + 22);
-    private int GroupOverhead => Math.Max(48, Font.Height + 30);
+    private const int ControlHeight = 44;
+    private const int FieldRowHeight = 64;
+    private const int LabelColumnWidth = 220;
+    private const int UtilityButtonWidth = 76;
+    private const int RowVerticalMargin = 10;
+    private const int RowHorizontalGap = 8;
+    private int GroupOverhead => Math.Max(58, Font.Height + 40);
     private int GroupPanelHeight(int rows) => rows * FieldRowHeight + GroupOverhead;
 
-    [DllImport("user32.dll")]
-    private static extern bool ReleaseCapture();
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
     public GuiWizardForm(string? configPathOverride)
     {
@@ -126,12 +138,13 @@ internal sealed class GuiWizardForm : Form
 
         Text = "REE-Content-Exporter Wizard";
         StartPosition = FormStartPosition.CenterScreen;
-        FormBorderStyle = FormBorderStyle.None;
-        MinimumSize = new Size(1120, 980);
-        Size = new Size(1180, 1020);
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MinimumSize = new Size(1360, 900);
+        Size = new Size(1760, 1400);
         BackColor = DarkBack;
         ForeColor = DarkText;
-        Font = new Font("Segoe UI", 9F);
+        AutoScaleMode = AutoScaleMode.Font;
+        Font = UiFont(9F);
 
         BuildLayout();
         LoadConfigIntoControls();
@@ -143,70 +156,93 @@ internal sealed class GuiWizardForm : Form
         initializing = false;
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ApplyNativeWindowStyling();
+    }
+
+    private void ApplyNativeWindowStyling()
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763)) return;
+        TrySetDwmAttribute(DwmwaUseImmersiveDarkMode, 1);
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            TrySetDwmAttribute(DwmwaWindowCornerPreference, 2);
+        }
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
+        {
+            TrySetDwmAttribute(DwmwaSystemBackdropType, 2);
+        }
+    }
+
+    private void TrySetDwmAttribute(int attribute, int value)
+    {
+        try
+        {
+            _ = DwmSetWindowAttribute(Handle, attribute, ref value, Marshal.SizeOf<int>());
+        }
+        catch
+        {
+            // Older Windows builds simply ignore the visual polish path.
+        }
+    }
+
+    private static PrivateFontCollection LoadAppFonts()
+    {
+        var fonts = new PrivateFontCollection();
+        var assembly = Assembly.GetExecutingAssembly();
+        foreach (var resourceName in assembly.GetManifestResourceNames().Where(name => name.EndsWith(".otf", StringComparison.OrdinalIgnoreCase)))
+        {
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream == null) continue;
+            var buffer = new byte[stream.Length];
+            var offset = 0;
+            while (offset < buffer.Length)
+            {
+                var read = stream.Read(buffer, offset, buffer.Length - offset);
+                if (read == 0) break;
+                offset += read;
+            }
+            var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            PinnedFontHandles.Add(handle);
+            fonts.AddMemoryFont(handle.AddrOfPinnedObject(), buffer.Length);
+        }
+        return fonts;
+    }
+
+    private static Font UiFont(float size, FontStyle style = FontStyle.Regular)
+    {
+        var familyName = AppFonts.Families.FirstOrDefault()?.Name ?? "Segoe UI";
+        try
+        {
+            return new Font(familyName, size, style, GraphicsUnit.Point);
+        }
+        catch
+        {
+            return new Font("Segoe UI", size, style, GraphicsUnit.Point);
+        }
+    }
+
+    private static Font IconFont(float size)
+        => new("Segoe MDL2 Assets", size, FontStyle.Regular, GraphicsUnit.Point);
+
     private void BuildLayout()
     {
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 2,
             Padding = new Padding(0),
             BackColor = DarkBack,
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
         Controls.Add(root);
 
-        root.Controls.Add(BuildTitleBar(), 0, 0);
-        root.Controls.Add(BuildWorkspace(), 0, 1);
-        root.Controls.Add(BuildActionPanel(), 0, 2);
-    }
-
-    private Control BuildTitleBar()
-    {
-        var title = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 5,
-            RowCount = 1,
-            BackColor = DarkPanel,
-            Padding = new Padding(10, 5, 8, 5),
-        };
-        title.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 22));
-        title.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        title.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
-        title.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
-        title.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
-        title.MouseDown += DragWindow;
-        title.Paint += (_, e) =>
-        {
-            TextRenderer.DrawText(e.Graphics, "REE-Content-Exporter", new Font(Font, FontStyle.Bold), new Rectangle(32, 0, Math.Max(1, title.Width - 160), title.Height), DarkText, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-        };
-
-        var mark = new Panel { Dock = DockStyle.Fill, BackColor = Accent, Margin = new Padding(0, 6, 8, 6) };
-        var minimize = CreateWindowButton("_");
-        minimize.Click += (_, _) => WindowState = FormWindowState.Minimized;
-        var maximize = CreateWindowButton("□");
-        maximize.Click += (_, _) => WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
-        var close = CreateWindowButton("X");
-        close.Click += (_, _) => Close();
-
-        title.Controls.Add(mark, 0, 0);
-        title.Controls.Add(minimize, 2, 0);
-        title.Controls.Add(maximize, 3, 0);
-        title.Controls.Add(close, 4, 0);
-        return title;
-
-        ThemedButton CreateWindowButton(string text)
-            => new() { Text = text, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 0), Padding = new Padding(0) };
-    }
-
-    private void DragWindow(object? sender, MouseEventArgs e)
-    {
-        if (e.Button != MouseButtons.Left) return;
-        ReleaseCapture();
-        SendMessage(Handle, WmNclButtonDown, HtCaption, 0);
+        root.Controls.Add(BuildWorkspace(), 0, 0);
+        root.Controls.Add(BuildActionPanel(), 0, 1);
     }
 
     private Control BuildWorkspace()
@@ -214,42 +250,173 @@ internal sealed class GuiWizardForm : Form
         var workspace = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 1,
-            Padding = new Padding(12, 10, 12, 8),
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(24, 20, 24, 12),
             BackColor = DarkBack,
         };
-        workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
-        workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
-        workspace.Controls.Add(BuildWorkflowColumn(), 0, 0);
-        workspace.Controls.Add(BuildRunColumn(), 1, 0);
+        workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 104));
+        workspace.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var body = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = DarkBack,
+            Padding = new Padding(0),
+        };
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 67));
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
+        body.Controls.Add(BuildWorkflowColumn(), 0, 0);
+        body.Controls.Add(BuildRunColumn(), 1, 0);
+
+        workspace.Controls.Add(BuildAppHeader(), 0, 0);
+        workspace.Controls.Add(body, 0, 1);
         AttachPreviewEvents(workspace);
         return workspace;
     }
 
+    private Control BuildAppHeader()
+    {
+        var header = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = DarkBack,
+            Padding = new Padding(2, 0, 0, 8),
+        };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
+        header.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
+
+        var title = new Label
+        {
+            Text = "REE-Content-Exporter",
+            Dock = DockStyle.Fill,
+            Font = UiFont(17F, FontStyle.Bold),
+            ForeColor = DarkText,
+            BackColor = DarkBack,
+            TextAlign = ContentAlignment.BottomLeft,
+        };
+        var subtitle = new Label
+        {
+            Text = L("Build Unreal-ready assets with guided export paths, validation, and persistent logs."),
+            Dock = DockStyle.Fill,
+            Font = UiFont(9.5F),
+            ForeColor = MutedText,
+            BackColor = DarkBack,
+            AutoEllipsis = true,
+            TextAlign = ContentAlignment.TopLeft,
+        };
+        header.Controls.Add(title, 0, 0);
+        header.Controls.Add(subtitle, 0, 1);
+        return header;
+    }
+
     private Control BuildWorkflowColumn()
     {
-        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = DarkBack, Padding = new Padding(0, 0, 8, 0) };
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, GroupPanelHeight(2)));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, GroupPanelHeight(3)));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, Math.Max(GroupPanelHeight(2), 210)));
-        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        panel.Controls.Add(BuildGamePanel(), 0, 0);
-        panel.Controls.Add(BuildPathPanel(), 0, 1);
-        panel.Controls.Add(BuildCoreAssetPanel(), 0, 2);
-        panel.Controls.Add(BuildAnimationPanel(), 0, 3);
-        return panel;
+        var scroller = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = DarkBack, Padding = new Padding(0, 0, 16, 18) };
+        var flow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            BackColor = DarkBack,
+            Margin = new Padding(0),
+        };
+        scroller.Controls.Add(flow);
+        scroller.Resize += (_, _) => ResizeWorkflowSections(scroller, flow);
+
+        AddWorkflowSection(flow, BuildGamePanel(), GroupPanelHeight(2) + 28);
+        AddWorkflowSection(flow, BuildPathPanel(), GroupPanelHeight(3) + 34);
+        AddWorkflowSection(flow, BuildCoreAssetPanel(), 282);
+        AddWorkflowSection(flow, BuildAnimationPanel(), 440);
+        AddWorkflowSection(flow, BuildSceneDiagnosticsPanel(), 132);
+        AddWorkflowSection(flow, BuildOutputPanel(), GroupPanelHeight(4) + 40);
+        AddWorkflowSection(flow, BuildOptionsPanel(), 156);
+        AddWorkflowSection(flow, BuildBoneSpacingPanel(), 292);
+        flow.Padding = new Padding(0, 0, 0, 96);
+        UpdateBoneSpacingUi();
+        ResizeWorkflowSections(scroller, flow);
+        return scroller;
     }
 
     private Control BuildRunColumn()
     {
-        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = DarkBack, Padding = new Padding(8, 0, 0, 0) };
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, GroupPanelHeight(6)));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, Math.Max(GroupPanelHeight(2), 152)));
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = DarkBack, Padding = new Padding(16, 0, 0, 0) };
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        panel.Controls.Add(BuildOutputPanel(), 0, 0);
-        panel.Controls.Add(BuildOptionsPanel(), 0, 1);
+        panel.Controls.Add(BuildReadinessPanel(), 0, 0);
+        panel.Controls.Add(BuildCommandPanel(), 0, 1);
         panel.Controls.Add(BuildLogPanel(), 0, 2);
+        return panel;
+    }
+
+    private static void AddWorkflowSection(FlowLayoutPanel flow, Control section, int height)
+    {
+        section.Dock = DockStyle.None;
+        section.Margin = new Padding(0, 0, 0, 12);
+        if (section is DisclosurePanel disclosure)
+        {
+            disclosure.CollapsedHeight = 54;
+        }
+        else
+        {
+            section.Height = height;
+        }
+        flow.Controls.Add(section);
+    }
+
+    private static void ResizeWorkflowSections(Panel scroller, FlowLayoutPanel flow)
+    {
+        var width = Math.Max(360, scroller.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 2);
+        flow.Width = width;
+        foreach (Control child in flow.Controls)
+        {
+            child.Width = width;
+        }
+    }
+
+    private Control BuildReadinessPanel()
+    {
+        var panel = CreateGroup("Export readiness");
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = DarkPanel, Padding = new Padding(8, 8, 8, 6) };
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        panel.Controls.Add(grid);
+
+        readinessLabel.Dock = DockStyle.Fill;
+        readinessLabel.Font = UiFont(10.5F, FontStyle.Bold);
+        readinessLabel.ForeColor = Warning;
+        readinessLabel.BackColor = DarkPanel;
+        readinessLabel.TextAlign = ContentAlignment.MiddleLeft;
+        readinessDetailLabel.Dock = DockStyle.Fill;
+        readinessDetailLabel.Font = UiFont(8.75F);
+        readinessDetailLabel.ForeColor = MutedText;
+        readinessDetailLabel.BackColor = DarkPanel;
+        readinessDetailLabel.AutoEllipsis = true;
+        readinessDetailLabel.TextAlign = ContentAlignment.TopLeft;
+        grid.Controls.Add(readinessLabel, 0, 0);
+        grid.Controls.Add(readinessDetailLabel, 0, 1);
+        return panel;
+    }
+
+    private Control BuildCommandPanel()
+    {
+        var panel = CreateGroup("Command preview");
+        commandPreviewText.Dock = DockStyle.Fill;
+        commandPreviewText.Multiline = true;
+        commandPreviewText.ReadOnly = true;
+        commandPreviewText.ScrollBars = ScrollBars.None;
+        commandPreviewText.WordWrap = true;
+        commandPreviewText.Font = new Font(FontFamily.GenericMonospace, 9F);
+        commandPreviewText.Margin = new Padding(8, 8, 8, 8);
+        panel.Controls.Add(commandPreviewText);
         return panel;
     }
 
@@ -279,11 +446,10 @@ internal sealed class GuiWizardForm : Form
     private Control BuildAnimationPanel()
     {
         var panel = CreateGroup("Animation");
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         panel.Controls.Add(grid);
@@ -313,42 +479,46 @@ internal sealed class GuiWizardForm : Form
         grid.Controls.Add(animationFileRow, 0, 2);
 
         grid.Controls.Add(CreateWidePathRow("Name filter", animationFilterText, () => { }), 0, 3);
-        sceneActorRow = CreateSceneActorRow();
-        grid.Controls.Add(sceneActorRow, 0, 4);
         var hint = new Label { Text = L("Optional. Maps to --animation-name <contains> and filters exported animation names after sources are selected."), Dock = DockStyle.Fill, ForeColor = MutedText, BackColor = DarkPanel, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
-        grid.Controls.Add(hint, 0, 5);
+        grid.Controls.Add(hint, 0, 4);
         return panel;
     }
 
     private TableLayoutPanel CreateSceneActorRow()
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        sceneActorText.Dock = DockStyle.Fill;
-        sceneActorText.Margin = new Padding(0, 7, 14, 7);
+        var sceneActorInput = CreateInputFrame(sceneActorText, 14);
         allowMixedSceneAnimationsCheck.AutoSize = true;
-        allowMixedSceneAnimationsCheck.Margin = new Padding(0, 10, 0, 0);
+        allowMixedSceneAnimationsCheck.Margin = new Padding(0, RowVerticalMargin, 0, 0);
 
         row.Controls.Add(CreateFieldLabel("Scene actor"), 0, 0);
-        row.Controls.Add(sceneActorText, 1, 0);
+        row.Controls.Add(sceneActorInput, 1, 0);
         row.Controls.Add(allowMixedSceneAnimationsCheck, 2, 0);
         return row;
+    }
+
+    private Control BuildSceneDiagnosticsPanel()
+    {
+        var body = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 1, RowCount = 1, AutoSize = true, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        body.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        sceneActorRow = CreateSceneActorRow();
+        body.Controls.Add(sceneActorRow, 0, 0);
+        return CreateDisclosureSection("Scene actor diagnostics", body, expanded: false);
     }
 
     private Control BuildOutputPanel()
     {
         var panel = CreateGroup("Output");
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
-        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         panel.Controls.Add(grid);
 
         outputFormatCombo.Items.AddRange(["fbx", "glb"]);
@@ -368,67 +538,77 @@ internal sealed class GuiWizardForm : Form
         grid.Controls.Add(CreatePickerRow("Textures", textureFormatCombo), 0, 1);
         grid.Controls.Add(CreateNumberRow("FBX scale", fbxScaleInput), 0, 2);
         grid.Controls.Add(CreateWidePathRow("Output path", outputPathText, () => BrowseSaveOutput()), 0, 3);
-        boneSpacingReferenceRow = CreateBoneSpacingReferenceRow();
-        boneSpacingOptionsRow = CreateBoneSpacingOptionsRow();
-        grid.Controls.Add(boneSpacingReferenceRow, 0, 4);
-        grid.Controls.Add(boneSpacingOptionsRow, 0, 5);
         UpdateBoneSpacingUi();
         return panel;
     }
 
-    private TableLayoutPanel CreateBoneSpacingReferenceRow()
+    private TableLayoutPanel CreateBoneSpacingToggleRow()
     {
-        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176));
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         boneSpacingRepairCheck.AutoSize = true;
-        boneSpacingRepairCheck.Margin = new Padding(0, 10, 12, 0);
-        boneSpacingReferenceFbxText.Dock = DockStyle.Fill;
-        boneSpacingReferenceFbxText.Margin = new Padding(0, 7, 6, 7);
-        var browseButton = CreateCompactButton("...", 46);
+        boneSpacingRepairCheck.Margin = new Padding(0, RowVerticalMargin, 12, 0);
+
+        row.Controls.Add(CreateFieldLabel("Repair mode"), 0, 0);
+        row.Controls.Add(boneSpacingRepairCheck, 1, 0);
+        return row;
+    }
+
+    private TableLayoutPanel CreateBoneSpacingReferenceRow()
+    {
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UtilityButtonWidth));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var inputFrame = CreateInputFrame(boneSpacingReferenceFbxText, RowHorizontalGap);
+        var browseButton = CreateCompactButton("...");
         browseButton.Dock = DockStyle.Fill;
         tooltips.SetToolTip(browseButton, L("Browse on disk."));
         browseButton.Click += (_, _) => BrowseFile(boneSpacingReferenceFbxText, "FBX|*.fbx|All files|*.*");
 
-        row.Controls.Add(CreateFieldLabel("Bone reference"), 0, 0);
-        row.Controls.Add(boneSpacingRepairCheck, 1, 0);
-        row.Controls.Add(boneSpacingReferenceFbxText, 2, 0);
-        row.Controls.Add(browseButton, 3, 0);
+        row.Controls.Add(CreateFieldLabel("Reference FBX"), 0, 0);
+        row.Controls.Add(inputFrame, 1, 0);
+        row.Controls.Add(browseButton, 2, 0);
         return row;
     }
 
     private TableLayoutPanel CreateBoneSpacingOptionsRow()
     {
-        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = DarkPanel };
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        grid.Controls.Add(CreateTextFieldRow("Reference action", boneSpacingReferenceActionText), 0, 0);
+        grid.Controls.Add(CreateTextFieldRow("Allowed bones", boneSpacingAllowTranslationText), 0, 1);
+        return grid;
+    }
 
-        boneSpacingReferenceActionText.Dock = DockStyle.Fill;
-        boneSpacingReferenceActionText.Margin = new Padding(0, 7, 12, 7);
-        boneSpacingAllowTranslationText.Dock = DockStyle.Fill;
-        boneSpacingAllowTranslationText.Margin = new Padding(0, 7, 0, 7);
-
-        row.Controls.Add(CreateFieldLabel("Reference action"), 0, 0);
-        row.Controls.Add(boneSpacingReferenceActionText, 1, 0);
-        row.Controls.Add(CreateFieldLabel("Allow translate"), 2, 0);
-        row.Controls.Add(boneSpacingAllowTranslationText, 3, 0);
-        return row;
+    private Control BuildBoneSpacingPanel()
+    {
+        var body = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 1, RowCount = 4, AutoSize = true, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        body.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        body.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        body.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        body.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
+        var toggleRow = CreateBoneSpacingToggleRow();
+        boneSpacingReferenceRow = CreateBoneSpacingReferenceRow();
+        boneSpacingOptionsRow = CreateBoneSpacingOptionsRow();
+        body.Controls.Add(toggleRow, 0, 0);
+        body.Controls.Add(boneSpacingReferenceRow, 0, 1);
+        body.Controls.Add(boneSpacingOptionsRow, 0, 2);
+        body.SetRowSpan(boneSpacingOptionsRow, 2);
+        return CreateDisclosureSection("Bone spacing repair", body, expanded: false);
     }
 
     private Control BuildOptionsPanel()
     {
-        var panel = CreateGroup("Options");
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 1, RowCount = 2, AutoSize = true, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
-        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        panel.Controls.Add(grid);
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 132));
 
         exportOptionsModeCombo.Items.AddRange(["Default", "Custom"]);
         exportOptionsModeCombo.SelectedIndexChanged += (_, _) => OnExportOptionsModeChanged();
@@ -441,33 +621,66 @@ internal sealed class GuiWizardForm : Form
             checkBox.CheckedChanged += (_, _) => OnExportOptionCheckChanged(checkBox);
         }
         grid.Controls.Add(exportOptionChecksPanel, 0, 1);
+        return CreateDisclosureSection("Advanced export flags", grid, expanded: false);
+    }
+
+    private Control CreateDisclosureSection(string title, Control body, bool expanded)
+    {
+        var panel = new DisclosurePanel(title, body, expanded)
+        {
+            Dock = DockStyle.Top,
+            BackColor = DarkPanel,
+            ForeColor = DarkText,
+            Font = Font,
+        };
         return panel;
     }
 
     private Button CreateCompactButton(string text, int width)
-        => new ThemedButton { Text = text, Width = width, Height = 34, Margin = new Padding(6, 4, 0, 4) };
+    {
+        var button = new ThemedButton { Width = Math.Max(width, UtilityButtonWidth), Height = ControlHeight, Margin = new Padding(RowHorizontalGap, RowVerticalMargin, 0, RowVerticalMargin), IconButton = true };
+        ApplyUtilityGlyph(button, text);
+        return button;
+    }
+
+    private Button CreateCompactButton(string text)
+        => CreateCompactButton(text, UtilityButtonWidth);
+
+    private static void ApplyUtilityGlyph(Button button, string text)
+    {
+        var (glyph, name) = text switch
+        {
+            "Find" => ("\uE721", "Find"),
+            "+" => ("\uE710", "Add"),
+            "-" => ("\uE738", "Remove"),
+            "..." => ("...", "Browse"),
+            _ => (text, text),
+        };
+        button.Text = glyph;
+        button.AccessibleName = name;
+        button.Font = text == glyph ? button.Font : IconFont(12F);
+    }
 
     private Label CreateFieldLabel(string text)
-        => new() { Text = L(text), Width = 146, Dock = DockStyle.Left, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DarkText, BackColor = DarkPanel };
+        => new() { Text = L(text), Width = LabelColumnWidth - 10, Dock = DockStyle.Left, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DarkText, BackColor = DarkPanel, AutoEllipsis = true };
 
     private TableLayoutPanel CreateWidePathRow(string label, TextBox textBox, Action browse, params Button[] extraButtons)
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3 + extraButtons.Length, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52));
-        foreach (var _ in extraButtons) row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UtilityButtonWidth));
+        foreach (var _ in extraButtons) row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UtilityButtonWidth + 24));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        textBox.Dock = DockStyle.Fill;
-        textBox.Margin = new Padding(0, 7, 6, 7);
-        var browseButton = CreateCompactButton("...", 46);
+        var inputFrame = CreateInputFrame(textBox, RowHorizontalGap);
+        var browseButton = CreateCompactButton("...");
         browseButton.Dock = DockStyle.Fill;
         tooltips.SetToolTip(browseButton, L("Browse on disk."));
         browseButton.Click += (_, _) => browse();
 
         row.Controls.Add(CreateFieldLabel(label), 0, 0);
-        row.Controls.Add(textBox, 1, 0);
+        row.Controls.Add(inputFrame, 1, 0);
         row.Controls.Add(browseButton, 2, 0);
         for (var i = 0; i < extraButtons.Length; i++)
         {
@@ -480,13 +693,13 @@ internal sealed class GuiWizardForm : Form
     private TableLayoutPanel CreateWideListRow(string label, ListBox listBox, params Button[] buttons)
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Math.Max(116, buttons.Length * 58)));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Math.Max(UtilityButtonWidth * 2 + RowHorizontalGap * 3, buttons.Length * (UtilityButtonWidth + RowHorizontalGap) + RowHorizontalGap)));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         listBox.Dock = DockStyle.Fill;
-        listBox.Margin = new Padding(0, 7, 6, 7);
-        var buttonFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, BackColor = DarkPanel, Padding = new Padding(0, 5, 0, 0) };
+        listBox.Margin = new Padding(0, RowVerticalMargin, RowHorizontalGap, RowVerticalMargin);
+        var buttonFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = DarkPanel, Padding = new Padding(0) };
         buttonFlow.Controls.AddRange(buttons);
 
         row.Controls.Add(CreateFieldLabel(label), 0, 0);
@@ -498,11 +711,12 @@ internal sealed class GuiWizardForm : Form
     private TableLayoutPanel CreatePickerRow(string label, ThemedComboBox picker)
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         picker.Dock = DockStyle.Fill;
-        picker.Margin = new Padding(0, 6, 0, 6);
+        picker.Height = ControlHeight;
+        picker.Margin = new Padding(0, RowVerticalMargin, 0, RowVerticalMargin);
         row.Controls.Add(CreateFieldLabel(label), 0, 0);
         row.Controls.Add(picker, 1, 0);
         return row;
@@ -511,29 +725,59 @@ internal sealed class GuiWizardForm : Form
     private TableLayoutPanel CreateNumberRow(string label, ThemedNumericUpDown number)
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         number.Dock = DockStyle.Left;
         number.Width = 126;
-        number.Margin = new Padding(0, 6, 0, 6);
+        number.Height = ControlHeight;
+        number.Margin = new Padding(0, RowVerticalMargin, 0, RowVerticalMargin);
         row.Controls.Add(CreateFieldLabel(label), 0, 0);
         row.Controls.Add(number, 1, 0);
         return row;
     }
 
+    private TableLayoutPanel CreateTextFieldRow(string label, TextBox textBox)
+    {
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var inputFrame = CreateInputFrame(textBox);
+        row.Controls.Add(CreateFieldLabel(label), 0, 0);
+        row.Controls.Add(inputFrame, 1, 0);
+        return row;
+    }
+
+    private ThemedInputFrame CreateInputFrame(TextBox textBox, int rightMargin = 0)
+    {
+        textBox.BorderStyle = BorderStyle.None;
+        textBox.Dock = DockStyle.Fill;
+        textBox.Margin = new Padding(0);
+        textBox.Multiline = false;
+        var frame = new ThemedInputFrame
+        {
+            Dock = DockStyle.Fill,
+            Height = ControlHeight,
+            Margin = new Padding(0, RowVerticalMargin, rightMargin, RowVerticalMargin),
+        };
+        frame.Controls.Add(textBox);
+        return frame;
+    }
+
     private TableLayoutPanel CreateAnimationHeaderRow()
     {
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = DarkPanel };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 128));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         includeAnimationsCheck.Dock = DockStyle.Fill;
-        includeAnimationsCheck.Margin = new Padding(0, 4, 8, 4);
+        includeAnimationsCheck.Margin = new Padding(0, RowVerticalMargin, RowHorizontalGap, 0);
         animationSourceCombo.Dock = DockStyle.Fill;
-        animationSourceCombo.Margin = new Padding(0, 6, 0, 6);
+        animationSourceCombo.Height = ControlHeight;
+        animationSourceCombo.Margin = new Padding(0, RowVerticalMargin, 0, RowVerticalMargin);
         row.Controls.Add(CreateFieldLabel("Include"), 0, 0);
         row.Controls.Add(includeAnimationsCheck, 1, 0);
         row.Controls.Add(new Label { Text = L("Source"), Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DarkText, BackColor = DarkPanel }, 2, 0);
@@ -623,8 +867,8 @@ internal sealed class GuiWizardForm : Form
         var grid = CreateGrid(2);
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 82));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
         panel.Controls.Add(grid);
 
         currentGameLabel.AutoSize = false;
@@ -633,7 +877,8 @@ internal sealed class GuiWizardForm : Form
         currentGameLabel.TextAlign = ContentAlignment.MiddleLeft;
         gameCombo.DropDownStyle = ComboBoxStyle.DropDownList;
         gameCombo.Dock = DockStyle.Fill;
-        gameCombo.Margin = new Padding(0, 4, 0, 4);
+        gameCombo.Height = ControlHeight;
+        gameCombo.Margin = new Padding(0, RowVerticalMargin, 0, RowVerticalMargin);
         gameCombo.DisplayMember = nameof(WizardGameDefinition.DisplayName);
         gameCombo.ValueMember = nameof(WizardGameDefinition.Id);
         gameCombo.Items.AddRange(WizardGames.Definitions.Cast<object>().ToArray());
@@ -649,9 +894,9 @@ internal sealed class GuiWizardForm : Form
         savedGameValueLabel.ForeColor = MutedText;
         savedGameValueLabel.Visible = false;
 
-        saveGameButton = new ThemedButton { Text = "Set", Dock = DockStyle.Fill, Margin = new Padding(6, 4, 0, 4), AccentButton = true };
+        saveGameButton = new ThemedButton { Text = "Set", Dock = DockStyle.Fill, Margin = new Padding(6, RowVerticalMargin, 0, RowVerticalMargin), AccentButton = true };
         saveGameButton.Click += async (_, _) => await SaveSelectedGameAsync();
-        changeGameButton = new ThemedButton { Text = "Edit", Dock = DockStyle.Fill, Margin = new Padding(6, 4, 0, 4) };
+        changeGameButton = new ThemedButton { Text = "Edit", Dock = DockStyle.Fill, Margin = new Padding(6, RowVerticalMargin, 0, RowVerticalMargin) };
         changeGameButton.Click += (_, _) => ClearSelectedGame();
 
         grid.Controls.Add(new Label { Text = "Current", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
@@ -670,9 +915,9 @@ internal sealed class GuiWizardForm : Form
     {
         var panel = CreateGroup("Paths");
         var grid = CreateGrid(3);
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UtilityButtonWidth));
         panel.Controls.Add(grid);
 
         AddPathRow(grid, 0, "Extract root", extractRootText, () => BrowseFolder(extractRootText));
@@ -780,7 +1025,7 @@ internal sealed class GuiWizardForm : Form
         return panel;
 
         Button CreateCompactButton(string text, int width)
-            => new ThemedButton() { Text = text, Width = width, Height = 36, Margin = new Padding(6, 4, 0, 4) };
+            => new ThemedButton() { Text = text, Width = Math.Max(width, UtilityButtonWidth), Height = ControlHeight, Margin = new Padding(RowHorizontalGap, RowVerticalMargin, 0, RowVerticalMargin) };
 
         Label CreateRowLabel(string text)
             => new() { Text = text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 8, 0) };
@@ -914,10 +1159,9 @@ internal sealed class GuiWizardForm : Form
 
     private Control BuildLogPanel()
     {
-        var panel = CreateGroup("Progress and command");
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
+        var panel = CreateGroup("Progress and log");
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         panel.Controls.Add(grid);
 
@@ -934,19 +1178,16 @@ internal sealed class GuiWizardForm : Form
         progressPercentLabel.Margin = new Padding(0);
         progressRow.Controls.Add(progressBar, 0, 0);
         progressRow.Controls.Add(progressPercentLabel, 1, 0);
-        commandPreviewText.Dock = DockStyle.Fill;
-        commandPreviewText.Multiline = true;
-        commandPreviewText.ReadOnly = true;
-        commandPreviewText.ScrollBars = ScrollBars.None;
         logText.Dock = DockStyle.Fill;
         logText.Multiline = true;
         logText.ReadOnly = true;
         logText.ScrollBars = ScrollBars.None;
         logText.WordWrap = true;
+        logText.Font = new Font(FontFamily.GenericMonospace, 9F);
+        logText.Margin = new Padding(8, 4, 8, 8);
 
         grid.Controls.Add(progressRow, 0, 0);
-        grid.Controls.Add(commandPreviewText, 0, 1);
-        grid.Controls.Add(logText, 0, 2);
+        grid.Controls.Add(logText, 0, 1);
         return panel;
     }
 
@@ -960,7 +1201,8 @@ internal sealed class GuiWizardForm : Form
         var languageLabel = new Label { Text = "Language", AutoSize = true, Anchor = AnchorStyles.Left, Padding = new Padding(0, 9, 6, 0) };
         languageCombo.DropDownStyle = ComboBoxStyle.DropDownList;
         languageCombo.Width = 150;
-        languageCombo.Height = 34;
+        languageCombo.Height = ControlHeight;
+        languageCombo.Margin = new Padding(0, RowVerticalMargin, 0, RowVerticalMargin);
         languageCombo.Items.AddRange(["English", "Korean"]);
         languageCombo.SelectedIndexChanged += (_, _) => OnLanguageChanged();
         languagePanel.Controls.Add(languageLabel);
@@ -996,8 +1238,8 @@ internal sealed class GuiWizardForm : Form
         static void ConfigureActionButton(Button button, int leftMargin)
         {
             button.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            button.Height = 36;
-            button.Margin = new Padding(leftMargin, 8, 0, 0);
+            button.Height = ControlHeight;
+            button.Margin = new Padding(leftMargin, RowVerticalMargin, 0, RowVerticalMargin);
         }
     }
 
@@ -1010,6 +1252,10 @@ internal sealed class GuiWizardForm : Form
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool AccentButton { get; init; }
 
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool IconButton { get; init; }
+
         public ThemedButton()
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -1018,7 +1264,7 @@ internal sealed class GuiWizardForm : Form
             Cursor = Cursors.Hand;
             BackColor = ButtonBase;
             ForeColor = DarkText;
-            MinimumSize = new Size(0, 32);
+            MinimumSize = new Size(0, ControlHeight);
             Padding = new Padding(10, 0, 10, 0);
         }
 
@@ -1068,14 +1314,18 @@ internal sealed class GuiWizardForm : Form
             e.Graphics.FillPath(fill, path);
             using var border = new Pen(Enabled ? (AccentButton ? AccentHover : Accent) : DarkBorder, AccentButton ? 1.7f : 1.2f);
             e.Graphics.DrawPath(border, path);
-            var textColor = Enabled ? ForeColor : MutedText;
+            var textColor = !Enabled ? MutedText : AccentButton ? DarkBack : ForeColor;
+            var flags = TextAlign == ContentAlignment.MiddleLeft
+                ? TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix
+                : TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
+            var textRect = IconButton ? ClientRectangle : new Rectangle(Padding.Left, 0, Math.Max(1, Width - Padding.Horizontal), Height);
             TextRenderer.DrawText(
                 e.Graphics,
                 Text,
                 Font,
-                ClientRectangle,
+                textRect,
                 textColor,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                flags);
         }
 
         private Color ResolveBackColor()
@@ -1084,6 +1334,35 @@ internal sealed class GuiWizardForm : Form
             if (pressed) return AccentButton ? ButtonPressed : Color.FromArgb(50, 45, 40);
             if (hover) return AccentButton ? AccentHover : ButtonHover;
             return AccentButton ? Accent : ButtonBase;
+        }
+    }
+
+    private sealed class ThemedInputFrame : Panel
+    {
+        public ThemedInputFrame()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            BackColor = DarkInput;
+            ForeColor = DarkText;
+            Padding = new Padding(10, 11, 10, 7);
+            MinimumSize = new Size(0, ControlHeight);
+        }
+
+        protected override void OnEnabledChanged(EventArgs e)
+        {
+            base.OnEnabledChanged(e);
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using var path = RoundedRect(rect, 8);
+            using var fill = new SolidBrush(Enabled ? DarkInput : DisabledBack);
+            using var border = new Pen(Enabled ? DarkBorder : Color.FromArgb(48, 54, 64));
+            e.Graphics.FillPath(fill, path);
+            e.Graphics.DrawPath(border, path);
         }
     }
 
@@ -1241,14 +1520,14 @@ internal sealed class GuiWizardForm : Form
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
             BackColor = DarkInput;
             ForeColor = DarkText;
-            Height = PreferredControlHeight(Font);
+            Height = ControlHeight;
             Cursor = Cursors.Hand;
         }
 
         protected override void OnFontChanged(EventArgs e)
         {
             base.OnFontChanged(e);
-            Height = PreferredControlHeight(Font);
+            Height = ControlHeight;
         }
 
         public void BeginUpdate()
@@ -1486,13 +1765,13 @@ internal sealed class GuiWizardForm : Form
             BackColor = DarkInput;
             ForeColor = DarkText;
             Cursor = Cursors.Hand;
-            Height = PreferredControlHeight(Font);
+            Height = ControlHeight;
         }
 
         protected override void OnFontChanged(EventArgs e)
         {
             base.OnFontChanged(e);
-            Height = PreferredControlHeight(Font);
+            Height = ControlHeight;
         }
 
         protected override void OnMouseWheel(MouseEventArgs e)
@@ -1553,13 +1832,14 @@ internal sealed class GuiWizardForm : Form
             => Math.Max(34, font.Height + 14);
     }
 
-    private static GroupBox CreateGroup(string title)
-        => new ThemedGroupBox { Text = title, Dock = DockStyle.Fill, Padding = new Padding(12, 18, 12, 10) };
+    private static ModernSectionPanel CreateGroup(string title)
+        => new(title) { Dock = DockStyle.Fill, Padding = new Padding(14, 50, 14, 14) };
 
-    private sealed class ThemedGroupBox : GroupBox
+    private sealed class ModernSectionPanel : Panel
     {
-        public ThemedGroupBox()
+        public ModernSectionPanel(string title)
         {
+            Text = title;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             BackColor = DarkPanel;
             ForeColor = DarkText;
@@ -1568,16 +1848,111 @@ internal sealed class GuiWizardForm : Form
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            e.Graphics.Clear(BackColor);
-            var textSize = TextRenderer.MeasureText(Text, Font, Size.Empty, TextFormatFlags.NoPadding);
-            var textRect = new Rectangle(10, 2, textSize.Width + 18, textSize.Height + 4);
-            var borderTop = Math.Max(8, textRect.Top + textRect.Height / 2);
-            var borderRect = new Rectangle(0, borderTop, Width - 1, Height - borderTop - 1);
-            using var border = new Pen(Color.FromArgb(78, 84, 96));
-            e.Graphics.DrawRectangle(border, borderRect);
-            using var titleBack = new SolidBrush(BackColor);
-            e.Graphics.FillRectangle(titleBack, textRect);
-            TextRenderer.DrawText(e.Graphics, Text, Font, textRect, ForeColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            e.Graphics.Clear(Parent?.BackColor ?? DarkBack);
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using var path = RoundedRect(rect, 12);
+            using var fill = new SolidBrush(DarkPanel);
+            using var border = new Pen(DarkBorder);
+            e.Graphics.FillPath(fill, path);
+            e.Graphics.DrawPath(border, path);
+            var titleRect = new Rectangle(16, 14, Math.Max(1, Width - 32), 28);
+            using var titleFont = UiFont(10F, FontStyle.Bold);
+            TextRenderer.DrawText(e.Graphics, Text, titleFont, titleRect, DarkText, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+    }
+
+    private sealed class DisclosurePanel : Panel
+    {
+        private readonly ThemedButton header;
+        private readonly Panel bodyHost;
+        private readonly string titleKey;
+        private bool expanded;
+        private int collapsedHeight = 54;
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int CollapsedHeight
+        {
+            get => collapsedHeight;
+            set
+            {
+                collapsedHeight = Math.Max(44, value);
+                UpdatePanelHeight();
+            }
+        }
+
+        public DisclosurePanel(string title, Control body, bool expanded)
+        {
+            titleKey = title;
+            this.expanded = expanded;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            AutoSize = false;
+            BackColor = DarkPanel;
+            ForeColor = DarkText;
+            Padding = new Padding(0);
+
+            header = new ThemedButton { Dock = DockStyle.Top, Height = 46, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(0), Padding = new Padding(14, 0, 14, 0) };
+            header.Click += (_, _) => Toggle();
+            bodyHost = new Panel { Dock = DockStyle.Top, Padding = new Padding(10, 0, 10, 12), BackColor = DarkPanel };
+            body.Dock = DockStyle.Top;
+            bodyHost.Controls.Add(body);
+            Controls.Add(bodyHost);
+            Controls.Add(header);
+            SetHeaderText(title);
+            SetExpanded(expanded);
+        }
+
+        public void ApplyLocalizedTitle(Func<string, string> localize)
+            => SetHeaderText(localize(titleKey));
+
+        private void Toggle() => SetExpanded(!expanded);
+
+        private void SetExpanded(bool value)
+        {
+            expanded = value;
+            bodyHost.Visible = expanded;
+            SetHeaderText(header.AccessibleName ?? header.Text);
+            UpdatePanelHeight();
+            Invalidate();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            UpdatePanelHeight();
+        }
+
+        private void UpdatePanelHeight()
+        {
+            if (!expanded)
+            {
+                Height = collapsedHeight;
+                return;
+            }
+
+            var body = bodyHost.Controls.Count > 0 ? bodyHost.Controls[0] : null;
+            var bodyHeight = body?.Height > 0 ? body.Height : body?.PreferredSize.Height ?? 0;
+            bodyHost.Height = bodyHeight + bodyHost.Padding.Vertical;
+            Height = header.Height + bodyHost.Height + 2;
+        }
+
+        private void SetHeaderText(string title)
+        {
+            var cleanTitle = title.TrimStart('v', '>', ' ');
+            header.AccessibleName = cleanTitle;
+            header.Text = (expanded ? "v  " : ">  ") + cleanTitle;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.Clear(Parent?.BackColor ?? DarkBack);
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using var path = RoundedRect(rect, 12);
+            using var fill = new SolidBrush(DarkPanel);
+            using var border = new Pen(DarkBorder);
+            e.Graphics.FillPath(fill, path);
+            e.Graphics.DrawPath(border, path);
         }
     }
 
@@ -1602,7 +1977,7 @@ internal sealed class GuiWizardForm : Form
             case TextBox textBox:
                 textBox.BackColor = DarkInput;
                 textBox.ForeColor = DarkText;
-                textBox.BorderStyle = BorderStyle.FixedSingle;
+                textBox.BorderStyle = textBox.Parent is ThemedInputFrame ? BorderStyle.None : BorderStyle.FixedSingle;
                 break;
             case ListBox listBox:
                 listBox.BackColor = DarkInput;
@@ -1616,6 +1991,11 @@ internal sealed class GuiWizardForm : Form
             case ThemedNumericUpDown numeric:
                 numeric.BackColor = DarkInput;
                 numeric.ForeColor = DarkText;
+                numeric.Height = ControlHeight;
+                break;
+            case ThemedInputFrame inputFrame:
+                inputFrame.BackColor = DarkInput;
+                inputFrame.ForeColor = DarkText;
                 break;
             case Button button:
                 button.BackColor = button is ThemedButton ? button.BackColor : ButtonBase;
@@ -1629,7 +2009,7 @@ internal sealed class GuiWizardForm : Form
                 }
                 button.UseCompatibleTextRendering = false;
                 button.TextAlign = ContentAlignment.MiddleCenter;
-                button.MinimumSize = new Size(0, 32);
+                button.MinimumSize = new Size(0, ControlHeight);
                 break;
             case CheckBox checkBox:
                 checkBox.AutoSize = true;
@@ -1668,15 +2048,15 @@ internal sealed class GuiWizardForm : Form
         }
     }
 
-    private static void AddPathRow(TableLayoutPanel grid, int row, string label, TextBox textBox, Action browse, int startColumn = 0)
+    private void AddPathRow(TableLayoutPanel grid, int row, string label, TextBox textBox, Action browse, int startColumn = 0)
     {
-        textBox.Dock = DockStyle.Fill;
-        textBox.Margin = new Padding(0, 4, 6, 4);
-        var browseButton = new ThemedButton { Text = "...", Dock = DockStyle.Fill, Margin = new Padding(6, 4, 0, 4) };
+        var inputFrame = CreateInputFrame(textBox, RowHorizontalGap);
+        var browseButton = new ThemedButton { Dock = DockStyle.Fill, Margin = new Padding(RowHorizontalGap, RowVerticalMargin, 0, RowVerticalMargin), Height = ControlHeight, IconButton = true };
+        ApplyUtilityGlyph(browseButton, "...");
         browseButton.Click += (_, _) => browse();
         grid.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left }, startColumn, row);
-        grid.Controls.Add(textBox, startColumn + 1, row);
-        grid.SetColumnSpan(textBox, startColumn == 0 ? 1 : 2);
+        grid.Controls.Add(inputFrame, startColumn + 1, row);
+        grid.SetColumnSpan(inputFrame, startColumn == 0 ? 1 : 2);
         grid.Controls.Add(browseButton, startColumn == 0 ? 2 : 3, row);
     }
 
@@ -1715,9 +2095,7 @@ internal sealed class GuiWizardForm : Form
     {
         if (TryGetConfiguredGame(out var game))
         {
-            currentGameLabel.Text = IsKorean()
-                ? $"{game.DisplayName} ({game.Id}). 변경하려면 config.json의 game 줄을 삭제하거나 편집을 누르세요."
-                : $"{game.DisplayName} ({game.Id}). Delete the config.json game line or click Edit to change.";
+            currentGameLabel.Text = $"{game.DisplayName} ({game.Id})";
             savedGameValueLabel.Text = game.DisplayName;
             savedGameValueLabel.Visible = true;
             gameCombo.Visible = false;
@@ -1728,8 +2106,8 @@ internal sealed class GuiWizardForm : Form
         else if (!string.IsNullOrWhiteSpace(config.Game))
         {
             currentGameLabel.Text = IsKorean()
-                ? $"지원하지 않는 저장 게임: {config.Game}. 편집을 누르거나 config.json의 game 줄을 삭제하세요."
-                : $"Unsupported saved game: {config.Game}. Click Edit or delete the config.json game line.";
+                ? $"지원하지 않는 저장 게임: {config.Game}"
+                : $"Unsupported saved game: {config.Game}";
             savedGameValueLabel.Text = config.Game;
             savedGameValueLabel.Visible = true;
             gameCombo.Visible = false;
@@ -1937,6 +2315,10 @@ internal sealed class GuiWizardForm : Form
 
     private void LocalizeControlTree(Control root)
     {
+        if (root is DisclosurePanel disclosure)
+        {
+            disclosure.ApplyLocalizedTitle(L);
+        }
         if (root is not ThemedComboBox && !string.IsNullOrWhiteSpace(root.Text))
         {
             root.Text = L(root.Text);
@@ -2030,6 +2412,13 @@ internal sealed class GuiWizardForm : Form
         ["Export"] = "내보내기",
         ["Progress"] = "진행",
         ["Game configuration"] = "게임 구성",
+        ["Build Unreal-ready assets with guided export paths, validation, and persistent logs."] = "가이드형 경로 설정, 검증, 영구 로그로 Unreal-ready 에셋을 내보냅니다.",
+        ["Export readiness"] = "내보내기 준비 상태",
+        ["Ready to export"] = "내보낼 준비 완료",
+        ["The required fields are complete. Review the command, then run the export."] = "필수 항목이 완료되었습니다. 명령을 확인한 뒤 내보내기를 실행하세요.",
+        ["Needs attention"] = "확인이 필요합니다",
+        ["Command preview"] = "명령 미리보기",
+        ["Progress and log"] = "진행률 및 로그",
         ["Current"] = "현재",
         ["Select game"] = "게임 선택",
         ["Set"] = "설정",
@@ -2055,6 +2444,7 @@ internal sealed class GuiWizardForm : Form
         ["Name filter"] = "이름 필터",
         ["Scene actor"] = "씬 액터",
         ["Allow mixed scene actors"] = "혼합 씬 액터 허용",
+        ["Scene actor diagnostics"] = "씬 액터 진단",
         ["Output"] = "출력",
         ["Format"] = "형식",
         ["Textures"] = "텍스처",
@@ -2075,6 +2465,7 @@ internal sealed class GuiWizardForm : Form
         ["Include occlusion"] = "Occlusion 포함",
         ["Skip missing bone channels"] = "없는 본 채널 건너뛰기",
         ["Allow missing streaming buffers"] = "누락된 스트리밍 버퍼 허용",
+        ["Advanced export flags"] = "고급 내보내기 옵션",
         ["Output path"] = "출력 경로",
         ["Progress and command"] = "진행 및 명령",
         ["Language"] = "언어",
@@ -2475,6 +2866,10 @@ internal sealed class GuiWizardForm : Form
             label.Enabled = true;
             label.ForeColor = enabled ? DarkText : MutedText;
         }
+        else if (root is ThemedInputFrame)
+        {
+            root.Enabled = enabled;
+        }
         else if (root is Panel or TableLayoutPanel or FlowLayoutPanel)
         {
             root.Enabled = true;
@@ -2501,10 +2896,16 @@ internal sealed class GuiWizardForm : Form
         {
             var exe = ResolveCliExecutablePath();
             commandPreviewText.Text = Quote(exe) + " " + string.Join(" ", BuildExportArgs().Select(Quote));
+            readinessLabel.Text = L("Ready to export");
+            readinessLabel.ForeColor = Success;
+            readinessDetailLabel.Text = L("The required fields are complete. Review the command, then run the export.");
         }
         catch (Exception ex)
         {
             commandPreviewText.Text = ex.Message;
+            readinessLabel.Text = L("Needs attention");
+            readinessLabel.ForeColor = Warning;
+            readinessDetailLabel.Text = ex.Message;
         }
     }
 
