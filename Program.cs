@@ -1169,6 +1169,7 @@ static IEnumerable<string> GenerateDiskCandidates(string configuredRoot, string 
     var root = Path.GetFullPath(NormalizeUserPath(configuredRoot));
     var rel = relativePath.Replace('/', Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
     var directRel = StripNativesStmPrefix(rel);
+    var stmRel = AddNativesStmPrefix(directRel);
     var roots = new List<string> { root };
     if (Directory.Exists(Path.Combine(root, "re_chunk_000"))) roots.Add(Path.Combine(root, "re_chunk_000"));
     if (EndsWithSegments(root, "natives", "stm"))
@@ -1178,10 +1179,11 @@ static IEnumerable<string> GenerateDiskCandidates(string configuredRoot, string 
 
     foreach (var candidateRoot in roots.Distinct(StringComparer.OrdinalIgnoreCase))
     {
-        yield return Path.Combine(candidateRoot, rel);
-        yield return Path.Combine(candidateRoot, directRel);
-        yield return Path.Combine(candidateRoot, "re_chunk_000", rel);
-        yield return Path.Combine(candidateRoot, "re_chunk_000", directRel);
+        foreach (var candidateRel in new[] { rel, directRel, stmRel }.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            yield return Path.Combine(candidateRoot, candidateRel);
+            yield return Path.Combine(candidateRoot, "re_chunk_000", candidateRel);
+        }
     }
 }
 
@@ -1189,6 +1191,12 @@ static string StripNativesStmPrefix(string rel)
 {
     var prefix = "natives" + Path.DirectorySeparatorChar + "stm" + Path.DirectorySeparatorChar;
     return rel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? rel[prefix.Length..] : rel;
+}
+
+static string AddNativesStmPrefix(string rel)
+{
+    var prefix = "natives" + Path.DirectorySeparatorChar + "stm" + Path.DirectorySeparatorChar;
+    return rel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? rel : prefix + rel;
 }
 
 static string NormalizeIndexPath(string value) => NormalizeUserPath(value).Replace('\\', '/').TrimStart('/');

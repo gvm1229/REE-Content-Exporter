@@ -78,6 +78,8 @@ The GUI `Bone spacing repair` controls are enabled for animated FBX exports afte
 
 Scene/minidemo MOTLIST files whose action names look like `<motlist>_<actor>_*` are actor-filtered by the direct CLI. When multiple actor prefixes are selected, the exporter infers the actor from the primary mesh name, or users can pass `--scene-actor <actor-id>`.
 
+GUI and legacy wizard asset lookup accept both extracted layouts: indexed `natives\STM\...` paths and stripped flat paths. When one form is not present under the configured extract root, the picker tries the other before falling back to a displayed path.
+
 ## Universal Game Configuration
 
 The wizard stores its config at:

@@ -2963,13 +2963,18 @@ internal sealed class AssetPickerForm : Form
         if (string.IsNullOrWhiteSpace(extractRoot)) return entry;
         var rel = entry.Replace('/', Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
         var directRel = StripNativesStmPrefix(rel);
-        foreach (var candidate in new[]
+        var stmRel = AddNativesStmPrefix(directRel);
+        var candidateRoots = new List<string> { extractRoot };
+        if (EndsWithSegments(extractRoot, "natives", "stm"))
         {
-            Path.Combine(extractRoot, rel),
-            Path.Combine(extractRoot, directRel),
-            Path.Combine(extractRoot, "re_chunk_000", rel),
-            Path.Combine(extractRoot, "re_chunk_000", directRel),
-        })
+            candidateRoots.Add(Path.GetFullPath(Path.Combine(extractRoot, "..", "..")));
+        }
+        candidateRoots.Add(Path.Combine(extractRoot, "re_chunk_000"));
+        foreach (var candidate in candidateRoots
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .SelectMany(root => new[] { rel, directRel, stmRel }
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(candidateRel => Path.Combine(root, candidateRel))))
         {
             if (kind == AssetPickerKind.MotlistDirectory)
             {
@@ -2987,6 +2992,24 @@ internal sealed class AssetPickerForm : Form
     {
         var prefix = "natives" + Path.DirectorySeparatorChar + "stm" + Path.DirectorySeparatorChar;
         return rel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? rel[prefix.Length..] : rel;
+    }
+
+    private static string AddNativesStmPrefix(string rel)
+    {
+        var prefix = "natives" + Path.DirectorySeparatorChar + "stm" + Path.DirectorySeparatorChar;
+        return rel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? rel : prefix + rel;
+    }
+
+    private static bool EndsWithSegments(string path, params string[] segments)
+    {
+        var parts = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < segments.Length) return false;
+        for (var i = 0; i < segments.Length; i++)
+        {
+            if (!parts[parts.Length - segments.Length + i].Equals(segments[i], StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        return true;
     }
 
     private static bool IsMotlistPath(string path)

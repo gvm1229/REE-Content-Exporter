@@ -285,6 +285,7 @@ Rules:
 - Do not silently accept a missing or empty texture folder in production scripts.
 - Do not release a build that depends on users installing texture helper tools separately. PNG export requires `texconv.exe`; release artifacts must bundle it beside the exporter entry-point executables, and build/publish should fail if the converter cannot be included.
 - Keep the dynamic path fallback behavior for old/new `natives\STM` and `re_chunk_000\streaming` style paths.
+- GUI and legacy wizard asset pickers must resolve both indexed `natives\STM\...` paths and stripped flat paths. If one layout is missing, try the other as a fallback before returning a non-existent path.
 - Treat unsupported depth/3D TEX resources as warnings only; these textures are not needed for exported material files. Do not broaden this to missing texture sources or normal 2D texture read, DDS, or PNG conversion failures, which must remain fatal.
 - If adding a new asset script, confirm its material/MDF lookup still resolves textures from the correct source mesh.
 

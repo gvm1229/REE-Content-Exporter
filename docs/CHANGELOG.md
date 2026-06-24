@@ -19,6 +19,7 @@
 - Verified the md10015 ch0100 spacing repair against the golden `ch0100_General_unreal.fbx` reference with a one-off Blender post-process output, then wired the same repair into reusable CLI flags for future exports.
 - Added GUI controls for scene MOTLIST actor filtering, including `Scene actor` and the diagnostic `Allow mixed scene actors` checkbox.
 - Added GUI controls for the opt-in Blender-stage bone-spacing repair, including reference FBX, reference action filter, and allowed translation bones.
+- Updated GUI and legacy wizard asset lookup to try both `natives\STM\...` and stripped flat path layouts as fallbacks.
 
 ## 0.6 - MOT loading and FBX rotation continuity
 
