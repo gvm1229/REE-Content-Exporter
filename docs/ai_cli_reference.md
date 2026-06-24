@@ -72,6 +72,8 @@ GUI export option defaults intentionally mirror the legacy console wizard script
 
 The GUI field labeled `Animation name filter` maps to `--animation-name <contains>`. It filters selected animation names after MOTLIST or MOT sources are chosen; it is not an animation source path.
 
+Scene/minidemo MOTLIST files whose action names look like `<motlist>_<actor>_*` are actor-filtered by the direct CLI. When multiple actor prefixes are selected, the exporter infers the actor from the primary mesh name, or users can pass `--scene-actor <actor-id>`.
+
 ## Universal Game Configuration
 
 The wizard stores its config at:
@@ -169,6 +171,8 @@ Core options:
 | `--mot <path>` | Raw MOT animation source parsed through REE-Lib `MotFile`. Repeatable. |
 | `--output <path>` | `.glb`, `.fbx`, or folder output target. |
 | `--animation-name <text>` | Case-insensitive animation-name filter. |
+| `--scene-actor <actor-id>` | Filters scene/minidemo MOTLIST actions by actor prefix, for example `ch0100`, `ch0000`, or `wp0900`. |
+| `--allow-mixed-scene-animations` | Diagnostic escape hatch that allows multiple scene actor prefixes to export onto one armature. Not recommended for final character exports. |
 | `--split-motlists` | One output file per non-empty MOTLIST. |
 | `--split-animations` | One output file per selected animation. |
 | `--batch-motlist` | Compatibility alias for older split-animation behavior. |

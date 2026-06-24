@@ -1,4 +1,4 @@
-﻿# AGENTS.md
+# AGENTS.md
 
 Operational rules for future AI agent sessions working in this repository.
 
@@ -170,6 +170,15 @@ Rules:
 
 Do not treat zero-action MOTLISTs as fatal unless the user specifically asks to debug that MOTLIST.
 
+## Scene/minidemo MOTLIST actor rules
+
+`gamedemo\minidemo\md*` MOTLIST files can contain scene actions for multiple actors, such as `md10015_ch0000_*`, `md10015_ch0100_*`, and `md10015_wp0900_*`.
+
+- Do not export mixed scene actor actions onto one character skeleton as a final asset.
+- Use `--scene-actor <actor-id>` when intentionally extracting one actor from a scene MOTLIST.
+- If no `--scene-actor` is supplied, the CLI may infer the actor from the primary mesh name and filter mixed scene MOTLIST selections automatically.
+- Use `--allow-mixed-scene-animations` only for diagnostics until a true multi-armature scene export path exists.
+- If a filtered ch0100 scene export still reports only hashes `2184993242`, `3724475523`, `573179932`, and `386343545`, treat them as unresolved unnamed scene/helper/control channels, not as proof that the normal ch0100 body mesh set is missing parts.
 ## Standalone MOT loading rules
 
 When loading individual `.mot.*` files through `--mot`, rely on REE-Lib's `MotFile.Read()` to load the standalone MOT bone table.

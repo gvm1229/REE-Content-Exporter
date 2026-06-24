@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Runtime.InteropServices;
 using ContentEditor;
@@ -43,7 +44,7 @@ static void PrintUsage()
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
     Console.WriteLine("  REE-Content-Exporter-GUI [--gui|--wizard] [--reset-config] [--config <path>]");
-    Console.WriteLine("  REE-Content-Exporter-CLI --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--unreal-ready-fbx --blender <blender.exe> [--keep-source-fbx]] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter-CLI --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--scene-actor <actor-id>] [--allow-mixed-scene-animations] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--unreal-ready-fbx --blender <blender.exe> [--keep-source-fbx]] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     Console.WriteLine("  REE-Content-Exporter-CLI --dependency-versions");
 }
 
@@ -2199,6 +2200,8 @@ motlistPaths = motlistPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var motPaths = GetArgs(args, "--mot").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 var outputPath = GetArg(args, "--output") ?? throw new ArgumentException("Missing --output");
 var animationFilter = GetArg(args, "--animation-name");
+var explicitSceneActor = NormalizeSceneActor(GetArg(args, "--scene-actor"), "--scene-actor");
+var inferredSceneActor = explicitSceneActor ?? InferSceneActorFromMeshPath(meshPath);
 var includeAnimations = !HasFlag(args, "--no-animations");
 var includeTextures = !HasFlag(args, "--no-textures");
 var textureFormat = (GetArg(args, "--texture-format") ?? "png").ToLowerInvariant();
@@ -2217,6 +2220,7 @@ var includeOcc = HasFlag(args, "--include-occlusion");
 var allowMissingStreaming = HasFlag(args, "--allow-missing-streaming");
 var unrealReadyFbx = HasFlag(args, "--unreal-ready-fbx");
 var keepSourceFbx = HasFlag(args, "--keep-source-fbx");
+var allowMixedSceneAnimations = HasFlag(args, "--allow-mixed-scene-animations");
 var blenderPath = GetArg(args, "--blender") ?? LoadWizardConfig(ResolveWizardConfigPath(wizardConfigPath))?.BlenderPath;
 
 Console.WriteLine("REE Content Editor native export path");
@@ -2229,6 +2233,7 @@ Console.WriteLine($"Motlists: {(motlistPaths.Count == 0 ? "-" : string.Join("; "
 Console.WriteLine($"Mots: {(motPaths.Count == 0 ? "-" : string.Join("; ", motPaths))}");
 Console.WriteLine($"Output: {outputPath}");
 Console.WriteLine($"Game: {exportGame}");
+Console.WriteLine($"Scene actor: {explicitSceneActor ?? inferredSceneActor ?? "-"}{(explicitSceneActor != null ? " (explicit)" : inferredSceneActor != null ? " (inferred)" : "")}");
 Console.WriteLine($"Unreal-ready FBX: {(unrealReadyFbx ? "yes" : "no")}");
 if (unrealReadyFbx) Console.WriteLine($"Blender: {blenderPath}");
 
@@ -2258,16 +2263,17 @@ if (includeAnimations)
         using var mlHandler = new FileHandler(motlistPath);
         var motlist = new MotlistFile(mlHandler);
         if (!motlist.Read()) throw new Exception("REE-Lib failed to read motlist");
-        IEnumerable<MotFileBase> files = motlist.MotFiles;
-        if (!string.IsNullOrWhiteSpace(animationFilter))
-            files = files.Where(m => m.Name.Contains(animationFilter, StringComparison.OrdinalIgnoreCase));
-        var selected = files.ToList();
         var sourceName = string.IsNullOrWhiteSpace(motlist.Name)
             ? PathUtils.GetFilenameWithoutExtensionOrVersion(motlistPath).ToString()
             : motlist.Name;
+        IEnumerable<MotFileBase> files = motlist.MotFiles;
+        if (!string.IsNullOrWhiteSpace(animationFilter))
+            files = files.Where(m => m.Name.Contains(animationFilter, StringComparison.OrdinalIgnoreCase));
+        var nameFiltered = files.ToList();
+        var selected = ApplySceneActorFilter(sourceName, motlistPath, nameFiltered, inferredSceneActor, explicitSceneActor != null, allowMixedSceneAnimations);
         motlistGroups.Add((sourceName, motlistPath, selected));
         motions.AddRange(selected.Select(m => (sourceName, m)));
-        Console.WriteLine($"Loaded motlist {motlist.Name}: total={motlist.MotFiles.Count} selected={selected.Count}");
+        Console.WriteLine($"Loaded motlist {motlist.Name}: total={motlist.MotFiles.Count} nameFiltered={nameFiltered.Count} selected={selected.Count}");
     }
     foreach (var motPath in motPaths)
     {
@@ -2525,6 +2531,85 @@ static void ValidateExportInputs(
     EnsureOutputParentCanBeCreated(outputPath);
 }
 
+static string? NormalizeSceneActor(string? actor, string optionName)
+{
+    if (string.IsNullOrWhiteSpace(actor)) return null;
+    var normalized = actor.Trim().ToLowerInvariant();
+    if (!IsSceneActorToken(normalized))
+        throw new ArgumentException($"{optionName} must look like an RE actor id, for example ch0100, ch0000, or wp0900.");
+    return normalized;
+}
+
+static string? InferSceneActorFromMeshPath(string meshPath)
+{
+    var filename = Path.GetFileName(meshPath).ToLowerInvariant();
+    var match = Regex.Match(filename, @"(?<![a-z0-9])([a-z]{2}\d{4})(?!\d)", RegexOptions.IgnoreCase);
+    return match.Success && IsSceneActorToken(match.Groups[1].Value)
+        ? match.Groups[1].Value.ToLowerInvariant()
+        : null;
+}
+
+static List<MotFileBase> ApplySceneActorFilter(
+    string sourceName,
+    string motlistPath,
+    IReadOnlyList<MotFileBase> selectedMotions,
+    string? sceneActor,
+    bool explicitSceneActor,
+    bool allowMixedSceneAnimations)
+{
+    if (selectedMotions.Count == 0) return [];
+
+    var actorCounts = selectedMotions
+        .Select(motion => TryGetSceneMotionActor(sourceName, motion.Name))
+        .Where(actor => actor != null)
+        .GroupBy(actor => actor!, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+
+    if (actorCounts.Count == 0) return selectedMotions.ToList();
+    if (allowMixedSceneAnimations && !explicitSceneActor) return selectedMotions.ToList();
+
+    var shouldFilter = explicitSceneActor || actorCounts.Count > 1;
+    if (!shouldFilter) return selectedMotions.ToList();
+
+    if (string.IsNullOrWhiteSpace(sceneActor))
+    {
+        var actors = string.Join(", ", actorCounts.Keys.OrderBy(actor => actor, StringComparer.OrdinalIgnoreCase));
+        throw new ArgumentException($"Scene MOTLIST contains multiple actor prefixes but no actor could be inferred from --mesh. Pass --scene-actor <actor-id> or --allow-mixed-scene-animations. MOTLIST: {motlistPath}; actors: {actors}");
+    }
+
+    var filtered = selectedMotions
+        .Where(motion => string.Equals(TryGetSceneMotionActor(sourceName, motion.Name), sceneActor, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    if (actorCounts.Count > 1 || explicitSceneActor)
+    {
+        var actors = string.Join(", ", actorCounts.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase).Select(kvp => $"{kvp.Key}:{kvp.Value}"));
+        Console.WriteLine($"Scene MOTLIST actor filter: source={sourceName} actor={sceneActor} selected={filtered.Count}/{selectedMotions.Count} actors={actors}");
+    }
+
+    return filtered;
+}
+
+static string? TryGetSceneMotionActor(string sourceName, string motionName)
+{
+    if (string.IsNullOrWhiteSpace(sourceName) || string.IsNullOrWhiteSpace(motionName)) return null;
+    var prefix = sourceName + "_";
+    if (!motionName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+    var remainder = motionName[prefix.Length..];
+    var separatorIndex = remainder.IndexOf('_');
+    if (separatorIndex <= 0) return null;
+    var actor = remainder[..separatorIndex].ToLowerInvariant();
+    return IsSceneActorToken(actor) ? actor : null;
+}
+
+static bool IsSceneActorToken(string value)
+    => value.Length == 6
+    && char.IsAsciiLetterLower(value[0])
+    && char.IsAsciiLetterLower(value[1])
+    && char.IsAsciiDigit(value[2])
+    && char.IsAsciiDigit(value[3])
+    && char.IsAsciiDigit(value[4])
+    && char.IsAsciiDigit(value[5]);
 static void RequireExistingFile(string path, string optionName)
 {
     if (string.IsNullOrWhiteSpace(path))

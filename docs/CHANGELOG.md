@@ -1,4 +1,4 @@
-﻿# CHANGELOG
+# CHANGELOG
 
 ## Unreleased - GUI export log files
 
@@ -13,6 +13,7 @@
 - Added `--unreal-ready-fbx`, `--blender`, and `--keep-source-fbx` so current GUI/CLI FBX animation exports can run the June 7 Blender finalization path and produce final `*_unreal.fbx` files instead of leaving source `*_all_animations.fbx` files as the apparent output.
 - Scoped the REE bridge rotation bake so direct source FBX exports keep quaternion-continuity protection, while Unreal-ready Blender staging can preserve the sparse source rotation tracks used by the June 7 golden path.
 - Documented the `ch0100_Attack_628_Clean_Up_Release_Lv1` golden-path recovery in `docs/ch0100_attack_unreal_ready_golden_recovery.md`.
+- Added scene/minidemo MOTLIST actor filtering with `--scene-actor` and `--allow-mixed-scene-animations`, so mixed files such as `md10015.motlist.1057` no longer silently export `ch0000`, `ch0100`, and `wp0900` actions onto one character skeleton.
 
 ## 0.6 - MOT loading and FBX rotation continuity
 
