@@ -72,6 +72,8 @@ GUI export option defaults intentionally mirror the legacy console wizard script
 
 The GUI field labeled `Animation name filter` maps to `--animation-name <contains>`. It filters selected animation names after MOTLIST or MOT sources are chosen; it is not an animation source path.
 
+The GUI field labeled `Scene actor` maps to `--scene-actor <actor-id>`. The `Allow mixed scene actors` checkbox maps to `--allow-mixed-scene-animations` and should be used only for diagnostics.
+
 Scene/minidemo MOTLIST files whose action names look like `<motlist>_<actor>_*` are actor-filtered by the direct CLI. When multiple actor prefixes are selected, the exporter infers the actor from the primary mesh name, or users can pass `--scene-actor <actor-id>`.
 
 ## Universal Game Configuration

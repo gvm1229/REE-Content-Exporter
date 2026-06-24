@@ -17,6 +17,7 @@
 - Documented the `md10015` mixed-actor cause, the four unresolved ch0100 helper/control hashes, and the corrected ch0100/ch0000 scene export workflow in `docs/md10015_scene_motlist_actor_filter.md`.
 - Added opt-in Blender-stage bone-spacing repair flags so scene MOTLIST actions with bad non-root local translation curves can be clamped to a golden reference FBX action without changing rotations or normal exports.
 - Verified the md10015 ch0100 spacing repair against the golden `ch0100_General_unreal.fbx` reference with a one-off Blender post-process output, then wired the same repair into reusable CLI flags for future exports.
+- Added GUI controls for scene MOTLIST actor filtering, including `Scene actor` and the diagnostic `Allow mixed scene actors` checkbox.
 
 ## 0.6 - MOT loading and FBX rotation continuity
 

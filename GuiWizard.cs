@@ -69,6 +69,8 @@ internal sealed class GuiWizardForm : Form
     private readonly TextBox motlistDirText = new();
     private readonly ListBox animationFileList = new();
     private readonly TextBox animationFilterText = new();
+    private readonly TextBox sceneActorText = new();
+    private readonly CheckBox allowMixedSceneAnimationsCheck = new ThemedCheckBox() { Text = "Allow mixed scene actors" };
     private readonly ThemedComboBox outputFormatCombo = new();
     private readonly ThemedComboBox textureFormatCombo = new();
     private readonly ThemedNumericUpDown fbxScaleInput = new();
@@ -96,6 +98,7 @@ internal sealed class GuiWizardForm : Form
     private FlowLayoutPanel? exportOptionChecksPanel;
     private Control? motlistDirRow;
     private Control? animationFileRow;
+    private Control? sceneActorRow;
     private bool suppressExportOptionPersistence;
     private bool suppressLanguagePersistence;
     private bool initializing = true;
@@ -270,10 +273,11 @@ internal sealed class GuiWizardForm : Form
     private Control BuildAnimationPanel()
     {
         var panel = CreateGroup("Animation");
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, BackColor = DarkPanel, Padding = new Padding(4, 8, 4, 4) };
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, FieldRowHeight));
         panel.Controls.Add(grid);
@@ -303,9 +307,30 @@ internal sealed class GuiWizardForm : Form
         grid.Controls.Add(animationFileRow, 0, 2);
 
         grid.Controls.Add(CreateWidePathRow("Name filter", animationFilterText, () => { }), 0, 3);
+        sceneActorRow = CreateSceneActorRow();
+        grid.Controls.Add(sceneActorRow, 0, 4);
         var hint = new Label { Text = L("Optional. Maps to --animation-name <contains> and filters exported animation names after sources are selected."), Dock = DockStyle.Fill, ForeColor = MutedText, BackColor = DarkPanel, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
-        grid.Controls.Add(hint, 0, 4);
+        grid.Controls.Add(hint, 0, 5);
         return panel;
+    }
+
+    private TableLayoutPanel CreateSceneActorRow()
+    {
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = DarkPanel };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 152));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        sceneActorText.Dock = DockStyle.Fill;
+        sceneActorText.Margin = new Padding(0, 7, 14, 7);
+        allowMixedSceneAnimationsCheck.AutoSize = true;
+        allowMixedSceneAnimationsCheck.Margin = new Padding(0, 10, 0, 0);
+
+        row.Controls.Add(CreateFieldLabel("Scene actor"), 0, 0);
+        row.Controls.Add(sceneActorText, 1, 0);
+        row.Controls.Add(allowMixedSceneAnimationsCheck, 2, 0);
+        return row;
     }
 
     private Control BuildOutputPanel()
@@ -1875,6 +1900,8 @@ internal sealed class GuiWizardForm : Form
         tooltips.SetToolTip(languageCombo, L("Choose the GUI language. The setting is saved immediately."));
         tooltips.SetToolTip(exportOptionsModeCombo, L("Default uses the legacy CLI wizard preferences. Custom enables and saves these checkboxes."));
         tooltips.SetToolTip(animationFilterText, L("Optional. Maps to --animation-name <contains> and filters exported animation names after sources are selected."));
+        tooltips.SetToolTip(sceneActorText, L("Optional. Maps to --scene-actor <actor-id>, for example ch0100 or ch0000."));
+        tooltips.SetToolTip(allowMixedSceneAnimationsCheck, L("Diagnostic only. Maps to --allow-mixed-scene-animations and allows multiple scene actors on one armature."));
         SetPathPreviewTooltip(extractRootText, L("Extract root"));
         SetPathPreviewTooltip(exportRootText, L("Export folder"));
         SetPathPreviewTooltip(blenderPathText, L("Blender 4.5.9"));
@@ -1958,6 +1985,8 @@ internal sealed class GuiWizardForm : Form
         ["Animation files"] = "애니메이션 파일",
         ["Animation name filter"] = "애니메이션 이름 필터",
         ["Name filter"] = "이름 필터",
+        ["Scene actor"] = "씬 액터",
+        ["Allow mixed scene actors"] = "혼합 씬 액터 허용",
         ["Output"] = "출력",
         ["Format"] = "형식",
         ["Textures"] = "텍스처",
@@ -2001,6 +2030,8 @@ internal sealed class GuiWizardForm : Form
         ["Choose the GUI language. The setting is saved immediately."] = "GUI 언어를 선택합니다. 설정은 즉시 저장됩니다.",
         ["Default uses the legacy CLI wizard preferences. Custom enables and saves these checkboxes."] = "기본값은 기존 CLI 마법사 선호 설정을 사용합니다. 사용자 지정은 체크박스를 활성화하고 저장합니다.",
         ["Optional. Maps to --animation-name <contains> and filters exported animation names after sources are selected."] = "선택 사항입니다. --animation-name <contains>에 대응하며 소스 선택 후 내보낼 애니메이션 이름을 필터링합니다.",
+        ["Optional. Maps to --scene-actor <actor-id>, for example ch0100 or ch0000."] = "선택 사항입니다. --scene-actor <actor-id>에 대응합니다. 예: ch0100 또는 ch0000.",
+        ["Diagnostic only. Maps to --allow-mixed-scene-animations and allows multiple scene actors on one armature."] = "진단 전용입니다. --allow-mixed-scene-animations에 대응하며 여러 씬 액터를 하나의 아마추어에 허용합니다.",
         ["Save extract, export, Blender, texture, language, and GUI option settings."] = "추출, 내보내기, Blender, 텍스처, 언어, GUI 옵션 설정을 저장합니다.",
         ["Copy the generated CLI command preview to the clipboard."] = "생성된 CLI 명령 미리보기를 클립보드에 복사합니다.",
         ["Cancel the running export process."] = "실행 중인 내보내기 프로세스를 취소합니다.",
@@ -2215,6 +2246,15 @@ internal sealed class GuiWizardForm : Form
             args.Add("--animation-name");
             args.Add(animationFilterText.Text.Trim());
         }
+        if (includeAnimationsCheck.Checked && !string.IsNullOrWhiteSpace(sceneActorText.Text))
+        {
+            args.Add("--scene-actor");
+            args.Add(sceneActorText.Text.Trim());
+        }
+        if (includeAnimationsCheck.Checked && allowMixedSceneAnimationsCheck.Checked)
+        {
+            args.Add("--allow-mixed-scene-animations");
+        }
         if (includeAnimationsCheck.Checked
             && string.Equals(outputFormatCombo.SelectedItem?.ToString(), "fbx", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(blenderPathText.Text))
@@ -2263,6 +2303,7 @@ internal sealed class GuiWizardForm : Form
         var animationFilesEnabled = enabled && mode != GuiAnimationSourceMode.MotlistDirectory;
         animationSourceCombo.Enabled = enabled;
         animationFilterText.Enabled = enabled;
+        SetControlTreeEnabled(sceneActorRow, enabled);
         SetControlTreeEnabled(motlistDirRow, motlistDirEnabled);
         SetControlTreeEnabled(animationFileRow, animationFilesEnabled);
         if (!customOptions)
