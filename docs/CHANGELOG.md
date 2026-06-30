@@ -1,6 +1,6 @@
 ﻿# CHANGELOG
 
-## Unreleased - GUI export log files
+## 0.6.1 - Unreal-ready GUI and scene export fixes
 
 ### Changed
 

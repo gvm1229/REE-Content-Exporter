@@ -1,8 +1,8 @@
 internal static class DependencyVersions
 {
-    public const string RecordedAtUtc = "2026-06-22T08:05:00Z";
+    public const string RecordedAtUtc = "2026-06-30T06:12:29Z";
 
-    public const string ExporterCommit = "f0e65cf23598b3e3eaebda3a7d6870d6ccae54e6";
+    public const string ExporterCommit = "21bab5beb42e3c85a2611de0f3c2b137a0c40814";
 
     public const string ReeContentEditorCommit = "711c509affb0362c7af1e5343e8c57d32a1ad27d";
     public const string ReeContentEditorStatus = "origin/master plus exporter bridge patch";
