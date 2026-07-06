@@ -12,11 +12,18 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <Version>0.6.1</Version>
     <AssemblyVersion>0.6.1.0</AssemblyVersion>
     <FileVersion>0.6.1.0</FileVersion>
     <InformationalVersion>0.6.1</InformationalVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="assets\fonts\Pretendard-Regular.otf" />
+    <EmbeddedResource Include="assets\fonts\Pretendard-SemiBold.otf" />
+    <None Include="assets\fonts\Pretendard-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <Target Name="CopyTexconvToBuildOutput" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <ItemGroup>
