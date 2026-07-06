@@ -64,7 +64,7 @@ Repair rule:
 - Use the `L_ArmBlade_00` source extension alpha as the timing driver.
 - Apply that same alpha to both `L_ArmBlade_00` and `L_ArmBlade_Gimic_05`.
 - Do not let `L_ArmBlade_Gimic_05` force to full extension while `L_ArmBlade_00` is still idle.
-- For `0231` and `0510`, also restore the right blade to idle-side X placement after fixing the left extension.
+- For `0231`, `0270`, and `0510`, also restore the right blade to idle-side X placement after fixing the left extension.
 
 Diagnostic clue for future MOTLISTs: if a blade "floats from idle" or "barely extends", check whether the main blade bone has a tiny source X span and whether a Gimic bone is carrying a constant offset. This is a left/right extension-amplification problem, not a root-motion problem.
 

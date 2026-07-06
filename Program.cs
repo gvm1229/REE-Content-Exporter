@@ -3778,7 +3778,7 @@ def apply_ch6500_attack_targeted_blade_cases(actions):
     left_amplify_tokens = {'0510', '0270', '0231'}
     left_window_tokens = {'0230'}
     exception_tokens = {'0001'}
-    left_extend_right_idle_tokens = {'0231', '0510'}
+    left_extend_right_idle_tokens = {'0231', '0270', '0510'}
     raid_hold_extended_tokens = {'1012', '1014', '1016'}
     raid_end_tokens = {'1018'}
     right_idle_double_blade_tokens = {'0005'}
