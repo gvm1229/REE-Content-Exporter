@@ -1,5 +1,19 @@
 ﻿# CHANGELOG
 
+## Unreleased
+
+### Added
+
+- Expanded `.gitignore` to exclude generated export folders, release/package output, exported asset formats, logs, test output, and local scratch artifacts.
+- Added opt-in `--fix-ch6500-armblade-translation` for PRAGMATA `ch6500` Attack exports. The repair now combines source-level ArmBlade Gimic quaternion spike smoothing with a Blender-stage visible-curve correction for `ArmBlade_00` and `ArmBlade_Gimic_05` location poses.
+- Verified `ch6500_Attack_0575_Shoot_Slash_Vertical` with primary `ch6500_00`, additional `ch6500_60`, both streaming meshes, `--fbx-scale 100`, `--unreal-ready-fbx`, and Blender 4.5.9. The focused export selected one action, rewrote 12 Blender-stage ArmBlade location curves, and smoothed two right-side Gimic rotation keys.
+- Expanded the same ch6500 Attack ArmBlade repair across `ch6500_attack.motlist.1057` based on Unreal checks: known-good actions are preserved after the generic 0575-style repair, `0510`/`0270`/`0231` amplify the left blade extension, `0230` forces the left extension during frames 12-148, `0001` mirrors the fully extended left blade onto the right, and other Attack actions restore the right blade to the idle-side mirrored X placement instead of extending it.
+- Refined ch6500 Attack targeted handling for additional Unreal checks: `0231` and `0510` now keep their repaired left extension while restoring the right blade to idle-side X placement, `1016` mirrors the fully extended left blade onto the right, and `1018` now retracts both blades from full extension to idle over frames 99-107.
+- Added `docs/ch6500_armblade_anomaly_lessons.md` to classify the Attack ArmBlade anomaly types and guide future fixes for other MOTLISTs such as General.
+- Added a General MOTLIST ArmBlade auto-repair pass under `--fix-ch6500-armblade-translation`. It scopes the Attack token table to Attack actions only, detects General left-underextension from tiny left blade X spans, and restores constant high right idle offsets to idle-side X placement.
+- Added a shared Unreal-ready Blender-stage quaternion rebake and root-rotation stabilizer. Sparse pose-bone quaternion curves are now resampled at integer frames before Blender FBX export, and transient off-axis `root` rotation spikes are interpolated between surrounding clean root-yaw frames.
+- Verified the root fix on `ch6500_General_0550_Turn_180_R` and `ch6500_General_0575_Turn_180_L`: the previous frame-window root bursts were reduced to normal turn increments below 7 degrees/frame across the full General MOTLIST audit.
+
 ## 0.6.1 - Unreal-ready GUI and scene export fixes
 
 ### Changed

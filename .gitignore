@@ -1,10 +1,50 @@
-﻿bin/
+# Build output
+bin/
 obj/
+
+# IDE and local user state
 .vs/
 *.user
 *.suo
-*.zip
-latest/
-exported_files/
+
+# Local agent/orchestration state
 .omc/
 .omx/
+
+# Release and packaging artifacts
+dist/
+publish/
+artifacts/
+latest/
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# Exported asset artifacts
+exports/
+exported_files/
+*.fbx
+*.glb
+*.gltf
+*.usda
+*.usdc
+*.usd
+*.abc
+
+# Blender autosave/backup artifacts
+*.blend1
+*.blend2
+*.blend@
+
+# Logs, test output, and temporary scratch files
+*.log
+*.binlog
+*.trx
+TestResults/
+coverage/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej

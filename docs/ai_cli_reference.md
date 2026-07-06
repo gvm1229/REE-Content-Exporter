@@ -188,7 +188,8 @@ Core options:
 | `--no-textures` | Disables texture export. |
 | `--texture-format png|dds` | Texture output format. Default is `png`. |
 | `--fbx-scale <scale>` | Source FBX scale. Unreal-ready scripts use `100`. |
-| `--unreal-ready-fbx` | Runs Blender 4.5.9 after source FBX export and writes final `*_unreal.fbx` files. |
+| `--fix-ch6500-armblade-translation` | Opt-in PRAGMATA `ch6500` ArmBlade repair. The source pass smooths one-frame right ArmBlade Gimic quaternion outliers and clamps obvious translation outliers; the Unreal-ready Blender pass rewrites visible `ArmBlade_00`/`ArmBlade_Gimic_05` X curves. For Attack, it applies the verified per-action classes. For General, it uses curve-based auto-detection for left-underextension and constant high right-idle offsets. |
+| `--unreal-ready-fbx` | Runs Blender 4.5.9 after source FBX export and writes final `*_unreal.fbx` files. During Blender finalization, sparse pose-bone quaternion curves are rebaked at integer frames and transient off-axis `root` rotation spikes are stabilized before export. |
 | `--blender <path>` | Blender executable for `--unreal-ready-fbx`; the GUI passes the saved Blender path automatically. |
 | `--keep-source-fbx` | Keeps intermediate source FBX files after successful Unreal-ready Blender re-export. |
 | `--bone-spacing-reference-fbx <path>` | Opt-in Blender-stage repair that clamps non-allowlisted pose-bone local translations to a reference FBX action. Requires `--unreal-ready-fbx`; intended for scene MOTLISTs such as `md10015` where the source animation stretches the rig by animating bone spacing. |

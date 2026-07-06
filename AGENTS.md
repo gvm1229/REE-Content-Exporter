@@ -42,6 +42,14 @@ All git activity is strictly limited to this `REE-Content-Exporter` repository.
 - If a required fix appears to belong upstream, document the needed upstream change in this repository and ask the user how to proceed instead of performing git operations outside this repository.
 - Git commands are allowed only when the working directory is the `REE-Content-Exporter` repository root or a path inside it.
 
+## Generated artifact tracking rules
+
+Generated exports and local build/release artifacts should not be tracked.
+
+- Keep `exports/`, release/package folders, exported model files, logs, temporary files, and local tool state ignored unless the user explicitly asks to version a specific artifact.
+- Do not stage generated FBX/GLB/USD/Alembic outputs, texture dumps, export logs, or local verification scratch files by default.
+- Source scripts, reusable docs, patches, and project code remain trackable even when they were created to generate an artifact.
+
 ## Release artifact dependency rules
 
 Released builds must be functional immediately after download/extraction.
@@ -216,6 +224,8 @@ When exporting MOT rotations to FBX/GLB, normalize quaternion rotation keys and 
 - The same rotation-continuity rule applies to standalone MOT and MOTLIST entries because both become exported animation channels through the shared Assimp scene path. A MOTLIST animation that plays correctly in REE-Content-Editor can still show FBX/Unreal flukes if sparse quaternion channels are not normalized, hemisphere-continuous, and baked at integer frames.
 - After updating or rebasing REE-Content-Editor or RE-Engine-Lib, explicitly re-check `ContentEditor.App\CustomizedFileLoaders\MeshConversion\AssimpMeshExport.cs`: `AddMotToScene` must not write raw `clip.Rotation.rotations[i]` values directly to Assimp rotation keys for FBX export.
 - When validating a suspected MOTLIST rotation fluke, prefer a scoped single-animation export, then audit both the source FBX and Blender re-exported FBX for the expected action, expected frame range, dense integer-frame animated rotation keys, and zero adjacent rotation jumps greater than pi radians.
+- Unreal-ready Blender finalization must also protect against sparse quaternion and root-axis artifacts. The embedded Blender script rebakes sparse pose-bone quaternion curves at integer frames before export, then stabilizes transient off-axis `root` rotation spikes by interpolating them between surrounding clean single-axis root-yaw frames. This is a shared skeletal export repair, not a ch6500-specific token-table fix.
+- The `ch6500_General_0550_Turn_180_R` and `ch6500_General_0575_Turn_180_L` failures were root-axis contamination cases: the root turn was otherwise pure local Y, but a short frame window gained X/Z quaternion components and produced spin/wobble in Unreal. The verified repaired General export reduced the worst root delta to under 7 degrees/frame with zero off-axis root component in the audited turn actions.
 
 ## Intermediate source FBX handling
 
@@ -288,6 +298,24 @@ Rules:
 - GUI and legacy wizard asset pickers must resolve both indexed `natives\STM\...` paths and stripped flat paths. If one layout is missing, try the other as a fallback before returning a non-existent path.
 - Treat unsupported depth/3D TEX resources as warnings only; these textures are not needed for exported material files. Do not broaden this to missing texture sources or normal 2D texture read, DDS, or PNG conversion failures, which must remain fatal.
 - If adding a new asset script, confirm its material/MDF lookup still resolves textures from the correct source mesh.
+
+## ch6500 Attack root motion diagnostic
+
+The `ch6500_attack.motlist.1057` export with primary `ch6500_00` plus additional `ch6500_60` imports in Blender with root-location motion already present in the source FBX.
+
+- Use `ch6500_00` as the normal primary mesh and `ch6500_60` as an additional normal mesh; pass both streaming counterparts explicitly.
+- In `ch6500_Attack_0000_Omen_Move_Start_verA`, the `root` bone has local location keys before Blender Unreal normalization. The largest observed source-key jump was on root local Z at frame 93, from `192.108536` to `232.391235` source units, while `Hip` also has local Y motion.
+- Blender's Unreal re-export densifies the keys, but it preserves the same root local-translation curve. Do not classify this specific wobble as a Blender axis/unit normalization bug without first comparing the kept source FBX.
+- Do not apply the md-prefixed scene/MOTLIST bone-spacing repair to this model. The bone-spacing repair was an exception for md-prefixed scene animations and must remain opt-in, not a default export behavior.
+- If a stationary Unreal preview is desired for this action, plan a separate opt-in root-motion repair pass. Do not conflate this with bone-spacing repair.
+- If `R_ArmBlade` or `L_ArmBlade` appears detached or floating during ch6500 Attack animations, inspect the ArmBlade local translation curves separately from root motion and md bone-spacing.
+- The observed ch6500 Attack ArmBlade problem is not only large local Y translation outliers. For `ch6500_Attack_0575_Shoot_Slash_Vertical`, the correct references are: left ArmBlade idle pose for idle, right ArmBlade extended pose for extension, mirrored onto the left side by X sign.
+- Use the opt-in `--fix-ch6500-armblade-translation` flag for ch6500 Attack blade repair. It currently performs source-level ArmBlade translation/Gimic quaternion cleanup and, for Unreal-ready FBX, a Blender-stage visible-curve rewrite for `ArmBlade_00` and `ArmBlade_Gimic_05`.
+- The focused `0575` verification with `ch6500_00` plus `ch6500_60`, both streaming counterparts, `--fbx-scale 100`, and Blender 4.5.9 produced `ch6500_0575_bladefix_v4_unreal.fbx`. The final audit showed `L_ArmBlade_00`/`R_ArmBlade_00` idle X near `-1.693` before frame 38, mirrored extension near `+86.318`/`-86.318` at frame 52, and smoothed `R_ArmBlade_Gimic_01`/`R_ArmBlade_Gimic_03` frame-41 quaternion outliers.
+- The all-Attack repair uses per-action handling based on Unreal checks. Treat `1010`, `0700`, `0570`, `0575`, `0254`, `0252`, and `0250` as good after the generic 0575-style repair. Treat `0510`, `0270`, and `0231` as left-underextension cases and use the `L_ArmBlade_00` extension alpha to drive both `L_ArmBlade_00` and `L_ArmBlade_Gimic_05`; do not force the Gimic bone to full extension while the blade bone is still idle. Treat `0230` as a left-side window case that should be fully extended during frames 12-148. Treat `0001` as a right-side exception where the right blade mirrors the fully extended left blade. For other Attack actions, the right blade is idle, not extended: restore `R_ArmBlade_Gimic_05` X to the mirrored idle value and keep `R_ArmBlade_00` X at idle-side placement. The `0000` manual Unreal fix changed `R_ArmBlade_00` X from about `-107.64669` to `-21.328344`, while `0005` changed it from about `-107.646683` to `-42.656688`; both changed `R_ArmBlade_Gimic_05` from about `-52.003` to `-32.209831`.
+- Later Unreal checks showed the left-underextension group has a second concern: `0231` and `0510` still need their right blade restored to idle-side X after repairing the left extension. Raid-tail actions are a separate timing/state problem, not the generic idle-R case: `1012`, `1014`, and `1016` should mirror the fully extended left blade onto the right, while `1018` should keep both blades extended until frame 99, transition to idle during frames 99-107, and remain idle from frame 107 onward.
+- Read `docs/ch6500_armblade_anomaly_lessons.md` before applying ArmBlade fixes to non-Attack MOTLISTs such as General. Classify each action by intended state and curve failure type first; do not apply the Attack token table blindly to other MOTLISTs. The Attack token table must only run on action names containing `Attack_`.
+- A diagnostic export of `ch6500_00` without additional `ch6500_60` still showed the same `ch6500_Attack_0575_Shoot_Slash_Vertical` ArmBlade local translation pattern: `L_ArmBlade_00` and `R_ArmBlade_00` retained about `93.44` units of local Y span and about `5.43` units of local X span. Do not assume the ArmBlade issue is caused by combining `ch6500_60`; investigate MOT-to-FBX local translation axis handling or source animation semantics instead.
 
 ## Script execution rules for AI agents
 

@@ -65,6 +65,13 @@ That avoids exporting NaNs if a malformed or unsupported track produces an inval
 
 For FBX output, sparse rotation tracks are also sampled at each integer source MOT frame using the same shortest-path `Quaternion.Lerp` behavior used by REE-Content-Editor's playback path. That means a sparse source segment such as frames 24 to 26 gets an explicit exported key at frame 25 instead of leaving that frame to downstream FBX interpolation.
 
+For Unreal-ready FBX output, the Blender finalization stage performs a second representation repair before export:
+
+- Sparse pose-bone quaternion curves imported from the source FBX are normalized, made hemisphere-continuous, and resampled at every integer action frame.
+- Transient off-axis `root` rotation spikes are detected when the root track is otherwise a clean single-axis turn. The spike frames are replaced by interpolation between the surrounding clean root-axis frames.
+
+This second pass is needed because Blender imports the source FBX animation curves before it writes the final Unreal-ready FBX. If a sparse source curve or short root-axis contamination window survives into Blender, Blender can bake that visible artifact into the final file even though the direct source-FBX continuity path is correct.
+
 ## Scope
 
 This is an export-time representation fix:
@@ -74,6 +81,7 @@ This is an export-time representation fix:
 - FBX output receives integer-frame baked rotation keys; non-FBX formats keep sparse rotation keys after normalization.
 - It does not mutate the source `MotFile` data.
 - It preserves the existing frame times, translations, scales, names, and missing-bone policies.
+- Unreal-ready Blender finalization applies the same dense quaternion representation safety before the final FBX writer runs, and limits root-axis stabilization to transient off-axis spikes with clean neighboring root frames.
 
 ## Verification
 

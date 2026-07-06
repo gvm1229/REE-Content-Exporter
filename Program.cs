@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -13,6 +14,7 @@ using ContentEditor.App.FileLoaders;
 using ReeLib;
 using ReeLib.Common;
 using ReeLib.Mdf;
+using ReeLib.Mot;
 
 static string? GetArg(string[] args, string name)
 {
@@ -44,7 +46,7 @@ static void PrintUsage()
     Console.WriteLine("REE-Content-Exporter - REE Content Editor pipeline wrapper");
     Console.WriteLine("Usage:");
     Console.WriteLine("  REE-Content-Exporter-GUI [--gui|--wizard] [--reset-config] [--config <path>]");
-    Console.WriteLine("  REE-Content-Exporter-CLI --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--scene-actor <actor-id>] [--allow-mixed-scene-animations] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--unreal-ready-fbx --blender <blender.exe> [--keep-source-fbx] [--bone-spacing-reference-fbx <fbx> [--bone-spacing-reference-action <contains>] [--bone-spacing-allow-translation <bones>]]] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
+    Console.WriteLine("  REE-Content-Exporter-CLI --mesh <mesh.path> [--game <game-id>] [--additional-mesh <mesh.path> ...] [--streaming <meshstream.path>] [--additional-streaming <mesh.path=meshstream.path> ...] [--mdf <mdf2.path>] [--motlist <motlist.path> ...|--motlist-dir <folder>|--mot <mot.path> ...] --output <file.fbx|file.glb|folder> [--animation-name <contains>] [--scene-actor <actor-id>] [--allow-mixed-scene-animations] [--batch-motlist|--split-animations|--split-motlists] [--skip-missing-animation-bones|--no-placeholder-animation-bones] [--no-animations] [--no-textures] [--texture-format png|dds] [--fbx-scale <scale>] [--fix-ch6500-armblade-translation] [--unreal-ready-fbx --blender <blender.exe> [--keep-source-fbx] [--bone-spacing-reference-fbx <fbx> [--bone-spacing-reference-action <contains>] [--bone-spacing-allow-translation <bones>]]] [--include-lods] [--include-occlusion] [--allow-missing-streaming]");
     Console.WriteLine("  REE-Content-Exporter-CLI --dependency-versions");
 }
 
@@ -2229,6 +2231,7 @@ var allowMissingStreaming = HasFlag(args, "--allow-missing-streaming");
 var unrealReadyFbx = HasFlag(args, "--unreal-ready-fbx");
 var keepSourceFbx = HasFlag(args, "--keep-source-fbx");
 var allowMixedSceneAnimations = HasFlag(args, "--allow-mixed-scene-animations");
+var fixCh6500ArmBladeTranslation = HasFlag(args, "--fix-ch6500-armblade-translation");
 var blenderPath = GetArg(args, "--blender") ?? LoadWizardConfig(ResolveWizardConfigPath(wizardConfigPath))?.BlenderPath;
 var boneSpacingReferenceFbx = GetArg(args, "--bone-spacing-reference-fbx");
 var boneSpacingReferenceAction = GetArg(args, "--bone-spacing-reference-action") ?? "ch0100_General_0100_Stan_Loop";
@@ -2246,6 +2249,7 @@ Console.WriteLine($"Output: {outputPath}");
 Console.WriteLine($"Game: {exportGame}");
 Console.WriteLine($"Scene actor: {explicitSceneActor ?? inferredSceneActor ?? "-"}{(explicitSceneActor != null ? " (explicit)" : inferredSceneActor != null ? " (inferred)" : "")}");
 Console.WriteLine($"Unreal-ready FBX: {(unrealReadyFbx ? "yes" : "no")}");
+Console.WriteLine($"ch6500 ArmBlade translation repair: {(fixCh6500ArmBladeTranslation ? "yes" : "no")}");
 if (unrealReadyFbx) Console.WriteLine($"Blender: {blenderPath}");
 if (!string.IsNullOrWhiteSpace(boneSpacingReferenceFbx))
 {
@@ -2307,6 +2311,14 @@ if (includeAnimations)
             motions.Add((PathUtils.GetFilenameWithoutExtensionOrVersion(motPath).ToString(), mot));
         Console.WriteLine($"Loaded mot {mot.Name}");
     }
+}
+
+if (fixCh6500ArmBladeTranslation)
+{
+    var repair = ApplyCh6500ArmBladeTranslationRepair(motions.Select(m => m.Motion));
+    Console.WriteLine($"CH6500_ARMBLADE_REPAIR translationClips={repair.TranslationClipCount} translationKeys={repair.TranslationKeyCount} rotationClips={repair.RotationClipCount} rotationKeys={repair.RotationKeyCount}");
+    foreach (var line in repair.Lines)
+        Console.WriteLine($"CH6500_ARMBLADE_REPAIR_DETAIL {line}");
 }
 
 var name = PathUtils.GetFilenameWithoutExtensionOrVersion(meshPath).ToString();
@@ -2462,7 +2474,7 @@ if (unrealReadyFbx)
         .Where(path => Path.GetExtension(path).Equals(".fbx", StringComparison.OrdinalIgnoreCase))
         .ToList();
     if (fbxSources.Count == 0) throw new ArgumentException("--unreal-ready-fbx did not produce any source FBX files.");
-    ReexportUnrealReadyFbxFiles(fbxSources, blenderPath!, keepSourceFbx, boneSpacingReferenceFbx, boneSpacingReferenceAction, boneSpacingAllowTranslation, progress);
+    ReexportUnrealReadyFbxFiles(fbxSources, blenderPath!, keepSourceFbx, boneSpacingReferenceFbx, boneSpacingReferenceAction, boneSpacingAllowTranslation, fixCh6500ArmBladeTranslation, progress);
 }
 
 progress.WriteLine("DONE");
@@ -2651,6 +2663,272 @@ static IReadOnlyList<string> ParseBoneSpacingAllowTranslation(string? raw)
     return result;
 }
 
+static (int TranslationClipCount, int TranslationKeyCount, int RotationClipCount, int RotationKeyCount, List<string> Lines) ApplyCh6500ArmBladeTranslationRepair(IEnumerable<MotFileBase> motionFiles)
+{
+    const string leftBlade = "L_ArmBlade_00";
+    const string rightBlade = "R_ArmBlade_00";
+    string[] rotationSpikeBones = ["R_ArmBlade_Gimic_01", "R_ArmBlade_Gimic_03"];
+    var translationClipCount = 0;
+    var translationKeyCount = 0;
+    var rotationClipCount = 0;
+    var rotationKeyCount = 0;
+    var lines = new List<string>();
+
+    foreach (var mot in motionFiles.OfType<MotFile>().Distinct())
+    {
+        var clipsByBone = mot.BoneClips
+            .Select(clip => (Clip: clip, BoneName: GetMotionClipBoneName(mot, clip)))
+            .Where(item => item.BoneName != null)
+            .GroupBy(item => item.BoneName!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Clip, StringComparer.OrdinalIgnoreCase);
+
+        if (!clipsByBone.TryGetValue(leftBlade, out var leftBladeClip)
+            || !clipsByBone.TryGetValue(rightBlade, out var rightBladeClip)
+            || !leftBladeClip.HasTranslation
+            || !rightBladeClip.HasTranslation
+            || leftBladeClip.Translation?.translations == null
+            || rightBladeClip.Translation?.translations == null)
+        {
+            continue;
+        }
+
+        var originalTranslations = clipsByBone
+            .Where(kvp => kvp.Value.HasTranslation && kvp.Value.Translation?.translations is { Length: > 0 })
+            .ToDictionary(
+                kvp => kvp.Key,
+                kvp => (Translations: kvp.Value.Translation!.translations!.ToArray(), Frames: kvp.Value.Translation.frameIndexes?.ToArray()),
+                StringComparer.OrdinalIgnoreCase);
+
+        var leftBladeOriginal = originalTranslations[leftBlade];
+        var rightBladeOriginal = originalTranslations[rightBlade];
+        var leftIdleY = SelectCh6500ArmBladeRestY(leftBladeOriginal.Translations);
+        var leftExtendedY = SelectCh6500ArmBladeHighY(leftBladeOriginal.Translations);
+        var rightIdleY = SelectCh6500ArmBladeHighY(rightBladeOriginal.Translations);
+        var rightExtendedY = SelectCh6500ArmBladeRestY(rightBladeOriginal.Translations);
+
+        foreach (var item in clipsByBone.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var boneName = item.Key;
+            var clip = item.Value;
+            if (!clip.HasTranslation || clip.Translation?.translations == null || clip.Translation.translations.Length == 0)
+                continue;
+
+            if (!boneName.StartsWith("L_ArmBlade_", StringComparison.OrdinalIgnoreCase)
+                && !boneName.StartsWith("R_ArmBlade_", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!TryGetCh6500ArmBladeCounterpart(boneName, out var counterpartBone)
+                || !originalTranslations.TryGetValue(counterpartBone, out var counterpartOriginal)
+                || !originalTranslations.TryGetValue(boneName, out var original))
+            {
+                continue;
+            }
+
+            var isLeft = boneName.StartsWith("L_", StringComparison.OrdinalIgnoreCase);
+            var idleReferenceBone = isLeft ? boneName : counterpartBone;
+            if (!originalTranslations.TryGetValue(idleReferenceBone, out var idleReferenceOriginal))
+                continue;
+
+            var translations = clip.Translation.translations;
+            var changed = 0;
+            for (var i = 0; i < translations.Length; i++)
+            {
+                var frame = GetTrackFrame(clip.Translation, i);
+                var current = translations[i];
+                var idleReference = SampleCh6500VectorTrack(idleReferenceOriginal.Translations, idleReferenceOriginal.Frames, 0);
+                Vector3 desired;
+                if (isLeft)
+                {
+                    var leftSignal = SampleCh6500VectorTrack(leftBladeOriginal.Translations, leftBladeOriginal.Frames, frame).Y;
+                    var alpha = NormalizeCh6500BladeAlpha(leftSignal, leftIdleY, leftExtendedY);
+                    var rightExtended = SampleCh6500VectorTrack(counterpartOriginal.Translations, counterpartOriginal.Frames, frame);
+                    desired = Vector3.Lerp(idleReference, MirrorCh6500RightArmBladeTranslationToLeft(rightExtended), alpha);
+                }
+                else
+                {
+                    var rightSignal = SampleCh6500VectorTrack(rightBladeOriginal.Translations, rightBladeOriginal.Frames, frame).Y;
+                    var alpha = NormalizeCh6500BladeAlpha(rightSignal, rightIdleY, rightExtendedY);
+                    var rightExtended = SampleCh6500VectorTrack(original.Translations, original.Frames, frame);
+                    desired = Vector3.Lerp(idleReference, rightExtended, alpha);
+                }
+
+                if (Vector3.DistanceSquared(current, desired) <= 0.000001f)
+                    continue;
+
+                translations[i] = desired;
+                changed++;
+            }
+
+            if (changed == 0)
+                continue;
+
+            translationClipCount++;
+            translationKeyCount += changed;
+            lines.Add($"motion={mot.Name} bone={boneName} changedTranslationKeys={changed}/{translations.Length}");
+        }
+
+        foreach (var boneName in rotationSpikeBones)
+        {
+            if (!clipsByBone.TryGetValue(boneName, out var clip)
+                || !clip.HasRotation
+                || clip.Rotation?.rotations == null
+                || clip.Rotation.rotations.Length < 3)
+            {
+                continue;
+            }
+
+            var changed = RepairCh6500OneFrameRotationOutliers(clip.Rotation);
+            if (changed == 0) continue;
+
+            rotationClipCount++;
+            rotationKeyCount += changed;
+            lines.Add($"motion={mot.Name} bone={boneName} changedRotationKeys={changed}/{clip.Rotation.rotations.Length}");
+        }
+    }
+
+    return (translationClipCount, translationKeyCount, rotationClipCount, rotationKeyCount, lines);
+}
+
+static string? GetMotionClipBoneName(MotFile mot, BoneMotionClip clip)
+    => clip.ClipHeader.boneName
+        ?? clip.ClipHeader.OriginalName
+        ?? mot.GetBoneByHash(clip.ClipHeader.boneHash)?.boneName;
+
+static float SelectCh6500ArmBladeRestY(IReadOnlyList<Vector3> translations)
+{
+    var maxAbsY = translations.Select(v => MathF.Abs(v.Y)).DefaultIfEmpty(0).Max();
+    if (maxAbsY <= 0.000001f) return 0;
+
+    var lowThreshold = maxAbsY * 0.25f;
+    var noiseThreshold = maxAbsY * 0.001f;
+    var lowCluster = translations
+        .Select(v => v.Y)
+        .Where(y => MathF.Abs(y) <= lowThreshold && MathF.Abs(y) > noiseThreshold)
+        .OrderBy(y => y)
+        .ToArray();
+
+    if (lowCluster.Length > 0)
+        return lowCluster[lowCluster.Length / 2];
+
+    return translations
+        .Select(v => v.Y)
+        .OrderBy(y => MathF.Abs(y))
+        .First();
+}
+
+static float SelectCh6500ArmBladeHighY(IReadOnlyList<Vector3> translations)
+    => translations
+        .Select(v => v.Y)
+        .OrderByDescending(y => MathF.Abs(y))
+        .FirstOrDefault();
+
+static bool TryGetCh6500ArmBladeCounterpart(string boneName, out string counterpart)
+{
+    if (boneName.StartsWith("L_ArmBlade_", StringComparison.OrdinalIgnoreCase))
+    {
+        counterpart = "R_" + boneName[2..];
+        return true;
+    }
+    if (boneName.StartsWith("R_ArmBlade_", StringComparison.OrdinalIgnoreCase))
+    {
+        counterpart = "L_" + boneName[2..];
+        return true;
+    }
+
+    counterpart = string.Empty;
+    return false;
+}
+
+static float GetTrackFrame(Track track, int index)
+{
+    if (track.frameIndexes != null && index >= 0 && index < track.frameIndexes.Length)
+        return track.frameIndexes[index];
+    return 0;
+}
+
+static Vector3 SampleCh6500VectorTrack(IReadOnlyList<Vector3> values, IReadOnlyList<int>? frames, float frame)
+{
+    if (values.Count == 0) return Vector3.Zero;
+    if (frames == null || frames.Count == 0) return values[0];
+
+    var lastValueIndex = values.Count - 1;
+    if (frame <= frames[0]) return values[0];
+    for (var i = 1; i < frames.Count; i++)
+    {
+        if (frames[i] < frame) continue;
+        var first = Math.Min(i - 1, lastValueIndex);
+        var second = Math.Min(i, lastValueIndex);
+        var frameSpan = frames[i] - frames[i - 1];
+        var interpolation = frameSpan <= 0 ? 0 : (frame - frames[i - 1]) / frameSpan;
+        return Vector3.Lerp(values[first], values[second], Math.Clamp(interpolation, 0, 1));
+    }
+
+    return values[lastValueIndex];
+}
+
+static float NormalizeCh6500BladeAlpha(float value, float idleValue, float extendedValue)
+{
+    var range = extendedValue - idleValue;
+    if (MathF.Abs(range) <= 0.000001f) return 0;
+    return Math.Clamp((value - idleValue) / range, 0, 1);
+}
+
+static Vector3 MirrorCh6500RightArmBladeTranslationToLeft(Vector3 right)
+    => new(-right.X, right.Y, right.Z);
+
+static int RepairCh6500OneFrameRotationOutliers(Track rotationTrack)
+{
+    var rotations = rotationTrack.rotations;
+    if (rotations == null || rotations.Length < 3) return 0;
+
+    var changed = 0;
+    for (var i = 1; i < rotations.Length - 1; i++)
+    {
+        var previous = NormalizeCh6500Quaternion(rotations[i - 1]);
+        var current = NormalizeCh6500Quaternion(rotations[i]);
+        var next = NormalizeCh6500Quaternion(rotations[i + 1]);
+        if (Quaternion.Dot(previous, next) < 0)
+            next = NegateCh6500Quaternion(next);
+
+        var angleToPrevious = Ch6500QuaternionAngleDegrees(previous, current);
+        var angleToNext = Ch6500QuaternionAngleDegrees(current, next);
+        var bridgeAngle = Ch6500QuaternionAngleDegrees(previous, next);
+        if (angleToPrevious < 120 || angleToNext < 120 || bridgeAngle > 60)
+            continue;
+
+        var previousFrame = GetTrackFrame(rotationTrack, i - 1);
+        var currentFrame = GetTrackFrame(rotationTrack, i);
+        var nextFrame = GetTrackFrame(rotationTrack, i + 1);
+        var frameSpan = nextFrame - previousFrame;
+        var interpolation = frameSpan <= 0 ? 0.5f : Math.Clamp((currentFrame - previousFrame) / frameSpan, 0, 1);
+        var repaired = Quaternion.Normalize(Quaternion.Slerp(previous, next, interpolation));
+        if (repaired.W < 0)
+            repaired = NegateCh6500Quaternion(repaired);
+
+        rotations[i] = repaired;
+        changed++;
+    }
+
+    return changed;
+}
+
+static Quaternion NormalizeCh6500Quaternion(Quaternion rotation)
+{
+    var lengthSquared = rotation.LengthSquared();
+    if (!float.IsFinite(lengthSquared) || lengthSquared <= 0.000001f) return Quaternion.Identity;
+    return Quaternion.Normalize(rotation);
+}
+
+static Quaternion NegateCh6500Quaternion(Quaternion rotation)
+    => new(-rotation.X, -rotation.Y, -rotation.Z, -rotation.W);
+
+static float Ch6500QuaternionAngleDegrees(Quaternion a, Quaternion b)
+{
+    var dot = MathF.Abs(Quaternion.Dot(a, b));
+    dot = Math.Clamp(dot, 0, 1);
+    return 2 * MathF.Acos(dot) * 180 / MathF.PI;
+}
+
 static void RequireExistingFile(string path, string optionName)
 {
     if (string.IsNullOrWhiteSpace(path))
@@ -2748,6 +3026,7 @@ static void ReexportUnrealReadyFbxFiles(
     string? boneSpacingReferenceFbx,
     string boneSpacingReferenceAction,
     IReadOnlyList<string> boneSpacingAllowTranslation,
+    bool fixCh6500ArmBladeTranslation,
     ProgressStatus progress)
 {
     var scriptPath = Path.Combine(Path.GetTempPath(), $"ree_unreal_fbx_reexport_{Guid.NewGuid():N}.py");
@@ -2775,6 +3054,7 @@ static void ReexportUnrealReadyFbxFiles(
                 boneSpacingReferenceFbx,
                 boneSpacingReferenceAction,
                 boneSpacingAllowTranslation,
+                fixCh6500ArmBladeTranslation,
                 progress);
             var status = ReadBlenderStatus(statusPath);
             File.Delete(statusPath);
@@ -2816,6 +3096,7 @@ static void RunBlenderReexport(
     string? boneSpacingReferenceFbx,
     string boneSpacingReferenceAction,
     IReadOnlyList<string> boneSpacingAllowTranslation,
+    bool fixCh6500ArmBladeTranslation,
     ProgressStatus progress)
 {
     var psi = new ProcessStartInfo
@@ -2838,6 +3119,7 @@ static void RunBlenderReexport(
     psi.ArgumentList.Add(boneSpacingReferenceFbx ?? "");
     psi.ArgumentList.Add(boneSpacingReferenceAction);
     psi.ArgumentList.Add(string.Join(",", boneSpacingAllowTranslation));
+    psi.ArgumentList.Add(fixCh6500ArmBladeTranslation ? "1" : "0");
 
     using var process = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start Blender: {blenderPath}");
     process.OutputDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) progress.WriteLine(e.Data); };
@@ -2932,6 +3214,7 @@ import bpy
 import builtins
 import sys
 from pathlib import Path
+from mathutils import Quaternion
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 src = Path(argv[0])
@@ -2942,6 +3225,7 @@ total = int(argv[4])
 reference_fbx = Path(argv[5]) if len(argv) > 5 and argv[5] else None
 reference_action_filter = argv[6] if len(argv) > 6 else ''
 translation_allowlist = {part.strip().lower() for part in (argv[7] if len(argv) > 7 else '').split(',') if part.strip()}
+fix_ch6500_armblade = len(argv) > 8 and argv[8] == '1'
 
 def write_status(status, reason='', action_count=0):
     status_path.write_text(f'STATUS={status}\nREASON={reason}\nACTION_COUNT={action_count}\n', encoding='utf-8')
@@ -3033,6 +3317,645 @@ def apply_bone_spacing_reference(actions, reference_locations):
         print(f'BONE_SPACING_REPAIR action={action.name} clamped_bones={action_bones} allow_translation={",".join(sorted(allow))}', flush=True)
     print(f'BONE_SPACING_REPAIR_TOTAL actions={len(actions)} clamped_bones={total_bones} clamped_curves={total_curves}', flush=True)
 
+def find_location_curves(action, bone):
+    curves = {}
+    for curve in action.fcurves:
+        if curve.array_index not in (0, 1, 2):
+            continue
+        if not curve.data_path.endswith('.location'):
+            continue
+        if get_pose_bone_name(curve.data_path) == bone:
+            curves[curve.array_index] = curve
+    return curves
+
+def find_quaternion_rotation_groups(action):
+    grouped = {}
+    for curve in action.fcurves:
+        if curve.array_index not in (0, 1, 2, 3):
+            continue
+        if not curve.data_path.endswith('.rotation_quaternion'):
+            continue
+        bone = get_pose_bone_name(curve.data_path)
+        if not bone:
+            continue
+        grouped.setdefault(bone, {})[curve.array_index] = curve
+    return {bone: curves for bone, curves in grouped.items() if all(axis in curves for axis in range(4))}
+
+def normalize_quaternion_values(values, previous=None):
+    length_squared = sum(value * value for value in values)
+    if length_squared <= 0.000000001:
+        return previous if previous is not None else (1.0, 0.0, 0.0, 0.0)
+    quat = Quaternion((values[0], values[1], values[2], values[3])).normalized()
+    current = (quat.w, quat.x, quat.y, quat.z)
+    if previous is not None:
+        dot = sum(previous[index] * current[index] for index in range(4))
+        if dot < 0.0:
+            current = tuple(-value for value in current)
+    return current
+
+def lerp_quaternion_values(first, second, alpha):
+    if sum(first[index] * second[index] for index in range(4)) < 0.0:
+        second = tuple(-value for value in second)
+    values = tuple(first[index] + (second[index] - first[index]) * alpha for index in range(4))
+    return normalize_quaternion_values(values, first)
+
+def replace_quaternion_rotation_curves(action, bone, frame_values):
+    data_path = f'pose.bones["{bone}"].rotation_quaternion'
+    for axis in range(4):
+        curve = action.fcurves.find(data_path, index=axis)
+        if curve is None:
+            curve = action.fcurves.new(data_path=data_path, index=axis)
+        while len(curve.keyframe_points) > 0:
+            curve.keyframe_points.remove(curve.keyframe_points[-1], fast=True)
+        for frame, values in frame_values:
+            curve.keyframe_points.insert(frame, values[axis], options={'FAST'})
+        for key in curve.keyframe_points:
+            key.interpolation = 'LINEAR'
+        curve.update()
+
+def resample_sparse_pose_quaternion_curves(actions):
+    changed_actions = 0
+    changed_groups = 0
+    changed_curves = 0
+    written_keys = 0
+    for action in actions:
+        start = int(action.frame_range[0]) if action.frame_range else 0
+        end = int(action.frame_range[1]) if action.frame_range else start
+        if end <= start:
+            continue
+        dense_frames = list(range(start, end + 1))
+        action_groups = 0
+        for bone, curves in find_quaternion_rotation_groups(action).items():
+            source_frames = sorted({round(key.co.x, 6) for curve in curves.values() for key in curve.keyframe_points})
+            if len(source_frames) <= 1 or len(source_frames) >= len(dense_frames):
+                continue
+
+            source_values = []
+            previous = None
+            for frame in source_frames:
+                values = [curves[axis].evaluate(frame) for axis in range(4)]
+                current = normalize_quaternion_values(values, previous)
+                source_values.append((frame, current))
+                previous = current
+
+            if len(source_values) <= 1:
+                continue
+
+            frame_values = []
+            source_index = 0
+            for frame in dense_frames:
+                while source_index + 1 < len(source_values) and source_values[source_index + 1][0] < frame:
+                    source_index += 1
+                if frame <= source_values[0][0]:
+                    current = source_values[0][1]
+                elif frame >= source_values[-1][0]:
+                    current = source_values[-1][1]
+                else:
+                    while source_index + 1 < len(source_values) and source_values[source_index + 1][0] < frame:
+                        source_index += 1
+                    first_frame, first_quat = source_values[source_index]
+                    second_frame, second_quat = source_values[source_index + 1]
+                    span = max(0.000001, second_frame - first_frame)
+                    alpha = max(0.0, min(1.0, (frame - first_frame) / span))
+                    current = lerp_quaternion_values(first_quat, second_quat, alpha)
+                frame_values.append((frame, current))
+
+            replace_quaternion_rotation_curves(action, bone, frame_values)
+            action_groups += 1
+            changed_groups += 1
+            changed_curves += 4
+            written_keys += len(frame_values) * 4
+
+        if action_groups:
+            changed_actions += 1
+            print(f'QUATERNION_REBAKE action={action.name} rotation_groups={action_groups} frames={len(dense_frames)}', flush=True)
+
+    print(f'QUATERNION_REBAKE_TOTAL actions={changed_actions} rotation_groups={changed_groups} curves={changed_curves} keys={written_keys}', flush=True)
+
+def make_axis_quaternion(axis, angle):
+    import math
+    values = [math.cos(angle * 0.5), 0.0, 0.0, 0.0]
+    values[axis + 1] = math.sin(angle * 0.5)
+    return tuple(values)
+
+def unwrap_angle(angle, reference):
+    import math
+    while angle - reference > math.pi:
+        angle -= math.tau
+    while angle - reference < -math.pi:
+        angle += math.tau
+    return angle
+
+def axis_angle_from_quaternion(values, axis, reference=None):
+    import math
+    angle = 2.0 * math.atan2(values[axis + 1], values[0])
+    if reference is not None:
+        angle = unwrap_angle(angle, reference)
+    return angle
+
+def stabilize_root_rotation_axis(actions):
+    import math
+    changed_actions = 0
+    changed_runs = 0
+    changed_keys = 0
+    axis_names = ('X', 'Y', 'Z')
+    off_axis_threshold = 0.02
+    max_bad_fraction = 0.35
+
+    for action in actions:
+        curves = find_quaternion_rotation_groups(action).get('root')
+        if curves is None:
+            continue
+        start = int(action.frame_range[0]) if action.frame_range else 0
+        end = int(action.frame_range[1]) if action.frame_range else start
+        if end <= start:
+            continue
+
+        frames = list(range(start, end + 1))
+        values = []
+        previous = None
+        for frame in frames:
+            current = normalize_quaternion_values([curves[axis].evaluate(frame) for axis in range(4)], previous)
+            values.append(current)
+            previous = current
+
+        component_sums = [sum(abs(value[axis + 1]) for value in values) for axis in range(3)]
+        primary_axis = max(range(3), key=lambda axis: component_sums[axis])
+        off_axis = []
+        for value in values:
+            off_axis.append(math.sqrt(sum(value[axis + 1] * value[axis + 1] for axis in range(3) if axis != primary_axis)))
+        bad = [amount > off_axis_threshold for amount in off_axis]
+        bad_count = sum(1 for item in bad if item)
+        if bad_count < 1 or bad_count > max(2, int(len(frames) * max_bad_fraction)):
+            continue
+        if max(off_axis) < 0.05:
+            continue
+
+        replacements = list(values)
+        run_count = 0
+        index = 0
+        while index < len(frames):
+            if not bad[index]:
+                index += 1
+                continue
+            run_start = index
+            while index < len(frames) and bad[index]:
+                index += 1
+            run_end = index - 1
+            before = run_start - 1
+            after = run_end + 1
+            if before < 0 or after >= len(frames):
+                continue
+
+            before_angle = axis_angle_from_quaternion(replacements[before], primary_axis)
+            after_angle = axis_angle_from_quaternion(values[after], primary_axis, before_angle)
+            span = max(1, after - before)
+            for value_index in range(run_start, run_end + 1):
+                alpha = (value_index - before) / span
+                angle = before_angle + (after_angle - before_angle) * alpha
+                replacements[value_index] = make_axis_quaternion(primary_axis, angle)
+                changed_keys += 4
+            run_count += 1
+
+        if run_count == 0:
+            continue
+
+        continuous = []
+        previous = None
+        for value in replacements:
+            current = normalize_quaternion_values(value, previous)
+            continuous.append(current)
+            previous = current
+        replace_quaternion_rotation_curves(action, 'root', list(zip(frames, continuous)))
+        changed_actions += 1
+        changed_runs += run_count
+        print(
+            f'ROOT_ROTATION_STABILIZE action={action.name} axis={axis_names[primary_axis]} '
+            f'runs={run_count} bad_frames={bad_count} max_off_axis={max(off_axis):.6f}',
+            flush=True
+        )
+
+    print(f'ROOT_ROTATION_STABILIZE_TOTAL actions={changed_actions} runs={changed_runs} keys={changed_keys}', flush=True)
+
+def eval_location(curves, frame):
+    return tuple(curves[axis].evaluate(frame) if axis in curves else 0.0 for axis in range(3))
+
+def replace_location_curve(action, bone, axis, values_by_frame):
+    data_path = f'pose.bones["{bone}"].location'
+    curve = None
+    for candidate in action.fcurves:
+        if candidate.array_index == axis and candidate.data_path.endswith('.location') and get_pose_bone_name(candidate.data_path) == bone:
+            curve = candidate
+            break
+    if curve is None:
+        curve = action.fcurves.new(data_path=data_path, index=axis)
+    while len(curve.keyframe_points) > 0:
+        curve.keyframe_points.remove(curve.keyframe_points[-1], fast=True)
+    for frame, value in values_by_frame:
+        curve.keyframe_points.insert(frame, value, options={'FAST'})
+    for key in curve.keyframe_points:
+        key.interpolation = 'LINEAR'
+    curve.update()
+
+def mix_location(a, b, alpha):
+    return tuple(a[axis] + (b[axis] - a[axis]) * alpha for axis in range(3))
+
+def mirror_right_location_to_left(values):
+    return (-values[0], values[1], values[2])
+
+def mirror_left_location_to_right(values):
+    # Closed/idling ArmBlade values are centered near zero/negative-rest and should
+    # be copied, while extended positive-left values mirror across X.
+    x = -values[0] if values[0] > 10.0 else values[0]
+    return (x, values[1], values[2])
+
+def action_has_token(action, token):
+    return token.lower() in action.name.lower()
+
+def get_action_by_token(actions, token):
+    for action in actions:
+        if action_has_token(action, token):
+            return action
+    return None
+
+def get_reference_ch6500_extension(actions):
+    ref_action = get_action_by_token(actions, '0575')
+    if ref_action is None:
+        ref_action = get_action_by_token(actions, '0570')
+    if ref_action is None:
+        return None
+
+    curves = {
+        'L_ArmBlade_00': find_location_curves(ref_action, 'L_ArmBlade_00'),
+        'L_ArmBlade_Gimic_05': find_location_curves(ref_action, 'L_ArmBlade_Gimic_05'),
+    }
+    if not all(len(curves[bone]) == 3 for bone in curves):
+        return None
+
+    start = int(ref_action.frame_range[0]) if ref_action.frame_range else 0
+    end = int(ref_action.frame_range[1]) if ref_action.frame_range else start
+    frames = list(range(start, end + 1))
+    blade_frame = max(frames, key=lambda frame: eval_location(curves['L_ArmBlade_00'], frame)[0])
+    gimic_frame = max(frames, key=lambda frame: eval_location(curves['L_ArmBlade_Gimic_05'], frame)[0])
+    left_blade = eval_location(curves['L_ArmBlade_00'], blade_frame)
+    left_gimic = eval_location(curves['L_ArmBlade_Gimic_05'], gimic_frame)
+    return {
+        'L_ArmBlade_00': left_blade,
+        'R_ArmBlade_00': mirror_left_location_to_right(left_blade),
+        'L_ArmBlade_Gimic_05': left_gimic,
+        'R_ArmBlade_Gimic_05': mirror_left_location_to_right(left_gimic),
+    }
+
+def rewrite_location_frames(action, bone, frame_values):
+    for axis in range(3):
+        replace_location_curve(action, bone, axis, [(frame, values[axis]) for frame, values in frame_values])
+
+def force_bone_constant(action, bone, value, start, end):
+    rewrite_location_frames(action, bone, [(frame, value) for frame in range(start, end + 1)])
+    return True
+
+def force_bone_x_constant(action, bone, value, start, end):
+    replace_location_curve(action, bone, 0, [(frame, value) for frame in range(start, end + 1)])
+    return True
+
+def force_bone_x_transition(action, bone, extended_x, transition_start, transition_end, idle_x=0.0):
+    start = int(action.frame_range[0]) if action.frame_range else 0
+    end = int(action.frame_range[1]) if action.frame_range else start
+    values = []
+    span = max(1, transition_end - transition_start)
+    for frame in range(start, end + 1):
+        if frame <= transition_start:
+            value = extended_x
+        elif frame >= transition_end:
+            value = idle_x
+        else:
+            alpha = (frame - transition_start) / span
+            value = extended_x + (idle_x - extended_x) * alpha
+        values.append((frame, value))
+    replace_location_curve(action, bone, 0, values)
+    return True
+
+def force_bone_window(action, bone, value, window_start, window_end):
+    curves = find_location_curves(action, bone)
+    if len(curves) != 3:
+        return False
+    start = int(action.frame_range[0]) if action.frame_range else 0
+    end = int(action.frame_range[1]) if action.frame_range else start
+    frame_values = []
+    for frame in range(start, end + 1):
+        if window_start <= frame <= window_end:
+            frame_values.append((frame, value))
+        else:
+            frame_values.append((frame, eval_location(curves, frame)))
+    rewrite_location_frames(action, bone, frame_values)
+    return True
+
+def amplify_left_extension(action, bone, full_extension):
+    curves = find_location_curves(action, bone)
+    if len(curves) != 3:
+        return False
+    start = int(action.frame_range[0]) if action.frame_range else 0
+    end = int(action.frame_range[1]) if action.frame_range else start
+    frames = list(range(start, end + 1))
+    idle = eval_location(curves, start)
+    xs = [(frame, eval_location(curves, frame)[0]) for frame in frames]
+    peak_frame, peak_x = max(xs, key=lambda item: item[1])
+    span = peak_x - idle[0]
+    if abs(span) <= 0.05:
+        force_bone_constant(action, bone, full_extension, start, end)
+        return True
+
+    frame_values = []
+    for frame in frames:
+        current = eval_location(curves, frame)
+        alpha = max(0.0, min(1.0, (current[0] - idle[0]) / span))
+        frame_values.append((frame, mix_location(idle, full_extension, alpha)))
+    rewrite_location_frames(action, bone, frame_values)
+    return True
+
+def amplify_left_extension_pair(action, blade_bone, blade_full_extension, gimic_bone, gimic_full_extension):
+    blade_curves = find_location_curves(action, blade_bone)
+    gimic_curves = find_location_curves(action, gimic_bone)
+    if len(blade_curves) != 3 or len(gimic_curves) != 3:
+        return 0
+    start = int(action.frame_range[0]) if action.frame_range else 0
+    end = int(action.frame_range[1]) if action.frame_range else start
+    frames = list(range(start, end + 1))
+    blade_idle = eval_location(blade_curves, start)
+    gimic_idle = eval_location(gimic_curves, start)
+    xs = [(frame, eval_location(blade_curves, frame)[0]) for frame in frames]
+    peak_frame, peak_x = max(xs, key=lambda item: item[1])
+    span = peak_x - blade_idle[0]
+    if abs(span) <= 0.05:
+        force_bone_constant(action, blade_bone, blade_full_extension, start, end)
+        force_bone_constant(action, gimic_bone, gimic_full_extension, start, end)
+        return 6
+
+    blade_values = []
+    gimic_values = []
+    for frame in frames:
+        current = eval_location(blade_curves, frame)
+        alpha = max(0.0, min(1.0, (current[0] - blade_idle[0]) / span))
+        blade_values.append((frame, mix_location(blade_idle, blade_full_extension, alpha)))
+        gimic_values.append((frame, mix_location(gimic_idle, gimic_full_extension, alpha)))
+    rewrite_location_frames(action, blade_bone, blade_values)
+    rewrite_location_frames(action, gimic_bone, gimic_values)
+    return 6
+
+def amplify_left_extension_pair_x(action, blade_bone, blade_extended_x, gimic_bone, gimic_extended_x):
+    blade_curves = find_location_curves(action, blade_bone)
+    gimic_curves = find_location_curves(action, gimic_bone)
+    if 0 not in blade_curves or 0 not in gimic_curves:
+        return 0
+    start = int(action.frame_range[0]) if action.frame_range else 0
+    end = int(action.frame_range[1]) if action.frame_range else start
+    frames = list(range(start, end + 1))
+    blade_idle_x = blade_curves[0].evaluate(start)
+    gimic_idle_x = gimic_curves[0].evaluate(start)
+    blade_values = [(frame, blade_curves[0].evaluate(frame)) for frame in frames]
+    peak_frame, peak_x = max(blade_values, key=lambda item: item[1])
+    span = peak_x - blade_idle_x
+    if abs(span) <= 0.05:
+        return 0
+    blade_replacement = []
+    gimic_replacement = []
+    for frame, current_x in blade_values:
+        alpha = max(0.0, min(1.0, (current_x - blade_idle_x) / span))
+        blade_replacement.append((frame, blade_idle_x + (blade_extended_x - blade_idle_x) * alpha))
+        gimic_replacement.append((frame, gimic_idle_x + (gimic_extended_x - gimic_idle_x) * alpha))
+    replace_location_curve(action, blade_bone, 0, blade_replacement)
+    replace_location_curve(action, gimic_bone, 0, gimic_replacement)
+    return 2
+
+def mirror_right_from_left(action, left_bone, right_bone):
+    left_curves = find_location_curves(action, left_bone)
+    if len(left_curves) != 3:
+        return False
+    start = int(action.frame_range[0]) if action.frame_range else 0
+    end = int(action.frame_range[1]) if action.frame_range else start
+    frame_values = [(frame, mirror_left_location_to_right(eval_location(left_curves, frame))) for frame in range(start, end + 1)]
+    rewrite_location_frames(action, right_bone, frame_values)
+    return True
+
+def force_right_idle_x(action, blade_x=0.0):
+    start = int(action.frame_range[0]) if action.frame_range else 0
+    end = int(action.frame_range[1]) if action.frame_range else start
+    changed = 0
+    if force_bone_x_constant(action, 'R_ArmBlade_00', blade_x, start, end):
+        changed += 1
+    if force_bone_x_constant(action, 'R_ArmBlade_Gimic_05', 0.0, start, end):
+        changed += 1
+    return changed
+
+def force_raid_end_retraction(action):
+    left_blade_curves = find_location_curves(action, 'L_ArmBlade_00')
+    left_gimic_curves = find_location_curves(action, 'L_ArmBlade_Gimic_05')
+    if len(left_blade_curves) != 3 or len(left_gimic_curves) != 3:
+        return 0
+    start = int(action.frame_range[0]) if action.frame_range else 0
+    left_blade_x = eval_location(left_blade_curves, start)[0]
+    left_gimic_x = eval_location(left_gimic_curves, start)[0]
+    changed = 0
+    if force_bone_x_transition(action, 'L_ArmBlade_00', left_blade_x, 99, 107, 0.0):
+        changed += 1
+    if force_bone_x_transition(action, 'L_ArmBlade_Gimic_05', left_gimic_x, 99, 107, 0.0):
+        changed += 1
+    if force_bone_x_transition(action, 'R_ArmBlade_00', -left_blade_x, 99, 107, 0.0):
+        changed += 1
+    if force_bone_x_transition(action, 'R_ArmBlade_Gimic_05', -left_gimic_x, 99, 107, 0.0):
+        changed += 1
+    return changed
+
+def apply_ch6500_attack_targeted_blade_cases(actions):
+    if not fix_ch6500_armblade:
+        return
+    reference = get_reference_ch6500_extension(actions)
+    if reference is None:
+        print('CH6500_ARMBLADE_TARGETED_REPAIR skipped=no_reference_extension', flush=True)
+        return
+
+    good_tokens = {'1010', '0700', '0570', '0575', '0254', '0252', '0250'}
+    left_amplify_tokens = {'0510', '0270', '0231'}
+    left_window_tokens = {'0230'}
+    exception_tokens = {'0001'}
+    left_extend_right_idle_tokens = {'0231', '0510'}
+    raid_hold_extended_tokens = {'1012', '1014', '1016'}
+    raid_end_tokens = {'1018'}
+    right_idle_double_blade_tokens = {'0005'}
+    changed_actions = 0
+    changed_curves = 0
+
+    for action in actions:
+        if 'Attack_' not in action.name:
+            continue
+        token = None
+        for candidate in [
+            '0000','0001','0005','0010','0230','0231','0240','0250','0252','0254',
+            '0260','0270','0300','0510','0500','0520','0521','0522','0570','0575',
+            '0700','1010','1012','1014','1016','1018'
+        ]:
+            if action_has_token(action, candidate):
+                token = candidate
+                break
+        if token is None or token in good_tokens:
+            continue
+
+        action_curves = 0
+        if token in left_window_tokens:
+            if force_bone_window(action, 'L_ArmBlade_00', reference['L_ArmBlade_00'], 12, 148):
+                action_curves += 3
+            if force_bone_window(action, 'L_ArmBlade_Gimic_05', reference['L_ArmBlade_Gimic_05'], 12, 148):
+                action_curves += 3
+        elif token in left_amplify_tokens:
+            action_curves += amplify_left_extension_pair(
+                action,
+                'L_ArmBlade_00',
+                reference['L_ArmBlade_00'],
+                'L_ArmBlade_Gimic_05',
+                reference['L_ArmBlade_Gimic_05'],
+            )
+            if token in left_extend_right_idle_tokens:
+                action_curves += force_right_idle_x(action)
+        elif token in raid_end_tokens:
+            action_curves += force_raid_end_retraction(action)
+
+        if token in exception_tokens:
+            if mirror_right_from_left(action, 'L_ArmBlade_00', 'R_ArmBlade_00'):
+                action_curves += 3
+            if mirror_right_from_left(action, 'L_ArmBlade_Gimic_05', 'R_ArmBlade_Gimic_05'):
+                action_curves += 3
+        elif token in raid_hold_extended_tokens:
+            if mirror_right_from_left(action, 'L_ArmBlade_00', 'R_ArmBlade_00'):
+                action_curves += 3
+            if mirror_right_from_left(action, 'L_ArmBlade_Gimic_05', 'R_ArmBlade_Gimic_05'):
+                action_curves += 3
+        elif token not in left_amplify_tokens and token not in left_window_tokens and token not in raid_end_tokens:
+            blade_x = -21.328344 if token in right_idle_double_blade_tokens else 0.0
+            action_curves += force_right_idle_x(action, blade_x)
+
+        if action_curves:
+            changed_actions += 1
+            changed_curves += action_curves
+            print(f'CH6500_ARMBLADE_TARGETED_REPAIR action={action.name} token={token} curves={action_curves}', flush=True)
+
+    print(f'CH6500_ARMBLADE_TARGETED_REPAIR_TOTAL actions={changed_actions} curves={changed_curves}', flush=True)
+
+def apply_ch6500_general_armblade_auto_repair(actions):
+    if not fix_ch6500_armblade:
+        return
+
+    left_extended_blade_x = 86.318321
+    left_extended_gimic_x = 19.725996
+    changed_actions = 0
+    changed_curves = 0
+
+    for action in actions:
+        if 'General_' not in action.name:
+            continue
+        curves = {
+            'L_ArmBlade_00': find_location_curves(action, 'L_ArmBlade_00'),
+            'R_ArmBlade_00': find_location_curves(action, 'R_ArmBlade_00'),
+            'L_ArmBlade_Gimic_05': find_location_curves(action, 'L_ArmBlade_Gimic_05'),
+            'R_ArmBlade_Gimic_05': find_location_curves(action, 'R_ArmBlade_Gimic_05'),
+        }
+        if not all(0 in curves[bone] for bone in curves):
+            continue
+
+        start = int(action.frame_range[0]) if action.frame_range else 0
+        end = int(action.frame_range[1]) if action.frame_range else start
+        frames = list(range(start, end + 1))
+        left_xs = [curves['L_ArmBlade_00'][0].evaluate(frame) for frame in frames]
+        right_xs = [curves['R_ArmBlade_00'][0].evaluate(frame) for frame in frames]
+        right_gimic_xs = [curves['R_ArmBlade_Gimic_05'][0].evaluate(frame) for frame in frames]
+        left_span = max(left_xs) - min(left_xs)
+        right_span = max(right_xs) - min(right_xs)
+        right_gimic_span = max(right_gimic_xs) - min(right_gimic_xs)
+
+        action_curves = 0
+        classes = []
+        if 0.5 <= left_span < 10.0 and max(left_xs) < 20.0:
+            action_curves += amplify_left_extension_pair_x(
+                action,
+                'L_ArmBlade_00',
+                left_extended_blade_x,
+                'L_ArmBlade_Gimic_05',
+                left_extended_gimic_x,
+            )
+            classes.append('left_underextension')
+
+        right_idle_offset = abs(curves['R_ArmBlade_00'][0].evaluate(start)) > 10.0 or abs(curves['R_ArmBlade_Gimic_05'][0].evaluate(start)) > 10.0
+        if right_idle_offset and right_span < 1.0 and right_gimic_span < 1.0:
+            action_curves += force_right_idle_x(action)
+            classes.append('right_idle_offset')
+
+        if action_curves:
+            changed_actions += 1
+            changed_curves += action_curves
+            print(f'CH6500_ARMBLADE_GENERAL_AUTO_REPAIR action={action.name} classes={"+".join(classes)} curves={action_curves}', flush=True)
+
+    print(f'CH6500_ARMBLADE_GENERAL_AUTO_REPAIR_TOTAL actions={changed_actions} curves={changed_curves}', flush=True)
+
+def apply_ch6500_armblade_blender_repair(actions):
+    if not fix_ch6500_armblade:
+        return
+
+    total_actions = 0
+    total_curves = 0
+    for action in actions:
+        curve_groups = {
+            'L_ArmBlade_00': find_location_curves(action, 'L_ArmBlade_00'),
+            'R_ArmBlade_00': find_location_curves(action, 'R_ArmBlade_00'),
+            'L_ArmBlade_Gimic_05': find_location_curves(action, 'L_ArmBlade_Gimic_05'),
+            'R_ArmBlade_Gimic_05': find_location_curves(action, 'R_ArmBlade_Gimic_05'),
+        }
+        if not all(len(curve_groups[bone]) == 3 for bone in curve_groups):
+            continue
+
+        start = int(action.frame_range[0]) if action.frame_range else 0
+        end = int(action.frame_range[1]) if action.frame_range else start
+        if end <= start:
+            continue
+
+        frames = list(range(start, end + 1))
+        right_x = [(frame, eval_location(curve_groups['R_ArmBlade_00'], frame)[0]) for frame in frames]
+        idle_frame = start
+        idle_x = eval_location(curve_groups['R_ArmBlade_00'], idle_frame)[0]
+        extended_frame, extended_x = min(right_x, key=lambda item: item[1])
+        if abs(extended_x - idle_x) < 1.0:
+            continue
+
+        left_idle_00 = eval_location(curve_groups['L_ArmBlade_00'], idle_frame)
+        left_idle_g05 = eval_location(curve_groups['L_ArmBlade_Gimic_05'], idle_frame)
+        right_extended_00 = eval_location(curve_groups['R_ArmBlade_00'], extended_frame)
+        right_extended_g05 = eval_location(curve_groups['R_ArmBlade_Gimic_05'], extended_frame)
+
+        replacements = {
+            'R_ArmBlade_00': [],
+            'L_ArmBlade_00': [],
+            'R_ArmBlade_Gimic_05': [],
+            'L_ArmBlade_Gimic_05': [],
+        }
+        for frame, rx in right_x:
+            alpha = max(0.0, min(1.0, (rx - idle_x) / (extended_x - idle_x)))
+            replacements['R_ArmBlade_00'].append((frame, mix_location(left_idle_00, right_extended_00, alpha)))
+            replacements['L_ArmBlade_00'].append((frame, mix_location(left_idle_00, mirror_right_location_to_left(right_extended_00), alpha)))
+            replacements['R_ArmBlade_Gimic_05'].append((frame, mix_location(left_idle_g05, right_extended_g05, alpha)))
+            replacements['L_ArmBlade_Gimic_05'].append((frame, mix_location(left_idle_g05, mirror_right_location_to_left(right_extended_g05), alpha)))
+
+        for bone, frame_values in replacements.items():
+            for axis in range(3):
+                replace_location_curve(action, bone, axis, [(frame, values[axis]) for frame, values in frame_values])
+                total_curves += 1
+
+        total_actions += 1
+        print(
+            f'CH6500_ARMBLADE_BLENDER_REPAIR action={action.name} frames={len(frames)} '
+            f'idle_frame={idle_frame} extended_frame={extended_frame} idle_x={idle_x:.6f} extended_x={extended_x:.6f}',
+            flush=True
+        )
+
+    print(f'CH6500_ARMBLADE_BLENDER_REPAIR_TOTAL actions={total_actions} curves={total_curves}', flush=True)
+
 def install_fbx_pose_progress(action_names):
     real_print = builtins.print
     state = {'pose_count': 0}
@@ -3084,7 +4007,12 @@ for arm_index, arm in enumerate(armatures, start=1):
     arm.select_set(True)
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True, properties=True)
 
+resample_sparse_pose_quaternion_curves(actions)
+stabilize_root_rotation_axis(actions)
 apply_bone_spacing_reference(actions, reference_locations)
+apply_ch6500_armblade_blender_repair(actions)
+apply_ch6500_attack_targeted_blade_cases(actions)
+apply_ch6500_general_armblade_auto_repair(actions)
 
 for arm in armatures:
     arm.animation_data_create()

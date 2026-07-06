@@ -34,7 +34,7 @@ The golden path requires a second stage:
 source/intermediate FBX -> Blender 4.5.9 -> *_unreal.fbx
 ```
 
-The current dense quaternion source-FBX fix remains useful for direct FBX diagnostics and standalone `.mot.*` compatibility, but it is not the same artifact class as the June 7 Unreal-ready FBX. For Unreal-ready exports, the source stage now preserves sparse FBX rotation tracks and lets Blender perform the final full transform/action bake, matching the June 7 workflow.
+The current dense quaternion source-FBX fix remains useful for direct FBX diagnostics and standalone `.mot.*` compatibility, but it is not the same artifact class as the June 7 Unreal-ready FBX. For Unreal-ready exports, the source stage can preserve sparse FBX rotation tracks for Blender staging, but Blender finalization now rebakes imported pose-bone quaternion curves at integer frames before writing the final FBX so sparse curve artifacts are not baked into Unreal-ready output.
 
 ## Fix
 
@@ -58,10 +58,10 @@ The REE bridge now has a scoped switch:
 
 ```text
 ExportBakeFbxRotationTracks = true   -> direct source FBX safety path
-ExportBakeFbxRotationTracks = false  -> Unreal-ready Blender staging path
+ExportBakeFbxRotationTracks = false  -> Unreal-ready Blender staging path; Blender rebakes imported quaternion curves before final export
 ```
 
-This keeps direct-FBX quaternion continuity and the June 7 Blender-bake workflow from fighting each other.
+This keeps direct-FBX quaternion continuity and the June 7 Blender-bake workflow from fighting each other while still preventing Blender from baking sparse quaternion or root-axis artifacts into the final Unreal-ready file.
 
 ## Verification
 

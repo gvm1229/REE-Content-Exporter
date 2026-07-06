@@ -130,7 +130,11 @@ GUI는 네이티브 창 크기 조절, 내장 Pretendard 글꼴과 Segoe UI fall
 
 Standalone MOT bone-loading correction details are documented in [docs/standalone_mot_loading_fix.md](docs/standalone_mot_loading_fix.md).
 MOT quaternion continuity and FBX rotation anomaly handling are documented in [docs/animation_quaternion_continuity.md](docs/animation_quaternion_continuity.md).
+Unreal-ready Blender finalization also rebakes sparse pose-bone quaternion curves and stabilizes transient off-axis `root` rotation spikes before writing final FBX files.
 The scoped MOTLIST verification for `ch0100_Other_5215_Turn_Walk_L180` is documented in [docs/ch0100_other_5215_rotation_continuity_verification.md](docs/ch0100_other_5215_rotation_continuity_verification.md).
 The latest REE dependency update regression and restored MOT/MOTLIST quaternion-continuity bridge patch are documented in [docs/latest_ree_quaternion_continuity_regression.md](docs/latest_ree_quaternion_continuity_regression.md).
 The `ch0100_Attack` June 7 golden Unreal-ready FBX recovery is documented in [docs/ch0100_attack_unreal_ready_golden_recovery.md](docs/ch0100_attack_unreal_ready_golden_recovery.md).
 Scene/minidemo MOTLIST actor filtering and md10015 bone-spacing repair are documented in [docs/md10015_scene_motlist_actor_filter.md](docs/md10015_scene_motlist_actor_filter.md).
+The PRAGMATA `ch6500` Attack ArmBlade repair is exposed as the opt-in CLI flag `--fix-ch6500-armblade-translation`; see [docs/ai_cli_reference.md](docs/ai_cli_reference.md) for usage details.
+
+The ArmBlade anomaly classes learned from the Attack repair are documented in [docs/ch6500_armblade_anomaly_lessons.md](docs/ch6500_armblade_anomaly_lessons.md) for reuse on other animation sets.
