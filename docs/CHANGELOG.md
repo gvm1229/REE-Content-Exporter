@@ -24,6 +24,7 @@
 - Embedded Pretendard Regular/SemiBold fonts for the GUI with Segoe UI fallback, added the Pretendard SIL Open Font License under `assets/fonts/`, and enabled PerMonitorV2 high-DPI behavior for the WinForms app.
 - Enlarged the GUI's default window and expanded row/button spacing so icon buttons, English/Korean labels, advanced export flags, and bone-spacing repair controls no longer clip or overlap during full-scroll visual QA.
 - Removed the decorative `WinForms UI` header badge and standardized GUI row sizing around 44px input/button controls so path fields, dropdowns, numeric inputs, and adjacent utility buttons align more consistently.
+- Added a GUI Find action for additional meshes so users can add secondary mesh paths from the saved game asset list instead of browsing disk only.
 - Refreshed `docs/images/gui-wizard.png` to show the updated GUI layout.
 
 ## 0.6 - MOT loading and FBX rotation continuity

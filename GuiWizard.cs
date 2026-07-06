@@ -436,10 +436,13 @@ internal sealed class GuiWizardForm : Form
         var addMeshButton = CreateCompactButton("+", 48);
         tooltips.SetToolTip(addMeshButton, L("Add an additional mesh from disk."));
         addMeshButton.Click += (_, _) => AddAdditionalMesh();
+        var findAdditionalMeshButton = CreateCompactButton("Find", 78);
+        tooltips.SetToolTip(findAdditionalMeshButton, L("Search the saved game list for an additional mesh path."));
+        findAdditionalMeshButton.Click += (_, _) => PickAdditionalMeshFromList();
         var removeMeshButton = CreateCompactButton("-", 48);
         tooltips.SetToolTip(removeMeshButton, L("Remove the selected additional mesh."));
         removeMeshButton.Click += (_, _) => RemoveSelectedAdditionalMesh();
-        grid.Controls.Add(CreateWideListRow("Additional meshes", additionalMeshList, addMeshButton, removeMeshButton), 0, 1);
+        grid.Controls.Add(CreateWideListRow("Additional meshes", additionalMeshList, addMeshButton, findAdditionalMeshButton, removeMeshButton), 0, 1);
         return panel;
     }
 
@@ -956,10 +959,13 @@ internal sealed class GuiWizardForm : Form
         var addMeshButton = CreateCompactButton("+", 44);
         tooltips.SetToolTip(addMeshButton, L("Add an additional mesh from disk."));
         addMeshButton.Click += (_, _) => AddAdditionalMesh();
+        var findAdditionalMeshButton = CreateCompactButton("Find", 58);
+        tooltips.SetToolTip(findAdditionalMeshButton, L("Search the saved game list for an additional mesh path."));
+        findAdditionalMeshButton.Click += (_, _) => PickAdditionalMeshFromList();
         var removeMeshButton = CreateCompactButton("-", 44);
         tooltips.SetToolTip(removeMeshButton, L("Remove the selected additional mesh."));
         removeMeshButton.Click += (_, _) => RemoveSelectedAdditionalMesh();
-        grid.Controls.Add(CreateListRow("Additional meshes", additionalMeshList, addMeshButton, removeMeshButton), 0, 1);
+        grid.Controls.Add(CreateListRow("Additional meshes", additionalMeshList, addMeshButton, findAdditionalMeshButton, removeMeshButton), 0, 1);
 
         includeAnimationsCheck.CheckedChanged += (_, _) => UpdateAnimationSourceUi();
         animationSourceCombo.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -2479,6 +2485,7 @@ internal sealed class GuiWizardForm : Form
         ["Type part of a filename or path"] = "파일 이름 또는 경로 일부 입력",
         ["No path selected."] = "선택된 경로가 없습니다.",
         ["Search the saved game list for a primary mesh path."] = "저장된 게임 목록에서 기본 메시 경로를 검색합니다.",
+        ["Search the saved game list for an additional mesh path."] = "저장된 게임 목록에서 추가 메시 경로를 검색합니다.",
         ["Search the saved game list for a MOTLIST folder."] = "저장된 게임 목록에서 MOTLIST 폴더를 검색합니다.",
         ["Search the saved game list for animation files."] = "저장된 게임 목록에서 애니메이션 파일을 검색합니다.",
         ["Add an additional mesh from disk."] = "디스크에서 추가 메시를 더합니다.",
@@ -2572,6 +2579,25 @@ internal sealed class GuiWizardForm : Form
         if (dialog.ShowDialog(this) == DialogResult.OK && !additionalMeshList.Items.Contains(dialog.FileName))
         {
             additionalMeshList.Items.Add(dialog.FileName);
+            UpdateCommandPreview();
+        }
+    }
+
+    private void PickAdditionalMeshFromList()
+    {
+        SavePathConfig();
+        var entries = LoadConfiguredListLines();
+        if (entries.Count == 0)
+        {
+            MessageBox.Show(L("Save a game first so its REE.PAK.Tool list can be downloaded."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var picker = new AssetPickerForm(entries, extractRootText.Text.Trim(), AssetPickerKind.Mesh, IsKorean());
+        if (picker.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(picker.SelectedPath) && !additionalMeshList.Items.Contains(picker.SelectedPath))
+        {
+            additionalMeshList.Items.Add(picker.SelectedPath);
+            additionalMeshList.SelectedItem = picker.SelectedPath;
             UpdateCommandPreview();
         }
     }
