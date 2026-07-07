@@ -12,6 +12,7 @@
 - Corrected `ch6500_Attack_0270_Charge_Thrust` so the repaired left extension also keeps the right blade at the idle-side placement instead of leaving it in the backwards extended position.
 - Added `docs/ch6500_armblade_anomaly_lessons.md` to classify the Attack ArmBlade anomaly types and guide future fixes for other MOTLISTs such as General.
 - Added a General MOTLIST ArmBlade auto-repair pass under `--fix-ch6500-armblade-translation`. It scopes the Attack token table to Attack actions only, detects General left-underextension from tiny left blade X spans, and restores constant high right idle offsets to idle-side X placement.
+- Expanded the ch6500 non-Attack ArmBlade auto-repair beyond General so Damage and Other actions with constant high right idle offsets are restored to idle-side X placement.
 - Added a shared Unreal-ready Blender-stage quaternion rebake and root-rotation stabilizer. Sparse pose-bone quaternion curves are now resampled at integer frames before Blender FBX export, and transient off-axis `root` rotation spikes are interpolated between surrounding clean root-yaw frames.
 - Verified the root fix on `ch6500_General_0550_Turn_180_R` and `ch6500_General_0575_Turn_180_L`: the previous frame-window root bursts were reduced to normal turn increments below 7 degrees/frame across the full General MOTLIST audit.
 

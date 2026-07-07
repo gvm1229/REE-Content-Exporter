@@ -1,6 +1,6 @@
 # ch6500 ArmBlade Animation Anomaly Lessons
 
-This document captures what was learned while repairing PRAGMATA `ch6500_attack.motlist.1057` ArmBlade animation exports. Use it as the first diagnostic checklist before applying similar fixes to other MOTLISTs such as General.
+This document captures what was learned while repairing PRAGMATA `ch6500_attack.motlist.1057` ArmBlade animation exports. Use it as the first diagnostic checklist before applying similar fixes to other MOTLISTs such as General, Damage, Other, Grapple, or weapon MOTLISTs.
 
 ## Verified export context
 
@@ -163,18 +163,20 @@ Use this workflow before changing more animations:
 
 For General animations, first classify the action using these same buckets. For example, if General `0101` is intended to extend the left blade but the left blade floats from idle, start by testing the left-underextension class: inspect the left main blade X span, drive `L_ArmBlade_Gimic_05` from `L_ArmBlade_00` timing, and preserve the right side according to the intended action state.
 
-## General MOTLIST auto-repair trial
+## Non-Attack MOTLIST auto-repair trial
 
-The General pass is intentionally curve-based, not token-table based.
+The non-Attack pass is intentionally curve-based, not token-table based.
 
 Current rules:
 
-- If a General action has a tiny but real `L_ArmBlade_00` X span, with peak X still near idle, classify it as left-underextension and scale that timing to the known full left extension X values.
+- If a non-Attack action has a tiny but real `L_ArmBlade_00` X span, with peak X still near idle, classify it as left-underextension and scale that timing to the known full left extension X values.
 - Use the `L_ArmBlade_00` X alpha to drive `L_ArmBlade_Gimic_05` X, so the Gimic bone does not float independently from the main blade.
 - If `R_ArmBlade_00` or `R_ArmBlade_Gimic_05` starts at a large constant offset and has near-zero span, classify it as a right-idle-offset problem and restore both right-side X curves to idle.
-- Scope the Attack token table to action names containing `Attack_`; do not let numeric Attack tokens such as `0000` or `0500` match General action names.
+- Scope the Attack token table to action names containing `Attack_`; do not let numeric Attack tokens such as `0000` or `0500` match non-Attack action names.
 
-Initial General diagnostic findings:
+Initial non-Attack diagnostic findings:
 
 - `ch6500_General_0101_idle_reaction_L_verC` showed the same underextension/floating pattern: `L_ArmBlade_00` moved only from about `-1.694` to `0.000`, while the intended state is left extension.
 - Most General actions showed constant right idle offsets around `R_ArmBlade_00 = 42.657` and `R_ArmBlade_Gimic_05 = 64.387`, which should be treated as idle-right placement errors, not right extension.
+- The full MOTLIST audit after the initial General repair showed the same constant high right-idle offset in all Damage actions and all Other actions: final Blender FBX samples had `R_ArmBlade_00` near `42.657` and `R_ArmBlade_Gimic_05` near `64.387` with near-zero span. This is the same right-idle-offset class, just outside the General MOTLIST.
+- The same audit found no high right-idle offset in the checked General, Grapple, or Wp_09 final FBXs after the earlier repair.

@@ -3840,7 +3840,7 @@ def apply_ch6500_attack_targeted_blade_cases(actions):
 
     print(f'CH6500_ARMBLADE_TARGETED_REPAIR_TOTAL actions={changed_actions} curves={changed_curves}', flush=True)
 
-def apply_ch6500_general_armblade_auto_repair(actions):
+def apply_ch6500_non_attack_armblade_auto_repair(actions):
     if not fix_ch6500_armblade:
         return
 
@@ -3850,7 +3850,7 @@ def apply_ch6500_general_armblade_auto_repair(actions):
     changed_curves = 0
 
     for action in actions:
-        if 'General_' not in action.name:
+        if 'Attack_' in action.name:
             continue
         curves = {
             'L_ArmBlade_00': find_location_curves(action, 'L_ArmBlade_00'),
@@ -3891,9 +3891,9 @@ def apply_ch6500_general_armblade_auto_repair(actions):
         if action_curves:
             changed_actions += 1
             changed_curves += action_curves
-            print(f'CH6500_ARMBLADE_GENERAL_AUTO_REPAIR action={action.name} classes={"+".join(classes)} curves={action_curves}', flush=True)
+            print(f'CH6500_ARMBLADE_NON_ATTACK_AUTO_REPAIR action={action.name} classes={"+".join(classes)} curves={action_curves}', flush=True)
 
-    print(f'CH6500_ARMBLADE_GENERAL_AUTO_REPAIR_TOTAL actions={changed_actions} curves={changed_curves}', flush=True)
+    print(f'CH6500_ARMBLADE_NON_ATTACK_AUTO_REPAIR_TOTAL actions={changed_actions} curves={changed_curves}', flush=True)
 
 def apply_ch6500_armblade_blender_repair(actions):
     if not fix_ch6500_armblade:
@@ -4012,7 +4012,7 @@ stabilize_root_rotation_axis(actions)
 apply_bone_spacing_reference(actions, reference_locations)
 apply_ch6500_armblade_blender_repair(actions)
 apply_ch6500_attack_targeted_blade_cases(actions)
-apply_ch6500_general_armblade_auto_repair(actions)
+apply_ch6500_non_attack_armblade_auto_repair(actions)
 
 for arm in armatures:
     arm.animation_data_create()
