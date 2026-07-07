@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.2 - ch6500 blade and root stabilization fixes
+
 ### Added
 
 - Expanded `.gitignore` to exclude generated export folders, release/package output, exported asset formats, logs, test output, and local scratch artifacts.
